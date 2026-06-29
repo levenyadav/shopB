@@ -973,12 +973,12 @@ These small serverless functions handle tasks that need server-side logic.
 - [x] Print Order Supply slip (browser print)
 - [x] Customer order tracking screen
 
-### Phase 5 — Money & Ledger (Week 6)
-- [ ] Payment Entry screen (in and out)
-- [ ] Party running balances displayed
-- [ ] Ledger view per party
-- [ ] Udhaar list screen
-- [ ] Supplier dues list screen
+### Phase 5 — Money & Ledger (Week 6) — DONE
+- [x] Payment Entry screen (in and out)
+- [x] Party running balances displayed
+- [x] Ledger view per party
+- [x] Udhaar list screen — Parties + "Only with balance" filter (buyers)
+- [x] Supplier dues list screen — Parties + "Only with balance" filter (suppliers)
 
 ### Phase 6 — Reports & Polish (Week 7)
 - [ ] Owner dashboard with all widgets

@@ -16,6 +16,9 @@ import Inventory from './pages/owner/Inventory'
 import StockInquiry from './pages/owner/StockInquiry'
 import OrderManagement from './pages/owner/OrderManagement'
 import OrderDetail from './pages/owner/OrderDetail'
+import PaymentEntry from './pages/owner/PaymentEntry'
+import Parties from './pages/owner/Parties'
+import PartyDetail from './pages/owner/PartyDetail'
 import Fulfilment from './pages/shared/Fulfilment'
 import FulfilmentDetail from './pages/shared/FulfilmentDetail'
 import ComingSoon from './pages/owner/ComingSoon'
@@ -88,8 +91,9 @@ export default function App() {
         <Route path="fulfilment" element={<Fulfilment detailBase="/owner/fulfilment" />} />
         <Route path="fulfilment/:id" element={<FulfilmentDetail listPath="/owner/fulfilment" />} />
         <Route path="sales" element={<ComingSoon title="Sales" phase="Phase 6" />} />
-        <Route path="payments" element={<ComingSoon title="Payments" phase="Phase 5" />} />
-        <Route path="parties" element={<ComingSoon title="Parties" phase="Phase 5" />} />
+        <Route path="payments" element={<PaymentEntry />} />
+        <Route path="parties" element={<Parties />} />
+        <Route path="parties/:type/:id" element={<PartyDetail />} />
         <Route path="reports" element={<ComingSoon title="Reports" phase="Phase 6" />} />
         <Route path="settings" element={<ComingSoon title="Settings" phase="Phase 6" />} />
       </Route>
