@@ -980,15 +980,19 @@ These small serverless functions handle tasks that need server-side logic.
 - [x] Udhaar list screen — Parties + "Only with balance" filter (buyers)
 - [x] Supplier dues list screen — Parties + "Only with balance" filter (suppliers)
 
-### Phase 6 — Reports & Polish (Week 7)
-- [ ] Owner dashboard with all widgets
-- [ ] Today's sales and profit
-- [ ] Weekly and monthly summaries
-- [ ] Stock Inquiry screen with low stock filter
-- [ ] Low stock → Purchase Entry quick link
-- [ ] Settings screen (categories, staff, shop info)
-- [ ] Stock valuation report
-- [ ] Profit and loss summary
+### Phase 6 — Reports & Polish (Week 7) — DONE
+- [x] Owner dashboard with all widgets
+- [x] Today's sales and profit
+- [x] Weekly and monthly summaries
+- [x] Stock Inquiry screen with low stock filter
+- [x] Low stock → Purchase Entry quick link
+- [x] Settings screen (categories, staff, shop info)
+- [x] Stock valuation report
+- [x] Profit and loss summary
+
+> Note: Settings staff management lists and enables/disables staff. Creating a
+> new staff login (and password reset) requires the Supabase admin API, deferred
+> to an Edge Function in Phase 7.
 
 ### Phase 7 — Future Additions
 - [ ] Returns handling (stock back up, payment reverse)

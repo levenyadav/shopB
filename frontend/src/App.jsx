@@ -21,6 +21,8 @@ import Parties from './pages/owner/Parties'
 import PartyDetail from './pages/owner/PartyDetail'
 import Fulfilment from './pages/shared/Fulfilment'
 import FulfilmentDetail from './pages/shared/FulfilmentDetail'
+import Reports from './pages/owner/Reports'
+import Settings from './pages/owner/Settings'
 import ComingSoon from './pages/owner/ComingSoon'
 
 // Guards buyer-only routes (My Orders / Account). Browsing is public; these
@@ -94,8 +96,8 @@ export default function App() {
         <Route path="payments" element={<PaymentEntry />} />
         <Route path="parties" element={<Parties />} />
         <Route path="parties/:type/:id" element={<PartyDetail />} />
-        <Route path="reports" element={<ComingSoon title="Reports" phase="Phase 6" />} />
-        <Route path="settings" element={<ComingSoon title="Settings" phase="Phase 6" />} />
+        <Route path="reports" element={<Reports />} />
+        <Route path="settings" element={<Settings />} />
       </Route>
 
       {/* Staff console (SPEC §10.3) — single-purpose: the fulfilment board */}

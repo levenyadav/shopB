@@ -66,6 +66,7 @@ export function ShopProvider({ children }) {
     loading,
     refreshSuppliers: loadSuppliers,
     refreshCategories: loadCategories,
+    refreshShop: loadShop,
   }
   return <ShopContext.Provider value={value}>{children}</ShopContext.Provider>
 }
