@@ -108,7 +108,8 @@ export function StockBadge({ quantity, threshold }) {
   return <Badge tone={s.tone}>{s.label}</Badge>
 }
 
-// Order lifecycle (SPEC §7.7). Shared by buyer tracking and owner management.
+// Order lifecycle (SPEC §7.7). The owner runs the workflow, so they see the
+// internal verbs (Pending / Approved / Rejected).
 export const ORDER_STATUS = {
   pending:   { label: 'Pending',   tone: 'saffron' },
   approved:  { label: 'Approved',  tone: 'peacock' },
@@ -118,8 +119,22 @@ export const ORDER_STATUS = {
   rejected:  { label: 'Rejected',  tone: 'dues' },
 }
 
-export function OrderStatusBadge({ status }) {
-  const s = ORDER_STATUS[status] || { label: status, tone: 'muted' }
+// Buyer-facing wording — plain language, no shop jargon (SPEC §3). Must read the
+// same as the tracking timeline in MyOrderDetail: one state, one name (never
+// "Approved" on the badge but "Confirmed by shop" in the progress for the same
+// order). "approved" is the shop's word; the buyer hears "Confirmed".
+export const ORDER_STATUS_BUYER = {
+  pending:   { label: 'Awaiting confirmation', tone: 'saffron' },
+  approved:  { label: 'Confirmed',   tone: 'peacock' },
+  packed:    { label: 'Packed',      tone: 'peacock' },
+  delivered: { label: 'Delivered',   tone: 'profit' },
+  picked_up: { label: 'Picked up',   tone: 'profit' },
+  rejected:  { label: 'Not accepted', tone: 'dues' },
+}
+
+export function OrderStatusBadge({ status, audience = 'owner' }) {
+  const map = audience === 'buyer' ? ORDER_STATUS_BUYER : ORDER_STATUS
+  const s = map[status] || { label: status, tone: 'muted' }
   return <Badge tone={s.tone}>{s.label}</Badge>
 }
 

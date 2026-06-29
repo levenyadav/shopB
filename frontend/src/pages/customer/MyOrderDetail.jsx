@@ -18,6 +18,16 @@ const STEPS = [
 ]
 const ORDER = ['pending', 'approved', 'packed', 'delivered', 'picked_up']
 
+// One plain-language line telling the buyer what's happening right now, so an
+// "approved" order clearly reads as being prepared — not a dead end (SPEC §3).
+const STATUS_NOTE = {
+  pending:   'Waiting for the shop to confirm your order.',
+  approved:  'Confirmed — the shop is preparing your order.',
+  packed:    'Packed and ready — it will be delivered or kept for pickup.',
+  delivered: 'Delivered. Thank you!',
+  picked_up: 'Picked up. Thank you!',
+}
+
 export default function MyOrderDetail() {
   const { id } = useParams()
   const { currency } = useShop()
@@ -57,6 +67,9 @@ export default function MyOrderDetail() {
 
   const rejected = order.status === 'rejected'
   const reachedIndex = ORDER.indexOf(order.status)
+  // picked_up maps onto the final "Delivered / Picked up" step, so the active
+  // step never runs past the last visible row.
+  const currentStep = Math.min(reachedIndex, STEPS.length - 1)
 
   return (
     <div className="mx-auto max-w-xl space-y-5">
@@ -71,7 +84,7 @@ export default function MyOrderDetail() {
             <p className="truncate text-lg font-semibold">{order.item?.name || 'Item'}</p>
             <p className="text-xs text-muted">Placed {dateTime(order.created_at)}</p>
           </div>
-          <OrderStatusBadge status={order.status} />
+          <OrderStatusBadge status={order.status} audience="buyer" />
         </div>
 
         <dl className="mt-5 grid grid-cols-2 gap-3 text-sm">
@@ -97,17 +110,25 @@ export default function MyOrderDetail() {
         </div>
       ) : (
         <div className="rounded-2xl border border-line bg-card p-5">
-          <p className="mb-3 text-sm font-semibold">Progress</p>
+          <p className="text-sm font-semibold">Progress</p>
+          <p className="mb-4 mt-0.5 text-sm text-muted">{STATUS_NOTE[order.status] || ''}</p>
           <ol className="space-y-3">
-            {STEPS.map((step) => {
-              // picked_up (index 4) clears the 'delivered' step (index 3) too.
-              const done = reachedIndex >= ORDER.indexOf(step.key)
+            {STEPS.map((step, i) => {
+              const done = i <= currentStep        // reached or passed this step
+              const isCurrent = i === currentStep  // where the order is right now
               return (
                 <li key={step.key} className="flex items-center gap-3">
                   {done
                     ? <IconCircleCheck size={20} className="text-profit" />
                     : <IconCircle size={20} className="text-line" />}
-                  <span className={done ? 'text-ink' : 'text-muted'}>{step.label}</span>
+                  <span className={isCurrent ? 'font-semibold text-ink' : done ? 'text-ink/70' : 'text-muted'}>
+                    {step.label}
+                  </span>
+                  {isCurrent && (
+                    <span className="rounded-full bg-peacock/10 px-2 py-0.5 text-[11px] font-semibold text-peacock">
+                      Now
+                    </span>
+                  )}
                 </li>
               )
             })}

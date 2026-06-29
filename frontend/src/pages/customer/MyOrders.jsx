@@ -77,7 +77,7 @@ export default function MyOrders() {
                 </div>
                 <div className="text-right">
                   <p className="fig font-semibold">{money(o.amount).replace('₹', currency)}</p>
-                  <div className="mt-1"><OrderStatusBadge status={o.status} /></div>
+                  <div className="mt-1"><OrderStatusBadge status={o.status} audience="buyer" /></div>
                 </div>
               </Link>
             </li>
