@@ -989,6 +989,8 @@ These small serverless functions handle tasks that need server-side logic.
 - [x] Settings screen (categories, staff, shop info)
 - [x] Stock valuation report
 - [x] Profit and loss summary
+- [x] Sales list (owner) with date/buyer/payment/category filters + amount & profit totals
+- [x] Sale detail screen with owner economics and supply-slip reprint
 
 > Note: Settings staff management lists and enables/disables staff. Creating a
 > new staff login (and password reset) requires the Supabase admin API, deferred

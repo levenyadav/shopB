@@ -23,7 +23,8 @@ import Fulfilment from './pages/shared/Fulfilment'
 import FulfilmentDetail from './pages/shared/FulfilmentDetail'
 import Reports from './pages/owner/Reports'
 import Settings from './pages/owner/Settings'
-import ComingSoon from './pages/owner/ComingSoon'
+import Sales from './pages/owner/Sales'
+import SaleDetail from './pages/owner/SaleDetail'
 
 // Guards buyer-only routes (My Orders / Account). Browsing is public; these
 // require a customer/dealer login. Owner is sent to the console, others home.
@@ -92,7 +93,8 @@ export default function App() {
         <Route path="orders/:id" element={<OrderDetail />} />
         <Route path="fulfilment" element={<Fulfilment detailBase="/owner/fulfilment" />} />
         <Route path="fulfilment/:id" element={<FulfilmentDetail listPath="/owner/fulfilment" />} />
-        <Route path="sales" element={<ComingSoon title="Sales" phase="Phase 6" />} />
+        <Route path="sales" element={<Sales />} />
+        <Route path="sales/:id" element={<SaleDetail />} />
         <Route path="payments" element={<PaymentEntry />} />
         <Route path="parties" element={<Parties />} />
         <Route path="parties/:type/:id" element={<PartyDetail />} />
