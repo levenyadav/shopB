@@ -108,6 +108,21 @@ export function StockBadge({ quantity, threshold }) {
   return <Badge tone={s.tone}>{s.label}</Badge>
 }
 
+// Order lifecycle (SPEC §7.7). Shared by buyer tracking and owner management.
+export const ORDER_STATUS = {
+  pending:   { label: 'Pending',   tone: 'saffron' },
+  approved:  { label: 'Approved',  tone: 'peacock' },
+  packed:    { label: 'Packed',    tone: 'peacock' },
+  delivered: { label: 'Delivered', tone: 'profit' },
+  picked_up: { label: 'Picked up', tone: 'profit' },
+  rejected:  { label: 'Rejected',  tone: 'dues' },
+}
+
+export function OrderStatusBadge({ status }) {
+  const s = ORDER_STATUS[status] || { label: status, tone: 'muted' }
+  return <Badge tone={s.tone}>{s.label}</Badge>
+}
+
 export function Spinner({ className = '' }) {
   return (
     <span

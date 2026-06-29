@@ -6,7 +6,9 @@ const TABS = { in: 'Sign in', up: 'Create account' }
 
 export default function Login() {
   const [tab, setTab] = useState('in')
-  const [form, setForm] = useState({ fullName: '', phone: '', email: '', password: '' })
+  const [form, setForm] = useState({
+    fullName: '', phone: '', email: '', password: '', buyerType: 'customer',
+  })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -29,7 +31,15 @@ export default function Login() {
         const { data, error } = await supabase.auth.signUp({
           email: form.email.trim(),
           password: form.password,
-          options: { data: { full_name: form.fullName.trim(), phone: form.phone.trim() } },
+          options: {
+            data: {
+              full_name: form.fullName.trim(),
+              phone: form.phone.trim(),
+              // handle_new_user only honours 'customer'/'dealer' here (SPEC §9 —
+              // owner/staff are promoted manually, never self-assigned at signup).
+              role: form.buyerType,
+            },
+          },
         })
         if (error) throw error
         if (data.session) navigate('/', { replace: true })
@@ -102,6 +112,29 @@ export default function Login() {
                        autoComplete="name" required />
                 <Field label="Phone" value={form.phone} onChange={set('phone')}
                        type="tel" autoComplete="tel" />
+                <div>
+                  <span className="block text-sm font-medium text-ink mb-1.5">I am a</span>
+                  <div className="inline-flex w-full rounded-lg border border-line bg-card p-1">
+                    {[
+                      ['customer', 'Customer'],
+                      ['dealer', 'Dealer'],
+                    ].map(([key, label]) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setForm((f) => ({ ...f, buyerType: key }))}
+                        className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                          form.buyerType === key ? 'bg-peacock text-white' : 'text-muted hover:text-ink'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="mt-1 block text-xs text-muted">
+                    Dealers see wholesale (dealer) rates after the shop confirms the account.
+                  </span>
+                </div>
               </>
             )}
             <Field label="Email" value={form.email} onChange={set('email')}

@@ -2,9 +2,11 @@ import { createContext, useContext, useEffect, useState, useCallback } from 'rea
 import { supabase } from '../lib/supabase'
 import { useAuth } from './AuthContext'
 
-// Shop-wide reference data shared across owner/staff screens: the shop record,
-// its categories and its suppliers. Loaded once per session and refreshed after
-// inline creates (e.g. a new supplier from Purchase Entry). RLS scopes the rows.
+// Shop-wide reference data. The shop record and its categories are readable by
+// everyone (RLS: shops_select / categories_read_active) so the public shopfront
+// can show the shop name, currency and category tabs without a login. Suppliers
+// are owner/staff-only, so they load just for a signed-in session and refresh
+// after inline creates (e.g. a new supplier from Purchase Entry).
 const ShopContext = createContext(null)
 
 export function ShopProvider({ children }) {
@@ -42,13 +44,13 @@ export function ShopProvider({ children }) {
   }, [])
 
   useEffect(() => {
-    if (!session) {
-      setShop(null); setCategories([]); setSuppliers([]); setLoading(false)
-      return
-    }
     let active = true
     setLoading(true)
-    Promise.all([loadShop(), loadCategories(), loadSuppliers()]).finally(() => {
+    // shop + categories are public; suppliers only when signed in.
+    const jobs = [loadShop(), loadCategories()]
+    if (session) jobs.push(loadSuppliers())
+    else setSuppliers([])
+    Promise.all(jobs).finally(() => {
       if (active) setLoading(false)
     })
     return () => { active = false }

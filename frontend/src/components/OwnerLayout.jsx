@@ -1,12 +1,38 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
   IconLayoutDashboard, IconShoppingCartPlus, IconBoxSeam, IconClipboardList,
   IconReceipt2, IconCoin, IconCash, IconUsers, IconChartBar, IconSettings,
   IconMenu2, IconX, IconLogout,
 } from '@tabler/icons-react'
+import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useShop } from '../context/ShopContext'
+
+// Live count of orders awaiting approval (SPEC §6.4). Seeds from a count query,
+// then Supabase Realtime keeps it current: a new order bumps it, any status
+// change re-counts (approve/reject removes it from the pending bucket).
+function usePendingOrders(shopId) {
+  const [count, setCount] = useState(0)
+  useEffect(() => {
+    if (!shopId) return
+    let active = true
+    async function recount() {
+      const { count: c } = await supabase
+        .from('orders')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'pending')
+      if (active) setCount(c ?? 0)
+    }
+    recount()
+    const channel = supabase
+      .channel('owner-orders')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, recount)
+      .subscribe()
+    return () => { active = false; supabase.removeChannel(channel) }
+  }, [shopId])
+  return count
+}
 
 // Grouped sidebar + topbar owner shell (SPEC §10.4). Simple on top: few groups,
 // big labels, one register feel. Mobile collapses the sidebar into a drawer.
@@ -26,7 +52,7 @@ const NAV = [
   {
     group: 'Selling',
     items: [
-      { to: '/owner/orders', label: 'Orders', icon: IconReceipt2 },
+      { to: '/owner/orders', label: 'Orders', icon: IconReceipt2, badge: 'pending' },
       { to: '/owner/sales', label: 'Sales', icon: IconCoin },
     ],
   },
@@ -61,9 +87,10 @@ const TITLES = {
 
 export default function OwnerLayout() {
   const { profile, signOut } = useAuth()
-  const { shop } = useShop()
+  const { shop, shopId } = useShop()
   const { pathname } = useLocation()
   const [open, setOpen] = useState(false)
+  const pending = usePendingOrders(shopId)
 
   const title =
     TITLES[pathname] ||
@@ -75,7 +102,7 @@ export default function OwnerLayout() {
   return (
     <div className="min-h-screen md:grid md:grid-cols-[16rem_1fr]">
       {/* ---- Sidebar ---- */}
-      <Sidebar shop={shop} open={open} onClose={() => setOpen(false)} />
+      <Sidebar shop={shop} pending={pending} open={open} onClose={() => setOpen(false)} />
 
       {/* ---- Main column ---- */}
       <div className="flex min-h-screen flex-col">
@@ -113,7 +140,7 @@ export default function OwnerLayout() {
   )
 }
 
-function Sidebar({ shop, open, onClose }) {
+function Sidebar({ shop, pending, open, onClose }) {
   return (
     <>
       {/* mobile backdrop */}
@@ -156,7 +183,12 @@ function Sidebar({ shop, open, onClose }) {
                       }
                     >
                       <it.icon size={19} stroke={1.7} />
-                      {it.label}
+                      <span className="flex-1">{it.label}</span>
+                      {it.badge === 'pending' && pending > 0 && (
+                        <span className="fig grid h-5 min-w-5 place-items-center rounded-full bg-saffron px-1.5 text-[11px] font-bold text-white">
+                          {pending}
+                        </span>
+                      )}
                     </NavLink>
                   </li>
                 ))}
