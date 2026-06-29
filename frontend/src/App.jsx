@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import OwnerLayout from './components/OwnerLayout'
+import StaffLayout from './components/StaffLayout'
 import ShopLayout from './components/ShopLayout'
 import Login from './pages/public/Login'
 import Shopfront from './pages/public/Shopfront'
@@ -15,6 +16,8 @@ import Inventory from './pages/owner/Inventory'
 import StockInquiry from './pages/owner/StockInquiry'
 import OrderManagement from './pages/owner/OrderManagement'
 import OrderDetail from './pages/owner/OrderDetail'
+import Fulfilment from './pages/shared/Fulfilment'
+import FulfilmentDetail from './pages/shared/FulfilmentDetail'
 import ComingSoon from './pages/owner/ComingSoon'
 
 // Guards buyer-only routes (My Orders / Account). Browsing is public; these
@@ -33,6 +36,16 @@ function OwnerOnly({ children }) {
   const { role, loading } = useAuth()
   if (loading) return null
   if (role !== 'owner') return <Navigate to="/" replace />
+  return children
+}
+
+// Guards the staff console (SPEC §10.3). Owner has their own console; everyone
+// else (buyers, anon) goes to the shopfront.
+function StaffOnly({ children }) {
+  const { role, loading } = useAuth()
+  if (loading) return null
+  if (role === 'owner') return <Navigate to="/owner" replace />
+  if (role !== 'staff') return <Navigate to="/" replace />
   return children
 }
 
@@ -72,11 +85,28 @@ export default function App() {
         <Route path="stock" element={<StockInquiry />} />
         <Route path="orders" element={<OrderManagement />} />
         <Route path="orders/:id" element={<OrderDetail />} />
-        <Route path="sales" element={<ComingSoon title="Sales" phase="Phase 3" />} />
+        <Route path="fulfilment" element={<Fulfilment detailBase="/owner/fulfilment" />} />
+        <Route path="fulfilment/:id" element={<FulfilmentDetail listPath="/owner/fulfilment" />} />
+        <Route path="sales" element={<ComingSoon title="Sales" phase="Phase 6" />} />
         <Route path="payments" element={<ComingSoon title="Payments" phase="Phase 5" />} />
         <Route path="parties" element={<ComingSoon title="Parties" phase="Phase 5" />} />
         <Route path="reports" element={<ComingSoon title="Reports" phase="Phase 6" />} />
         <Route path="settings" element={<ComingSoon title="Settings" phase="Phase 6" />} />
+      </Route>
+
+      {/* Staff console (SPEC §10.3) — single-purpose: the fulfilment board */}
+      <Route
+        path="/staff"
+        element={
+          <ProtectedRoute>
+            <StaffOnly>
+              <StaffLayout />
+            </StaffOnly>
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<Fulfilment detailBase="/staff/fulfil" />} />
+        <Route path="fulfil/:id" element={<FulfilmentDetail listPath="/staff" />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -135,6 +135,9 @@ export default function OrderDetail() {
             <p className="font-semibold">Approved — sale recorded</p>
           </div>
           <p className="mt-1">Stock has been adjusted and a fulfilment job opened for packing.</p>
+          <Link to="/owner/fulfilment" className="mt-3 inline-block font-semibold text-peacock hover:underline">
+            Go to Fulfilment to pack &amp; print the supply slip →
+          </Link>
         </div>
       )}
 

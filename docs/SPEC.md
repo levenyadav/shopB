@@ -644,7 +644,7 @@ Every trigger listed here runs automatically in the database. The owner and staf
 
 ### 8.6 After UPDATE on fulfilment (status changes)
 ```
-1. IF status = 'packed':     fulfilment.packed_at = now()
+1. IF status = 'packed':     fulfilment.packed_at = now(),    orders.status = 'packed'
 2. IF status = 'delivered':  fulfilment.completed_at = now(), orders.status = 'delivered'
 3. IF status = 'picked_up':  fulfilment.completed_at = now(), orders.status = 'picked_up'
 ```

@@ -1,6 +1,7 @@
 import { Link, NavLink, Outlet } from 'react-router-dom'
 import {
   IconReceipt2, IconUserCircle, IconLogin2, IconLogout, IconLayoutDashboard,
+  IconClipboardCheck,
 } from '@tabler/icons-react'
 import { useAuth } from '../context/AuthContext'
 import { useShop } from '../context/ShopContext'
@@ -28,6 +29,10 @@ export default function ShopLayout() {
           <nav className="flex items-center gap-1 sm:gap-2">
             {role === 'owner' && (
               <HeaderLink to="/owner" icon={IconLayoutDashboard} label="Owner console" />
+            )}
+
+            {role === 'staff' && (
+              <HeaderLink to="/staff" icon={IconClipboardCheck} label="Fulfilment" />
             )}
 
             {(role === 'customer' || role === 'dealer') && (

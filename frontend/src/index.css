@@ -77,3 +77,20 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .posted-stamp { animation: none; }
 }
+
+/* Order Supply Slip (SPEC §13) — browser-native print, no special hardware.
+   The slip lives hidden in the page; on print everything else is hidden and
+   only the slip is inked. No print-specific component tree to keep in sync. */
+.print-slip { display: none; }
+@media print {
+  body { background: #fff !important; }
+  body * { visibility: hidden; }
+  .print-slip, .print-slip * { visibility: visible; }
+  .print-slip {
+    display: block;
+    position: absolute; top: 0; left: 0;
+    width: 100%; padding: 16px;
+    font-family: var(--font-sans); color: #000;
+  }
+  .no-print { display: none !important; }
+}
