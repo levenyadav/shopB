@@ -151,8 +151,8 @@
 
 ### 6.1 Module 1 — Purchase Entry (Buy Stock In)
 
-- Add new item with all 10 fields in exact order
-- Auto-generate Item No (format: SHOP-001, SHOP-002, etc.)
+- Add new item with all fields in exact order
+- Auto-generate Item No (format: SHOP-0001, SHOP-0002, etc.)
 - Upload photo from device camera or gallery
 - Scan existing barcode via phone camera
 - Generate new QR code for item if no barcode exists
@@ -170,16 +170,24 @@
 
 | # | Field | Type | Notes |
 |---|---|---|---|
-| 1 | Item No | Auto-generated text | Unique per shop |
-| 2 | Company | Dropdown → suppliers table | Required |
-| 3 | Category | Dropdown → categories table | Required |
-| 4 | Location / Rack No | Text | Display only, does not split stock |
-| 5 | Quantity | Number | How many came in |
-| 6 | Purchase Rate | Currency | Cost price — what owner paid |
-| 7 | Dealer Rate | Currency | Wholesale price for dealers |
-| 8 | Rate | Currency | Retail price for customers |
-| 9 | Photo | Image upload | Stored in Supabase Storage |
-| 10 | Barcode / QR | Scan or generate | For fast lookup |
+| 1 | Item No | Auto-generated text | Unique per shop — assigned by DB trigger on insert |
+| 2 | Item Name | Text | Required — `items.name` is NOT NULL |
+| 3 | Company | Dropdown → suppliers table | Required. Inline-create allowed (owner only) |
+| 4 | Category | Dropdown → categories table | Required |
+| 5 | Location / Rack No | Text | Display only, does not split stock |
+| 6 | Quantity | Number | How many came in (the opening Purchase Entry) |
+| 7 | Purchase Rate | Currency | Cost price — what owner paid |
+| 8 | Dealer Rate | Currency | Wholesale price for dealers |
+| 9 | Rate | Currency | Retail price for customers |
+| 10 | Photo | Image upload | Stored in Supabase Storage (`item-photos` bucket) |
+| 11 | Barcode / QR | Scan or generate | For fast lookup |
+| 12 | Low Stock Threshold | Number | Below this → item flagged Low (default 10) |
+
+**Save sequence (honours Golden Rule #1 — stock in only via Purchase Entry):**
+The form inserts the `items` row with `quantity = 0`, then inserts a `purchases`
+row for the opening quantity. The `on_purchase_insert` trigger raises
+`items.quantity`, raises the supplier's `balance_due`, and writes the ledger.
+The form never sets `items.quantity` directly.
 
 ---
 
