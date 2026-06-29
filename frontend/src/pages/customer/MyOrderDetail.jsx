@@ -27,20 +27,27 @@ export default function MyOrderDetail() {
 
   useEffect(() => {
     let active = true
-    supabase
-      .from('orders')
-      .select(
-        'id, quantity, rate_at_order, amount, status, notes, rejection_reason, ' +
-          'created_at, updated_at, item:items(name, photo_url, location)',
-      )
-      .eq('id', id)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (!active) return
-        if (error) setErr(error.message)
-        else if (!data) setMissing(true)
-        else setOrder(data)
-      })
+    async function load() {
+      const { data, error } = await supabase
+        .from('orders')
+        .select(
+          'id, item_id, quantity, rate_at_order, amount, status, notes, ' +
+            'rejection_reason, created_at, updated_at',
+        )
+        .eq('id', id)
+        .maybeSingle()
+      if (!active) return
+      if (error) { setErr(error.message); return }
+      if (!data) { setMissing(true); return }
+      // Resolve item name/photo from the column-safe view (Golden Rule #4).
+      const { data: item } = await supabase
+        .from('shopfront_items')
+        .select('name, photo_url')
+        .eq('id', data.item_id)
+        .maybeSingle()
+      if (active) setOrder({ ...data, item: item || null })
+    }
+    load()
     return () => { active = false }
   }, [id])
 

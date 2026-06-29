@@ -17,15 +17,29 @@ export default function MyOrders() {
 
   useEffect(() => {
     let active = true
-    supabase
-      .from('orders')
-      .select('id, quantity, amount, status, notes, created_at, item:items(name, photo_url)')
-      .order('created_at', { ascending: false })
-      .then(({ data, error }) => {
-        if (!active) return
-        if (error) setErr(error.message)
-        else setOrders(data ?? [])
-      })
+    async function load() {
+      // Buyers can't read the base items table (cost is hidden — Golden Rule #4),
+      // so we resolve item name/photo from the shopfront_items view by id. Items
+      // now out of stock / inactive aren't in the view → neutral fallback below.
+      const { data: rows, error } = await supabase
+        .from('orders')
+        .select('id, item_id, quantity, amount, status, notes, created_at')
+        .order('created_at', { ascending: false })
+      if (!active) return
+      if (error) { setErr(error.message); return }
+
+      const ids = [...new Set((rows ?? []).map((o) => o.item_id))]
+      const byId = {}
+      if (ids.length) {
+        const { data: items } = await supabase
+          .from('shopfront_items')
+          .select('id, name, photo_url')
+          .in('id', ids)
+        for (const it of items ?? []) byId[it.id] = it
+      }
+      if (active) setOrders((rows ?? []).map((o) => ({ ...o, item: byId[o.item_id] || null })))
+    }
+    load()
     return () => { active = false }
   }, [])
 

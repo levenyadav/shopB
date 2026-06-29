@@ -17,19 +17,17 @@ import { Button, Textarea, Badge, Spinner } from '../../components/ui'
 export default function ItemDetail() {
   const { id } = useParams()
   const { role, profile } = useAuth()
-  const { shopId, currency } = useShop()
+  const { shopId, currency, categories } = useShop()
   const [item, setItem] = useState(null)
   const [err, setErr] = useState('')
   const [notFound, setNotFound] = useState(false)
 
+  // shopfront_items: column-safe view (no purchase_rate — Golden Rule #4).
   useEffect(() => {
     let active = true
     supabase
-      .from('items')
-      .select(
-        'id, name, quantity, rate, dealer_rate, low_stock_threshold, photo_url, ' +
-          'is_active, category:categories(name)',
-      )
+      .from('shopfront_items')
+      .select('id, name, quantity, rate, dealer_rate, low_stock_threshold, photo_url, category_id')
       .eq('id', id)
       .maybeSingle()
       .then(({ data, error }) => {
@@ -40,6 +38,8 @@ export default function ItemDetail() {
       })
     return () => { active = false }
   }, [id])
+
+  const categoryName = item && categories.find((c) => c.id === item.category_id)?.name
 
   if (notFound) {
     return (
@@ -78,7 +78,7 @@ export default function ItemDetail() {
         {/* Details + order */}
         <div className="flex flex-col gap-4">
           <div>
-            <p className="text-xs uppercase tracking-wide text-muted">{item.category?.name}</p>
+            <p className="text-xs uppercase tracking-wide text-muted">{categoryName}</p>
             <h1 className="font-[var(--font-display)] text-3xl font-bold">{item.name}</h1>
           </div>
 

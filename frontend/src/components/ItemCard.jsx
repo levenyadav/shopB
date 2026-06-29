@@ -9,7 +9,7 @@ import { Badge } from './ui'
 // One product tile on the shopfront (SPEC §6.3). Shows photo, name, category and
 // the price the viewer pays — dealers see Dealer Rate, everyone else the Rate.
 // Purchase rate is NEVER shown here. Low stock gets a "Limited Stock" ribbon.
-export default function ItemCard({ item }) {
+export default function ItemCard({ item, categoryName }) {
   const { role } = useAuth()
   const { currency } = useShop()
   const price = rateForBuyer(item, role)
@@ -46,7 +46,7 @@ export default function ItemCard({ item }) {
 
       <div className="flex flex-1 flex-col gap-1 p-3">
         <p className="text-[11px] uppercase tracking-wide text-muted">
-          {item.category?.name || ' '}
+          {categoryName || item.category?.name || ' '}
         </p>
         <p className="line-clamp-2 font-medium text-ink">{item.name}</p>
         <p className="mt-auto pt-1">

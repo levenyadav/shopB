@@ -18,16 +18,18 @@ export default function Shopfront() {
   const [err, setErr] = useState('')
   const [q, setQ] = useState('')
 
+  // shopfront_items is the column-safe view (no purchase_rate — Golden Rule #4).
+  // Category names come from ShopContext, so no embed through the view is needed.
+  const catName = useMemo(
+    () => Object.fromEntries(categories.map((c) => [c.id, c.name])),
+    [categories],
+  )
+
   useEffect(() => {
     let active = true
     supabase
-      .from('items')
-      .select(
-        'id, name, quantity, rate, dealer_rate, low_stock_threshold, photo_url, ' +
-          'is_active, category_id, category:categories(name)',
-      )
-      .eq('is_active', true)
-      .gt('quantity', 0)
+      .from('shopfront_items')
+      .select('id, name, quantity, rate, dealer_rate, low_stock_threshold, photo_url, category_id')
       .order('name')
       .then(({ data, error }) => {
         if (!active) return
@@ -93,7 +95,9 @@ export default function Shopfront() {
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {visible.map((item) => <ItemCard key={item.id} item={item} />)}
+          {visible.map((item) => (
+            <ItemCard key={item.id} item={item} categoryName={catName[item.category_id]} />
+          ))}
         </div>
       )}
     </div>
