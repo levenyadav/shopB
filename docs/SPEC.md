@@ -954,17 +954,17 @@ These small serverless functions handle tasks that need server-side logic.
 - [ ] Inventory search and filter
 - [ ] Item edit screen
 
-### Phase 3 — Shopfront & Orders (Week 3-4)
-- [ ] Public shopfront — browse by category
-- [ ] Public shopfront — item detail
-- [ ] Customer register and login
-- [ ] Dealer login with Dealer Rate display
-- [ ] Place order flow (quantity + note + confirm)
-- [ ] Order Management screen for owner
-- [ ] Real-time order notification via Supabase Realtime
-- [ ] Approve order flow — select payment type
-- [ ] Reject order flow — optional reason
-- [ ] Sale record auto-creation via trigger (verified working)
+### Phase 3 — Shopfront & Orders (Week 3-4) — DONE
+- [x] Public shopfront — browse by category
+- [x] Public shopfront — item detail
+- [x] Customer register and login
+- [x] Dealer login with Dealer Rate display
+- [x] Place order flow (quantity + note + confirm)
+- [x] Order Management screen for owner
+- [x] Real-time order notification via Supabase Realtime
+- [x] Approve order flow — select payment type
+- [x] Reject order flow — optional reason
+- [x] Sale record auto-creation via trigger (verified working)
 
 ### Phase 4 — Fulfilment & Print (Week 5)
 - [ ] Staff fulfilment screen (pending packs list)
