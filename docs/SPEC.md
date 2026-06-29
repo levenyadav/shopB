@@ -966,12 +966,12 @@ These small serverless functions handle tasks that need server-side logic.
 - [x] Reject order flow — optional reason
 - [x] Sale record auto-creation via trigger (verified working)
 
-### Phase 4 — Fulfilment & Print (Week 5)
-- [ ] Staff fulfilment screen (pending packs list)
-- [ ] Mark as Packed
-- [ ] Mark as Delivered / Picked Up
-- [ ] Print Order Supply slip (browser print)
-- [ ] Customer order tracking screen
+### Phase 4 — Fulfilment & Print (Week 5) — DONE
+- [x] Staff fulfilment screen (pending packs list)
+- [x] Mark as Packed
+- [x] Mark as Delivered / Picked Up
+- [x] Print Order Supply slip (browser print)
+- [x] Customer order tracking screen
 
 ### Phase 5 — Money & Ledger (Week 6)
 - [ ] Payment Entry screen (in and out)
