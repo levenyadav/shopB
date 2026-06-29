@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+/* =============================================================================
+   "Counter & Khata" design tokens — a shopkeeper's ledger, digitized.
+   Color, type and signature for the whole Shop Management System.
+   ========================================================================== */
+@theme {
+  --color-paper:      #EFECE1;  /* app background — warm khata page         */
+  --color-paper-2:    #EAE6D8;  /* recessed paper (ledger panel)            */
+  --color-card:       #FFFFFF;  /* surfaces                                 */
+  --color-ink:        #1C2422;  /* text — deep green-black                  */
+  --color-muted:      #6E726B;  /* secondary text                          */
+  --color-line:       #E2DCCD;  /* hairlines / borders                      */
+
+  --color-peacock:    #0F6E64;  /* primary — Indian craft teal              */
+  --color-peacock-700:#0B564E;  /* primary pressed                          */
+  --color-saffron:    #E0901A;  /* accent — marigold / gift ribbon          */
+  --color-profit:     #2E7D52;  /* ledger: money owed to the shop           */
+  --color-dues:       #C0432B;  /* ledger: dues / red margin                */
+
+  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --font-sans:    "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono:    "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Every figure in the system is monospaced — the ledger rule. */
+.fig { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* Khata page: ruled lines + the classic bahi-khata red margin. */
+.khata-page {
+  background-color: var(--color-paper-2);
+  background-image: repeating-linear-gradient(
+    to bottom, transparent 0 39px, var(--color-line) 39px 40px);
+}
+.khata-page::before {
+  content: "";
+  position: absolute; top: 0; bottom: 0; left: 56px; width: 2px;
+  background: color-mix(in srgb, var(--color-dues) 55%, transparent);
+}
+
+/* Shop seal — a stamped, slightly inked impression. */
+.shop-stamp {
+  display: inline-block;
+  border: 2px solid var(--color-saffron);
+  box-shadow: 0 0 0 4px var(--color-paper-2), 0 0 0 6px var(--color-saffron);
+  color: var(--color-saffron);
+  transform: rotate(-3deg);
+  padding: .55rem 1rem;
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  opacity: .92;
+}
+
+/* "POSTED" approval stamp — set up now, wired to Approve Sale in Phase 3. */
+@keyframes stamp-thunk {
+  0%   { transform: rotate(-12deg) scale(2.4); opacity: 0; }
+  60%  { transform: rotate(-12deg) scale(.92); opacity: 1; }
+  100% { transform: rotate(-12deg) scale(1);   opacity: 1; }
+}
+.posted-stamp {
+  color: var(--color-saffron);
+  border: 3px double var(--color-saffron);
+  font-family: var(--font-display);
+  letter-spacing: .2em;
+  animation: stamp-thunk .45s cubic-bezier(.2,1.4,.4,1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .posted-stamp { animation: none; }
+}
