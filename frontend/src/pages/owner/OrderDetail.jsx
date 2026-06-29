@@ -1,14 +1,26 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
-  IconArrowLeft, IconPhoto, IconCircleCheck, IconCircleX, IconAlertTriangle,
+  IconArrowLeft, IconPhoto, IconCircleCheck, IconCircleX, IconCircle, IconAlertTriangle,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
 import { lineProfit, round2 } from '../../lib/helpers'
-import { Button, Textarea, OrderStatusBadge, Badge, Spinner } from '../../components/ui'
+import {
+  Button, Textarea, OrderStatusBadge, InProcessBadge, IN_PROCESS_STATUSES, Badge, Spinner,
+} from '../../components/ui'
+
+// Owner-side fulfilment timeline (post-approval). orders.status advances
+// approved → packed → delivered/picked_up via the fulfilment trigger, so it
+// tracks reality live (Golden Rule #10 — the client only reads it here).
+const OWNER_STEPS = [
+  { key: 'approved',  label: 'Approved — sale recorded' },
+  { key: 'packed',    label: 'Packed' },
+  { key: 'delivered', label: 'Delivered / Picked up' },
+]
+const FLOW = ['approved', 'packed', 'delivered', 'picked_up']
 
 // SPEC §6.4 / §6.5 — owner approves or rejects. Approval INSERTS a sale row; the
 // on_sale_insert trigger then drops stock, books the ledger, flips the order to
@@ -44,6 +56,16 @@ export default function OrderDetail() {
   }
   useEffect(() => { load() }, [id])
 
+  // Live status: once approved, staff packing/delivering updates this order's
+  // row — reflect it here without a refresh (SPEC §5 Realtime).
+  useEffect(() => {
+    const channel = supabase
+      .channel(`owner-order-${id}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders', filter: `id=eq.${id}` }, load)
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [id])
+
   if (missing) return <Empty>Order not found. <Link to="/owner/orders" className="font-medium text-peacock hover:underline">Back to orders</Link>.</Empty>
   if (err && !order) return <Empty>{err}</Empty>
   if (!order) return <div className="grid place-items-center py-20 text-muted"><Spinner /></div>
@@ -73,7 +95,10 @@ export default function OrderDetail() {
             <p className="truncate text-lg font-semibold">{item?.name || 'Item'}</p>
             <p className="text-xs text-muted">Order placed {dateTime(order.created_at)}</p>
           </div>
-          <OrderStatusBadge status={order.status} />
+          <div className="flex flex-col items-end gap-1">
+            <OrderStatusBadge status={order.status} />
+            {IN_PROCESS_STATUSES.includes(order.status) && <InProcessBadge />}
+          </div>
         </div>
 
         <dl className="mt-5 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
@@ -129,19 +154,64 @@ export default function OrderDetail() {
           This order was rejected.{order.rejection_reason ? <> Reason: <span className="text-ink">{order.rejection_reason}</span></> : ' No stock or money changed.'}
         </div>
       ) : (
-        <div className="rounded-2xl border border-profit/30 bg-profit/10 p-5 text-sm text-ink/80">
+        <ApprovedTracker order={order} />
+      )}
+
+      {err && order && <p className="rounded-lg bg-dues/10 px-4 py-3 text-sm text-dues">{err}</p>}
+    </div>
+  )
+}
+
+// Post-approval: sale is booked, fulfilment underway. Live timeline driven by
+// orders.status (kept current by the Realtime subscription above).
+function ApprovedTracker({ order }) {
+  const isDone = order.status === 'delivered' || order.status === 'picked_up'
+  const reached = FLOW.indexOf(order.status)
+  const currentStep = Math.min(reached, OWNER_STEPS.length - 1)
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-profit/30 bg-profit/10 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-profit">
             <IconCircleCheck size={20} />
             <p className="font-semibold">Approved — sale recorded</p>
           </div>
-          <p className="mt-1">Stock has been adjusted and a fulfilment job opened for packing.</p>
-          <Link to="/owner/fulfilment" className="mt-3 inline-block font-semibold text-peacock hover:underline">
-            Go to Fulfilment to pack &amp; print the supply slip →
-          </Link>
+          {IN_PROCESS_STATUSES.includes(order.status) && <InProcessBadge />}
         </div>
-      )}
+        <p className="mt-1 text-sm text-ink/80">Stock has been adjusted and a fulfilment job opened. Track its progress live below.</p>
+      </div>
 
-      {err && order && <p className="rounded-lg bg-dues/10 px-4 py-3 text-sm text-dues">{err}</p>}
+      <div className="rounded-2xl border border-line bg-card p-5">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-semibold">Fulfilment status</p>
+          <span className="inline-flex items-center gap-1.5 text-xs text-muted">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-profit" /> Updates live
+          </span>
+        </div>
+        <ol className="mt-4 space-y-3">
+          {OWNER_STEPS.map((step, i) => {
+            const done = i <= currentStep
+            const isCurrent = i === currentStep
+            return (
+              <li key={step.key} className="flex items-center gap-3">
+                {done
+                  ? <IconCircleCheck size={20} className="text-profit" />
+                  : <IconCircle size={20} className="text-line" />}
+                <span className={isCurrent ? 'text-sm font-semibold text-ink' : done ? 'text-sm text-ink/70' : 'text-sm text-muted'}>
+                  {step.label}
+                </span>
+                {isCurrent && !isDone && (
+                  <span className="rounded-full bg-peacock/10 px-2 py-0.5 text-[11px] font-semibold text-peacock">Now</span>
+                )}
+              </li>
+            )
+          })}
+        </ol>
+        <Link to="/owner/fulfilment" className="mt-4 inline-block text-sm font-semibold text-peacock hover:underline">
+          {isDone ? 'View in Fulfilment →' : 'Go to Fulfilment to pack & print the supply slip →'}
+        </Link>
+      </div>
     </div>
   )
 }

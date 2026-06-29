@@ -138,6 +138,23 @@ export function OrderStatusBadge({ status, audience = 'owner' }) {
   return <Badge tone={s.tone}>{s.label}</Badge>
 }
 
+// Sale recorded, fulfilment underway — not yet delivered/picked up. The owner
+// uses this to spot orders still being worked at a glance.
+export const IN_PROCESS_STATUSES = ['approved', 'packed']
+
+// Pulsing "In process" pill for orders mid-fulfilment (owner side).
+export function InProcessBadge({ className = '' }) {
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border border-peacock/30 bg-peacock/5 px-2.5 py-0.5 text-xs font-semibold text-peacock ${className}`}>
+      <span className="relative flex h-2 w-2">
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-peacock/60" />
+        <span className="relative inline-flex h-2 w-2 rounded-full bg-peacock" />
+      </span>
+      In process
+    </span>
+  )
+}
+
 export function Spinner({ className = '' }) {
   return (
     <span

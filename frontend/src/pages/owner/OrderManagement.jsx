@@ -4,7 +4,7 @@ import { IconSearch, IconPhoto, IconInbox } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
-import { OrderStatusBadge, Badge, Spinner } from '../../components/ui'
+import { OrderStatusBadge, InProcessBadge, IN_PROCESS_STATUSES, Badge, Spinner } from '../../components/ui'
 
 // SPEC §6.4 — Order Management. All orders, newest first, with filters. The
 // owner taps through to approve/reject. Pending orders are surfaced first with a
@@ -35,6 +35,17 @@ export default function OrderManagement() {
     else setOrders(data ?? [])
   }
   useEffect(() => { load() }, [])
+
+  // Live updates: a new order, an approval, or staff packing/delivering all
+  // change the orders table — re-fetch so statuses (and the "In process" pill)
+  // stay current without a manual refresh.
+  useEffect(() => {
+    const channel = supabase
+      .channel('owner-order-list')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, load)
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [])
 
   const pendingCount = useMemo(
     () => (orders ? orders.filter((o) => o.status === 'pending').length : 0),
@@ -130,7 +141,10 @@ export default function OrderManagement() {
                   <p className="fig font-semibold">{money(o.amount).replace('₹', currency)}</p>
                   <p className="text-xs text-muted"><span className="fig">{qty(o.quantity)}</span> pcs</p>
                 </div>
-                <OrderStatusBadge status={o.status} />
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <OrderStatusBadge status={o.status} />
+                  {IN_PROCESS_STATUSES.includes(o.status) && <InProcessBadge />}
+                </div>
               </Link>
             </li>
           ))}
