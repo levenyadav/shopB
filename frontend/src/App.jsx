@@ -7,6 +7,7 @@ import Home from './pages/Home'
 import Dashboard from './pages/owner/Dashboard'
 import PurchaseEntry from './pages/owner/PurchaseEntry'
 import Inventory from './pages/owner/Inventory'
+import StockInquiry from './pages/owner/StockInquiry'
 import ComingSoon from './pages/owner/ComingSoon'
 
 // Sends the owner to their console; everyone else gets the Phase-1 placeholder
@@ -57,7 +58,7 @@ export default function App() {
         <Route index element={<Dashboard />} />
         <Route path="purchase" element={<PurchaseEntry />} />
         <Route path="inventory" element={<Inventory />} />
-        <Route path="stock" element={<ComingSoon title="Stock Inquiry" phase="Phase 2 polish" />} />
+        <Route path="stock" element={<StockInquiry />} />
         <Route path="orders" element={<ComingSoon title="Orders" phase="Phase 3" />} />
         <Route path="sales" element={<ComingSoon title="Sales" phase="Phase 3" />} />
         <Route path="payments" element={<ComingSoon title="Payments" phase="Phase 5" />} />
