@@ -1,19 +1,21 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   IconSearch, IconPlus, IconPencil, IconPhoto, IconX, IconCircleCheck, IconCamera,
+  IconDotsVertical, IconBarcode, IconPrinter,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty } from '../../lib/format'
 import { round2, stockValue } from '../../lib/helpers'
+import { printBarcodeLabels, barcodeValue } from '../../lib/barcodeLabel'
 import { Button, Field, Select, StockBadge, Badge, Spinner } from '../../components/ui'
 
 // SPEC §6.2 — Inventory master list. Owner sees all items, searches/filters,
 // and edits any field EXCEPT quantity (stock changes only via Purchase Entry,
 // Golden Rule #1). Total stock value (owner only) sits at the top.
 export default function Inventory() {
-  const { categories, suppliers } = useShop()
+  const { categories, suppliers, currency, shop } = useShop()
   const [items, setItems] = useState(null)
   const [err, setErr] = useState('')
   const [q, setQ] = useState('')
@@ -22,6 +24,7 @@ export default function Inventory() {
   const [show, setShow] = useState('active') // active | inactive | all
   const [lowOnly, setLowOnly] = useState(false)
   const [editing, setEditing] = useState(null)
+  const [printing, setPrinting] = useState(null) // item whose barcode label we're printing
   const [zoom, setZoom] = useState(null) // photo_url shown full-size in a lightbox
 
   async function load() {
@@ -159,12 +162,10 @@ export default function Inventory() {
                     <td className="px-4 py-3 text-right fig">{money(i.rate)}</td>
                     <td className="px-4 py-3 text-right fig text-muted">{money(stockValue(i))}</td>
                     <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => setEditing(i)}
-                        className="inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-muted hover:text-ink"
-                      >
-                        <IconPencil size={15} /> Edit
-                      </button>
+                      <RowActions
+                        onEdit={() => setEditing(i)}
+                        onPrint={() => setPrinting(i)}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -197,7 +198,132 @@ export default function Inventory() {
         />
       )}
 
+      {printing && (
+        <PrintBarcodeModal
+          item={printing}
+          currency={currency}
+          shopName={shop?.brand_text || shop?.name || ''}
+          onClose={() => setPrinting(null)}
+        />
+      )}
+
       {zoom && <Lightbox url={zoom} onClose={() => setZoom(null)} />}
+    </div>
+  )
+}
+
+// Per-row "action dot" menu: a three-dot button that opens Edit + Print barcode.
+function RowActions({ onEdit, onPrint }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', (e) => e.key === 'Escape' && setOpen(false))
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  return (
+    <div ref={ref} className="relative inline-block text-left">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="Actions"
+        className="inline-flex items-center justify-center rounded-lg border border-line p-1.5 text-muted hover:text-ink"
+      >
+        <IconDotsVertical size={16} />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-lg border border-line bg-card py-1 shadow-lg"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => { setOpen(false); onEdit() }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-ink hover:bg-paper-2"
+          >
+            <IconPencil size={15} className="text-muted" /> Edit
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => { setOpen(false); onPrint() }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-ink hover:bg-paper-2"
+          >
+            <IconBarcode size={15} className="text-muted" /> Print barcode
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Asks how many label copies to print, then sends a 3-per-row, 3cm × 2cm sheet
+// to the printer. Defaults to 3 copies — one full row on a terminal label roll.
+function PrintBarcodeModal({ item, currency, shopName, onClose }) {
+  const [copies, setCopies] = useState('3')
+  const value = barcodeValue(item)
+
+  function doPrint() {
+    const n = Math.max(1, Math.min(100, Math.floor(Number(copies) || 0)))
+    printBarcodeLabels(Array.from({ length: n }, () => item), { currency, shopName })
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 p-4" onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm space-y-4 rounded-lg border border-line bg-card p-6"
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="inline-flex items-center gap-2 font-[var(--font-display)] text-xl font-bold">
+            <IconBarcode size={22} /> Print barcode
+          </h3>
+          <button type="button" onClick={onClose} className="rounded-lg p-1 text-muted hover:bg-paper-2">
+            <IconX size={20} />
+          </button>
+        </div>
+
+        <div className="rounded-lg bg-paper-2 px-4 py-3">
+          <p className="font-medium text-ink">{item.name}</p>
+          <p className="fig text-xs text-muted">
+            {item.item_no}{value ? ` · code ${value}` : ''}
+          </p>
+        </div>
+
+        {!value ? (
+          <p className="rounded-lg bg-dues/10 px-3 py-2 text-sm text-dues">
+            This item has no barcode or Item No yet. Add a barcode in Edit first.
+          </p>
+        ) : (
+          <Field
+            label="How many labels?"
+            type="number"
+            min="1"
+            max="100"
+            value={copies}
+            onChange={(e) => setCopies(e.target.value)}
+          />
+        )}
+
+        <p className="flex items-center gap-1.5 text-xs text-muted">
+          <IconPrinter size={14} /> Labels print 3 to a row, each 3 × 2 cm.
+        </p>
+
+        <div className="flex justify-end gap-3 pt-1">
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button onClick={doPrint} disabled={!value}>
+            <IconPrinter size={18} /> Print
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }

@@ -1,0 +1,115 @@
+import JsBarcode from 'jsbarcode'
+
+// Barcode label printing (SPEC §6.2 — Inventory). Renders real Code128 barcodes
+// and prints them as 3cm × 2cm labels, laid out 3-per-row for a terminal/thermal
+// label printer. Prints via a hidden iframe so no popup-blocker gets in the way.
+
+const LABEL_W = '30mm' // 3 cm
+const LABEL_H = '20mm' // 2 cm
+const SHEET_W = '90mm' // 3 × LABEL_W — forces exactly 3 labels across each row
+
+// What we encode: the item's barcode if set, else its Item No as a fallback so
+// every item is printable. Code128 handles alphanumeric Item Nos fine.
+export function barcodeValue(item) {
+  return String(item?.barcode || item?.item_no || '').trim()
+}
+
+// Render one Code128 barcode to an inline <svg> string.
+function barcodeSvg(value) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  JsBarcode(svg, value, {
+    format: 'CODE128',
+    width: 1.5, // bar thickness; svg scales to the label anyway
+    height: 40,
+    displayValue: false, // we print our own, smaller code text below
+    margin: 0,
+  })
+  return new XMLSerializer().serializeToString(svg)
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ))
+}
+
+function labelHtml(item, currency, shopName) {
+  const value = barcodeValue(item)
+  const price = item.rate != null ? `${currency}${item.rate}` : ''
+  return `
+    <div class="label">
+      ${shopName ? `<div class="shop">${escapeHtml(shopName)}</div>` : ''}
+      <div class="nm">${escapeHtml(item.name || '')}</div>
+      <div class="bc">${barcodeSvg(value)}</div>
+      <div class="meta">
+        <span class="code">${escapeHtml(value)}</span>
+        <span class="price">${escapeHtml(price)}</span>
+      </div>
+    </div>`
+}
+
+// Print an array of items as labels (pass the same item N times for N copies).
+// shopName is printed across the top of every label as store branding.
+export function printBarcodeLabels(items, { currency = '₹', shopName = '' } = {}) {
+  const printable = items.filter((it) => barcodeValue(it))
+  if (!printable.length) {
+    window.alert('This item has no barcode or Item No yet, so there is nothing to print. Add a barcode in Edit first.')
+    return
+  }
+
+  const cells = printable.map((it) => labelHtml(it, currency, shopName)).join('')
+  const html = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Barcode labels</title>
+    <style>
+      @page { size: auto; margin: 3mm; }
+      * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      html, body { margin: 0; padding: 0; }
+      body { font-family: Arial, Helvetica, sans-serif; color: #000; }
+      .sheet { display: flex; flex-wrap: wrap; width: ${SHEET_W}; }
+      .label {
+        width: ${LABEL_W}; height: ${LABEL_H}; padding: 1mm;
+        display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+        overflow: hidden; page-break-inside: avoid;
+      }
+      .shop {
+        width: 100%; text-align: center; font-size: 6pt; font-weight: 700; line-height: 1.05;
+        text-transform: uppercase; letter-spacing: 0.2px;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .nm {
+        width: 100%; text-align: center; font-size: 6pt; font-weight: 600; line-height: 1.05;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .bc { width: 100%; flex: 1 1 auto; display: flex; align-items: center; justify-content: center; min-height: 0; }
+      .bc svg { width: 100%; height: 100%; }
+      .meta { width: 100%; display: flex; align-items: baseline; justify-content: space-between; gap: 1mm; }
+      .code { font-size: 6pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .price { font-size: 7pt; font-weight: 700; white-space: nowrap; }
+    </style>
+  </head>
+  <body><div class="sheet">${cells}</div></body>
+</html>`
+
+  const iframe = document.createElement('iframe')
+  iframe.setAttribute('aria-hidden', 'true')
+  Object.assign(iframe.style, {
+    position: 'fixed', right: '0', bottom: '0', width: '0', height: '0', border: '0',
+  })
+  document.body.appendChild(iframe)
+
+  const doc = iframe.contentWindow.document
+  doc.open()
+  doc.write(html)
+  doc.close()
+
+  // Give the iframe a tick to lay out the SVGs before printing, then clean up.
+  const cleanup = () => setTimeout(() => iframe.remove(), 1000)
+  setTimeout(() => {
+    iframe.contentWindow.focus()
+    iframe.contentWindow.print()
+    cleanup()
+  }, 150)
+}

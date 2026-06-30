@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import {
   IconCamera, IconPlus, IconBarcode, IconCircleCheck, IconX, IconFileSpreadsheet,
+  IconScan, IconCircleArrowRight,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
@@ -9,6 +10,33 @@ import { useShop } from '../../context/ShopContext'
 import { money, qty } from '../../lib/format'
 import { round2 } from '../../lib/helpers'
 import { Button, Field, Select, Textarea, Spinner, StockBadge } from '../../components/ui'
+import BarcodeScanner from '../../components/BarcodeScanner'
+
+// Public barcode → product lookup (Open Food Facts; free, keyless, CORS-friendly).
+// Only used as a fallback when a scanned code is NOT already in the shop's own
+// catalogue. Most custom cards/boxes won't be found here, so callers must treat
+// a null result as "unknown — create a new item from scratch".
+async function lookupPublicProduct(code) {
+  try {
+    const res = await fetch(
+      `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json` +
+        `?fields=product_name,brands,image_front_url,image_url`,
+    )
+    if (!res.ok) return null
+    const json = await res.json()
+    if (json?.status !== 1 || !json.product) return null
+    const p = json.product
+    const name = (p.product_name || '').trim()
+    if (!name) return null
+    return {
+      name,
+      brand: (p.brands || '').split(',')[0]?.trim() || '',
+      image: p.image_front_url || p.image_url || '',
+    }
+  } catch {
+    return null
+  }
+}
 
 // SPEC §6.1 / §6.9 — Purchase Entry, two modes:
 //   • new item       → /owner/purchase           (create item + opening stock)
@@ -30,15 +58,20 @@ const BLANK = {
 function NewItemEntry() {
   const { profile } = useAuth()
   const { shopId, categories, suppliers, refreshSuppliers } = useShop()
+  const navigate = useNavigate()
 
   const [form, setForm] = useState(BLANK)
   const [photoFile, setPhotoFile] = useState(null)
   const [photoPreview, setPhotoPreview] = useState('')
+  const [scannedPhotoUrl, setScannedPhotoUrl] = useState('') // external image from a scan
   const [errors, setErrors] = useState({})
   const [busy, setBusy] = useState(false)
   const [topError, setTopError] = useState('')
   const [done, setDone] = useState(null) // { item_no, name, quantity, total_cost }
   const [showSupplier, setShowSupplier] = useState(false)
+  const [showScanner, setShowScanner] = useState(false)
+  const [scanBusy, setScanBusy] = useState(false)
+  const [scanInfo, setScanInfo] = useState(null) // { tone, item?, name? }
 
   const set = (k) => (e) => {
     setForm((f) => ({ ...f, [k]: e.target.value }))
@@ -56,12 +89,57 @@ function NewItemEntry() {
     setPhotoFile(null)
     if (photoPreview) URL.revokeObjectURL(photoPreview)
     setPhotoPreview('')
+    setScannedPhotoUrl('')
   }
 
   function generateBarcode() {
     // Local fallback code (QR image generation is a Phase-3 edge function, §14.1).
     const code = 'SC' + Date.now().toString(36).toUpperCase()
     setForm((f) => ({ ...f, barcode: code }))
+  }
+
+  // A code was scanned (or typed in the scanner). Resolve it against real data:
+  //  1) our own catalogue → it's a restock; offer to jump straight to Restock.
+  //  2) else a public product DB → prefill name + photo for a brand-new item.
+  //  3) else just drop the code into the field to fill the rest manually.
+  async function handleDetected(code) {
+    setShowScanner(false)
+    setScanBusy(true)
+    setScanInfo(null)
+    setForm((f) => ({ ...f, barcode: code }))
+    setErrors((er) => ({ ...er, barcode: undefined }))
+    try {
+      const { data: existing } = await supabase
+        .from('items')
+        .select('id, item_no, name, quantity, low_stock_threshold')
+        .eq('shop_id', shopId)
+        .eq('barcode', code)
+        .maybeSingle()
+
+      if (existing) {
+        setScanInfo({ tone: 'found', item: existing })
+        return
+      }
+
+      const found = await lookupPublicProduct(code)
+      if (found) {
+        setForm((f) => ({ ...f, name: f.name.trim() || found.name }))
+        setErrors((er) => ({ ...er, name: undefined }))
+        if (found.image) {
+          setPhotoFile(null)
+          if (photoPreview) URL.revokeObjectURL(photoPreview)
+          setPhotoPreview('')
+          setScannedPhotoUrl(found.image)
+        }
+        setScanInfo({ tone: 'api', name: found.name })
+      } else {
+        setScanInfo({ tone: 'none' })
+      }
+    } catch {
+      setScanInfo({ tone: 'none' })
+    } finally {
+      setScanBusy(false)
+    }
   }
 
   function validate() {
@@ -95,7 +173,7 @@ function NewItemEntry() {
     if (!validate()) return
     setBusy(true)
     try {
-      const photo_url = await uploadPhoto()
+      const photo_url = (await uploadPhoto()) || scannedPhotoUrl || null
       const quantity = round2(form.quantity)
       const purchase_rate = round2(form.purchase_rate)
 
@@ -143,6 +221,7 @@ function NewItemEntry() {
       setForm(BLANK)
       clearPhoto()
       setErrors({})
+      setScanInfo(null)
     } catch (err) {
       setTopError(err.message || 'Could not save. Please try again.')
     } finally {
@@ -234,8 +313,8 @@ function NewItemEntry() {
         <Section title="Photo & barcode" hint="Both optional. A photo helps staff and the shopfront.">
           <div className="flex flex-wrap items-start gap-4">
             <div className="h-28 w-28 shrink-0 overflow-hidden rounded-lg border border-line bg-paper-2">
-              {photoPreview ? (
-                <img src={photoPreview} alt="preview" className="h-full w-full object-cover" />
+              {photoPreview || scannedPhotoUrl ? (
+                <img src={photoPreview || scannedPhotoUrl} alt="preview" className="h-full w-full object-cover" />
               ) : (
                 <div className="grid h-full w-full place-items-center text-muted">
                   <IconCamera size={26} />
@@ -244,10 +323,10 @@ function NewItemEntry() {
             </div>
             <div className="space-y-2">
               <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-line bg-card px-4 py-2.5 text-sm font-semibold hover:bg-paper-2">
-                <IconCamera size={18} /> {photoPreview ? 'Change photo' : 'Add photo'}
+                <IconCamera size={18} /> {photoPreview || scannedPhotoUrl ? 'Change photo' : 'Add photo'}
                 <input type="file" accept="image/*" capture="environment" className="hidden" onChange={onPhoto} />
               </label>
-              {photoPreview && (
+              {(photoPreview || scannedPhotoUrl) && (
                 <button type="button" onClick={clearPhoto}
                         className="ml-2 inline-flex items-center gap-1 text-xs text-dues hover:underline">
                   <IconX size={14} /> Remove
@@ -256,15 +335,47 @@ function NewItemEntry() {
             </div>
           </div>
 
-          <div className="flex items-end gap-3">
-            <div className="flex-1">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="min-w-[12rem] flex-1">
               <Field label="Barcode / QR code" placeholder="Scan or type a code"
                      value={form.barcode} onChange={set('barcode')} />
             </div>
+            <Button onClick={() => setShowScanner(true)} disabled={scanBusy}>
+              {scanBusy ? <><Spinner /> Looking up…</> : <><IconScan size={18} /> Scan</>}
+            </Button>
             <Button variant="ghost" onClick={generateBarcode}>
               <IconBarcode size={18} /> Generate
             </Button>
           </div>
+
+          {scanInfo?.tone === 'found' && (
+            <div className="rounded-lg border border-peacock/30 bg-peacock/5 px-4 py-3 text-sm">
+              <p className="font-semibold text-ink">This product is already in your shop.</p>
+              <p className="mt-0.5 text-muted">
+                <span className="fig">{scanInfo.item.item_no}</span> — {scanInfo.item.name} ·{' '}
+                in stock <span className="fig font-semibold text-ink">{qty(scanInfo.item.quantity)}</span>
+              </p>
+              <p className="mt-1 text-muted">Add new stock to it instead of creating a duplicate:</p>
+              <button
+                type="button"
+                onClick={() => navigate(`/owner/purchase?item=${scanInfo.item.id}`)}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-peacock px-3 py-2 text-sm font-semibold text-white hover:bg-peacock-700"
+              >
+                <IconCircleArrowRight size={17} /> Restock this item
+              </button>
+            </div>
+          )}
+          {scanInfo?.tone === 'api' && (
+            <p className="rounded-lg border border-profit/30 bg-profit/5 px-4 py-3 text-sm">
+              Found online: <span className="font-semibold text-ink">{scanInfo.name}</span>. Name and photo
+              were filled in — check them, then set your rates and supplier below.
+            </p>
+          )}
+          {scanInfo?.tone === 'none' && (
+            <p className="rounded-lg bg-paper-2 px-4 py-3 text-sm text-muted">
+              No matching product found. The code was saved — fill in the rest of the details below.
+            </p>
+          )}
         </Section>
 
         <Textarea label="Notes (optional)" rows={2} value={form.notes}
@@ -279,6 +390,10 @@ function NewItemEntry() {
           </Link>
         </div>
       </form>
+
+      {showScanner && (
+        <BarcodeScanner onClose={() => setShowScanner(false)} onDetected={handleDetected} />
+      )}
 
       {showSupplier && (
         <SupplierModal
