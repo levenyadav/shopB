@@ -8,6 +8,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useShop } from '../context/ShopContext'
+import Brand from './Brand'
 
 // Live count of orders awaiting approval (SPEC §6.4). Seeds from a count query,
 // then Supabase Realtime keeps it current: a new order bumps it, any status
@@ -155,9 +156,7 @@ function Sidebar({ shop, pending, open, onClose }) {
         }`}
       >
         <div className="flex items-center justify-between px-5 py-4">
-          <span className="shop-stamp text-[10px] font-bold">
-            {shop?.name?.split(' ').slice(0, 2).join(' ') || 'Shop'}
-          </span>
+          <Brand shop={shop} maxWords={2} textClassName="text-[10px]" logoClassName="h-9" />
           <button className="rounded-lg p-1 text-muted hover:bg-paper md:hidden" onClick={onClose} aria-label="Close menu">
             <IconX size={20} />
           </button>

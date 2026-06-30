@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import {
   IconBuildingStore, IconCategory, IconUsers, IconPlus, IconCheck,
   IconPencil, IconDeviceFloppy, IconInfoCircle, IconUserPlus,
+  IconPalette, IconPhoto, IconUpload, IconX,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
@@ -15,6 +16,7 @@ export default function Settings() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <ShopInfo />
+      <Branding />
       <Categories />
       <Staff />
     </div>
@@ -116,6 +118,139 @@ function ShopInfo() {
           {err && <ErrLine>{err}</ErrLine>}
           <Button type="submit" disabled={saving}>
             {saving ? <Spinner /> : <IconDeviceFloppy size={18} />} Save shop details
+          </Button>
+        </form>
+      )}
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Branding — logo image, square app icon, and a text wordmark. Logo/icon are
+// uploaded to the public 'brand-assets' bucket (or pasted as a URL); brand_text
+// is plain text. Shown in the sidebar, the shopfront header and the browser tab.
+// ---------------------------------------------------------------------------
+
+// One image slot: pick a file (-> Storage on save) OR paste a URL. A picked file
+// wins over the URL. `value` is the saved/pasted URL; `preview` is what to show.
+function ImagePicker({ label, hint, square, file, url, onFile, onUrl, onClear }) {
+  const [fileUrl, setFileUrl] = useState('')
+  useEffect(() => {
+    if (!file) { setFileUrl(''); return }
+    const u = URL.createObjectURL(file)
+    setFileUrl(u)
+    return () => URL.revokeObjectURL(u)
+  }, [file])
+  const preview = file ? fileUrl : url
+  const box = square ? 'h-20 w-20' : 'h-20 w-36'
+  return (
+    <div className="space-y-2">
+      <p className="text-sm font-medium text-ink">{label}</p>
+      {hint && <p className="text-xs text-muted">{hint}</p>}
+      <div className="flex flex-wrap items-start gap-4">
+        <div className={`${box} shrink-0 overflow-hidden rounded-lg border border-line bg-paper-2`}>
+          {preview ? (
+            <img src={preview} alt={`${label} preview`} className="h-full w-full object-contain" />
+          ) : (
+            <div className="grid h-full w-full place-items-center text-muted"><IconPhoto size={22} /></div>
+          )}
+        </div>
+        <div className="min-w-[12rem] flex-1 space-y-2">
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-line bg-card px-4 py-2.5 text-sm font-semibold hover:bg-paper-2">
+            <IconUpload size={18} /> {preview ? 'Change image' : 'Upload image'}
+            <input type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" className="hidden"
+                   onChange={(e) => onFile(e.target.files?.[0] || null)} />
+          </label>
+          <Field label="Or paste image URL" placeholder="https://…"
+                 value={file ? '' : url} onChange={(e) => onUrl(e.target.value)} disabled={!!file} />
+          {preview && (
+            <button type="button" onClick={onClear}
+                    className="inline-flex items-center gap-1 text-xs text-dues hover:underline">
+              <IconX size={14} /> Remove
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Branding() {
+  const { shop, shopId, refreshShop } = useShop()
+  const [logoFile, setLogoFile] = useState(null)
+  const [logoUrl, setLogoUrl] = useState('')
+  const [iconFile, setIconFile] = useState(null)
+  const [iconUrl, setIconUrl] = useState('')
+  const [brandText, setBrandText] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    if (!shop) return
+    setLogoUrl(shop.logo_url || ''); setIconUrl(shop.icon_url || '')
+    setBrandText(shop.brand_text || ''); setLogoFile(null); setIconFile(null)
+  }, [shop])
+
+  async function upload(file) {
+    const ext = (file.name.split('.').pop() || 'png').toLowerCase()
+    const path = `${shopId}/${crypto.randomUUID()}.${ext}`
+    const { error } = await supabase.storage
+      .from('brand-assets')
+      .upload(path, file, { upsert: false, contentType: file.type })
+    if (error) throw new Error('Upload failed: ' + error.message)
+    return supabase.storage.from('brand-assets').getPublicUrl(path).data.publicUrl
+  }
+
+  async function save(e) {
+    e.preventDefault()
+    setSaving(true); setMsg(''); setErr('')
+    try {
+      const logo_url = logoFile ? await upload(logoFile) : (logoUrl.trim() || null)
+      const icon_url = iconFile ? await upload(iconFile) : (iconUrl.trim() || null)
+      const { error } = await supabase.from('shops').update({
+        logo_url, icon_url, brand_text: brandText.trim() || null,
+      }).eq('id', shop.id)
+      if (error) throw error
+      setMsg('Branding saved.')
+      await refreshShop()
+    } catch (e2) {
+      setErr(e2.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Card icon={IconPalette} title="Branding" hint="Logo and name shown in the menu, the shopfront and the browser tab.">
+      {!shop ? (
+        <div className="grid place-items-center py-8 text-muted"><Spinner /></div>
+      ) : (
+        <form onSubmit={save} className="space-y-5">
+          <ImagePicker
+            label="Logo"
+            hint="Wide image shown in the header. PNG with a transparent background works best. Replaces the text name when set."
+            file={logoFile} url={logoUrl}
+            onFile={(f) => { setLogoFile(f); if (f) setLogoUrl('') }}
+            onUrl={setLogoUrl}
+            onClear={() => { setLogoFile(null); setLogoUrl('') }}
+          />
+          <ImagePicker
+            label="App icon"
+            hint="Small square image used as the browser tab icon (favicon). A simple square mark reads best."
+            square
+            file={iconFile} url={iconUrl}
+            onFile={(f) => { setIconFile(f); if (f) setIconUrl('') }}
+            onUrl={setIconUrl}
+            onClear={() => { setIconFile(null); setIconUrl('') }}
+          />
+          <Field label="Text logo" value={brandText} onChange={(e) => setBrandText(e.target.value)}
+                 placeholder={shop.name}
+                 hint="Shown as the wordmark when no logo image is set. Leave blank to use the shop name." />
+          {msg && <Ok>{msg}</Ok>}
+          {err && <ErrLine>{err}</ErrLine>}
+          <Button type="submit" disabled={saving}>
+            {saving ? <Spinner /> : <IconDeviceFloppy size={18} />} Save branding
           </Button>
         </form>
       )}

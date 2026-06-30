@@ -36,7 +36,7 @@ export function ShopProvider({ children }) {
   const loadShop = useCallback(async () => {
     const { data } = await supabase
       .from('shops')
-      .select('id, name, address, phone, currency_symbol, gstin, gst_rate')
+      .select('id, name, address, phone, currency_symbol, gstin, gst_rate, logo_url, icon_url, brand_text')
       .order('created_at')
       .limit(1)
       .maybeSingle()
@@ -56,6 +56,19 @@ export function ShopProvider({ children }) {
     return () => { active = false }
     // re-run when the signed-in profile (and thus shop/role) settles
   }, [session, profile?.id, loadShop, loadCategories, loadSuppliers])
+
+  // Drive the browser favicon + tab title from the shop's icon/name.
+  useEffect(() => {
+    if (shop?.name) document.title = shop.name
+    if (!shop?.icon_url) return
+    let link = document.querySelector("link[rel='icon']")
+    if (!link) {
+      link = document.createElement('link')
+      link.rel = 'icon'
+      document.head.appendChild(link)
+    }
+    link.href = shop.icon_url
+  }, [shop?.icon_url, shop?.name])
 
   const value = {
     shop,
