@@ -30,6 +30,7 @@ export default function OrderManagement() {
         'id, quantity, amount, status, buyer_type, created_at, ' +
           'item:items(name, photo_url), buyer:profiles!orders_buyer_id_fkey(full_name, phone)',
       )
+      .eq('source', 'shopfront') // counter (POS) sales are complete on creation — not order-queue work
       .order('created_at', { ascending: false })
     if (error) setErr(error.message)
     else setOrders(data ?? [])

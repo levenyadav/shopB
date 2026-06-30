@@ -89,9 +89,14 @@
 - Can view Inventory and Stock Inquiry
 - Can view assigned/packed orders
 - Can mark orders Packed, Delivered, or Picked Up
-- Cannot approve or reject orders
-- Cannot see profit, rates (purchase rate), or ledger
+- **Can finalize a Counter Sale (POS) for a walk-in** — pick/quick-add a named
+  buyer, ring up items, take payment. The bill is the approval (see §6.5a)
+- Cannot approve or reject **shopfront** orders
+- Cannot see profit, rates (purchase rate), or ledger (counter-sale cost/profit
+  is filled server-side; staff never read `purchase_rate`)
 - Cannot access Payment Entry or Reports
+- Can search/quick-add customer & dealer buyers (needed to bill them), which
+  exposes a buyer's running balance at the counter
 
 ### 4.3 Customer
 - Registers on Shopfront (name + phone)
@@ -254,6 +259,32 @@ The form never sets `items.quantity` directly.
 - Slip shows: shop name, date, buyer name, item, quantity, rate, total amount
 - View all sales in a list (owner only)
 - Filter sales by: date, buyer, payment type, category
+
+---
+
+### 6.5a Module 5a — Counter Sale (POS / Walk-in Billing)
+
+The over-the-counter path: owner OR staff bills a walk-in on the spot, no
+shopfront order needed. (Routes `/owner/counter-sale`, `/staff/counter-sale`.)
+
+- Search items by name/number, or **scan a barcode**, to add to a cart
+- Multi-item cart with per-line quantity and live running total
+- Buyer is **always named** — search an existing customer/dealer, or quick-add
+  (name + phone + type) inline. Quick-added buyers have **no login**
+- Rate auto-selects by buyer type (dealer → dealer rate, else retail); owner may
+  override a line price
+- Payment type at the counter: Cash (with change calculator) / UPI / Udhaar
+  (udhaar requires the named buyer; it raises their running balance)
+- **Complete sale** writes the whole bill **atomically** via the
+  `create_counter_sale(p_buyer_id, p_buyer_type, p_payment_type, p_lines)` RPC —
+  one transaction creates one `orders`+`sales` row per line (`source='counter'`,
+  shared `bill_id`). The existing sale trigger drops stock, books the
+  ledger/udhaar, and writes a **completed** fulfilment row (counter sales skip the
+  pack queue). A half-rung bill can never be left behind
+- Cost price + profit are computed **server-side** (trigger) so the staff client
+  never reads `purchase_rate`
+- Prints a multi-item **Cash Memo** receipt (grouped by `bill_id`)
+- Counter orders never appear in the owner's pending-orders queue
 
 ---
 
@@ -491,15 +522,23 @@ status            text        NOT NULL DEFAULT 'pending'
                               CHECK (status IN ('pending','approved','rejected',
                                                 'packed','delivered','picked_up'))
 rejection_reason  text
+source            text        NOT NULL DEFAULT 'shopfront' CHECK (source IN ('shopfront','counter'))  -- 014: POS origin
+bill_id           uuid        -- 014: groups all lines of one counter bill
 created_at        timestamptz DEFAULT now()
 updated_at        timestamptz DEFAULT now()
 ```
+
+> **Migration 014 (Counter Sale):** `profiles.id` is no longer a FK to
+> `auth.users` — buyers can exist **without a login** (`id` defaults to
+> `gen_random_uuid()`; login users keep `id == auth uid`). Counter orders/sales
+> are written atomically by the `create_counter_sale` RPC.
 
 ---
 
 ### 7.8 Table: sales
 
-Created automatically on order approval. The financial record of every sale.
+Created on order approval (shopfront) or on a Counter Sale (POS). The financial
+record of every sale.
 
 ```
 id                uuid        PRIMARY KEY default uuid_generate_v4()
@@ -515,13 +554,17 @@ amount            numeric     NOT NULL  -- quantity × rate_charged
 purchase_rate     numeric     NOT NULL  -- copied from item at sale time (for profit calc)
 profit            numeric     NOT NULL  -- (rate_charged − purchase_rate) × quantity
 payment_type      text        NOT NULL CHECK (payment_type IN ('cash','upi','udhaar'))
-approved_by       uuid        REFERENCES profiles(id) NOT NULL
+approved_by       uuid        REFERENCES profiles(id) NOT NULL  -- owner (shopfront) or staff/owner (counter)
+source            text        NOT NULL DEFAULT 'shopfront' CHECK (source IN ('shopfront','counter'))  -- 014
+bill_id           uuid        -- 014: shared by every line of one counter bill
 created_at        timestamptz DEFAULT now()
 ```
 
 **On INSERT trigger fires:**
 - `items.quantity` -= sale.quantity
 - If payment_type = 'udhaar': `profiles.balance_due` += sale.amount (for buyer)
+- If `source='counter'`: `purchase_rate`/`profit` filled server-side; order set
+  `picked_up` and fulfilment created **completed** (skips pack queue)
 - New row inserted into `ledger`
 - `orders.status` updated to 'approved'
 
@@ -997,6 +1040,11 @@ These small serverless functions handle tasks that need server-side logic.
 > to an Edge Function in Phase 7.
 
 ### Phase 7 — Future Additions
+
+- [x] Counter Sale / POS — walk-in billing for owner & staff (§6.5a, migration 014)
+- [x] Multi-item bills at the counter (grouped by `bill_id`; shopfront still one item/order)
+- [x] Login-less named buyers (profiles decoupled from auth — migration 014)
+
 - [ ] Returns handling (stock back up, payment reverse)
 - [ ] Supplier portal login
 - [ ] WhatsApp/SMS notifications via Edge Function
@@ -1019,7 +1067,7 @@ These small serverless functions handle tasks that need server-side logic.
 | Pricing | Three tiers: Purchase Rate (cost), Dealer Rate (wholesale), Rate (retail) |
 | Rate locking | Rate is locked at order time. Price changes do not affect existing orders |
 | Stock timing | Stock does NOT decrease when order is placed. Only decreases on owner approval |
-| Sale approval | Every order needs owner approval before it becomes a Sale |
+| Sale approval | Every shopfront order needs owner approval before it becomes a Sale. Exception: a Counter Sale (POS/walk-in) may be finalized by owner OR staff — the bill is the approval (§6.5a) |
 | Profit formula | (Rate charged − Purchase Rate) × Quantity. Uses buyer type to pick rate |
 | Payment timing | Owner selects payment type at approval: Cash / UPI / Udhaar |
 | Udhaar | Udhaar adds to buyer's running balance. Cleared by Payment Entry |

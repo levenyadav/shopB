@@ -26,6 +26,7 @@ import Reports from './pages/owner/Reports'
 import Settings from './pages/owner/Settings'
 import Sales from './pages/owner/Sales'
 import SaleDetail from './pages/owner/SaleDetail'
+import CounterSale from './pages/shared/CounterSale'
 
 // Guards buyer-only routes (My Orders / Account). Browsing is public; these
 // require a customer/dealer login. Owner is sent to the console, others home.
@@ -91,6 +92,7 @@ export default function App() {
         <Route path="bulk-purchase" element={<BulkPurchase />} />
         <Route path="inventory" element={<Inventory />} />
         <Route path="stock" element={<StockInquiry />} />
+        <Route path="counter-sale" element={<CounterSale />} />
         <Route path="orders" element={<OrderManagement />} />
         <Route path="orders/:id" element={<OrderDetail />} />
         <Route path="fulfilment" element={<Fulfilment detailBase="/owner/fulfilment" />} />
@@ -116,6 +118,7 @@ export default function App() {
         }
       >
         <Route index element={<Fulfilment detailBase="/staff/fulfil" />} />
+        <Route path="counter-sale" element={<CounterSale />} />
         <Route path="fulfil/:id" element={<FulfilmentDetail listPath="/staff" />} />
       </Route>
 

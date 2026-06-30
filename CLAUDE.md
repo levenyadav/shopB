@@ -15,10 +15,18 @@ A clickable HTML/CSS prototype was abandoned in favour of this real build.
 These come from SPEC §16 and the data model. Violating one corrupts the books.
 
 1. **Stock in only via Purchase Entry.** No other path increases `items.quantity`.
-2. **Stock out only on owner approval.** Placing an order does NOT change stock.
-   Stock decreases when the Sale record is created (on approval), via trigger.
-3. **Every order needs owner approval** before it becomes a Sale. Owner is the
-   only role that approves/rejects, sees profit, sees rates, and sees the ledger.
+2. **Stock out only on owner approval.** Placing a shopfront order does NOT change
+   stock. Stock decreases when the Sale record is created (on approval), via
+   trigger. (A Counter Sale creates the sale immediately — see rule 3.)
+3. **Every shopfront order needs owner approval** before it becomes a Sale. Owner
+   is the only role that approves/rejects shopfront orders, sees profit, sees
+   rates, and sees the ledger. **Exception — Counter Sale (POS, walk-in):** owner
+   OR staff may finalize a walk-in bill directly; ringing it up at the counter IS
+   the approval. Counter sales are written atomically via the
+   `create_counter_sale` RPC (`source='counter'`), reuse the same sale trigger,
+   and skip the pack queue. Staff still cannot approve shopfront orders, see
+   Reports profit, or read the ledger — cost/profit on counter sales are filled
+   server-side so staff never read `purchase_rate`.
 4. **Three-tier pricing:** `purchase_rate` (cost, internal only — never shown to
    buyers), `dealer_rate` (wholesale, shown to dealers), `rate` (retail, shown to
    customers/public).
