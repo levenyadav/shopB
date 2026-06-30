@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   IconArrowLeft, IconPhoto, IconCircleCheck, IconCircle, IconCircleX,
+  IconEye, IconPrinter,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
-import { OrderStatusBadge, Spinner } from '../../components/ui'
+import { buildInvoiceModel, viewInvoice, printInvoice } from '../../lib/invoiceTemplate'
+import { Button, OrderStatusBadge, Spinner } from '../../components/ui'
 
 // SPEC §10.2 — a buyer's view of one order: what they bought, the locked rate,
 // and how far it's progressed. Read-only; status is driven by the owner/staff.
@@ -30,8 +32,9 @@ const STATUS_NOTE = {
 
 export default function MyOrderDetail() {
   const { id } = useParams()
-  const { currency } = useShop()
+  const { shop, currency } = useShop()
   const [order, setOrder] = useState(null)
+  const [invoice, setInvoice] = useState(null)
   const [err, setErr] = useState('')
   const [missing, setMissing] = useState(false)
 
@@ -56,6 +59,17 @@ export default function MyOrderDetail() {
         .eq('id', data.item_id)
         .maybeSingle()
       if (active) setOrder({ ...data, item: item || null })
+
+      // Once approved, a Sale (and its invoice) exists. Read it from the
+      // buyer-safe customer_invoices view — never the sales table (cost leak).
+      if (data.status !== 'pending' && data.status !== 'rejected') {
+        const { data: inv } = await supabase
+          .from('customer_invoices')
+          .select('*')
+          .eq('order_id', id)
+          .maybeSingle()
+        if (active) setInvoice(inv || null)
+      }
     }
     load()
     return () => { active = false }
@@ -66,6 +80,20 @@ export default function MyOrderDetail() {
   if (!order) return <div className="grid place-items-center py-20 text-muted"><Spinner /></div>
 
   const rejected = order.status === 'rejected'
+  const invoiceModel = invoice && buildInvoiceModel({
+    shop,
+    buyer: {
+      name: invoice.bill_to_name,
+      address: invoice.bill_to_address,
+      gstin: invoice.bill_to_gstin,
+      state_name: invoice.bill_to_state_name,
+      state_code: invoice.bill_to_state_code,
+      type: invoice.buyer_type,
+    },
+    invoice: { invoice_no: invoice.invoice_no, date: invoice.created_at, notes: invoice.invoice_notes },
+    lines: [{ name: invoice.item_name, item_no: invoice.item_no, hsn: invoice.hsn_sac, qty: invoice.quantity, rate: invoice.rate_charged }],
+    gstRate: shop?.gst_rate,
+  })
   const reachedIndex = ORDER.indexOf(order.status)
   // picked_up maps onto the final "Delivered / Picked up" step, so the active
   // step never runs past the last visible row.
@@ -93,6 +121,20 @@ export default function MyOrderDetail() {
           <Row label="Total amount" value={<span className="fig font-semibold">{money(order.amount).replace('₹', currency)}</span>} />
           {order.notes && <Row label="Your note" value={order.notes} full />}
         </dl>
+
+        {invoiceModel && (
+          <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-line pt-4">
+            <span className="text-sm text-muted">
+              Invoice <span className="fig font-medium text-ink">{invoice.invoice_no}</span>
+            </span>
+            <Button onClick={() => viewInvoice(invoiceModel)}>
+              <IconEye size={18} /> View invoice
+            </Button>
+            <Button variant="ghost" onClick={() => printInvoice(invoiceModel)}>
+              <IconPrinter size={18} /> Download
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Status */}

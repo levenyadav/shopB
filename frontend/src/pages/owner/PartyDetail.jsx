@@ -32,7 +32,7 @@ export default function PartyDetail() {
         ? supabase.from('suppliers')
             .select('id, name, phone, contact_person, address, balance_due').eq('id', id).maybeSingle()
         : supabase.from('profiles')
-            .select('id, full_name, phone, role, balance_due, gstin, address').eq('id', id).maybeSingle()
+            .select('id, full_name, phone, role, balance_due, gstin, address, state_name, state_code').eq('id', id).maybeSingle()
 
       const ledgerQuery = supabase
         .from('ledger')
@@ -119,7 +119,10 @@ export default function PartyDetail() {
 // Owner-editable GST number + full address for a buyer. Optional; printed as the
 // "Bill To" block on customer invoices. Writes via profiles_owner_update RLS.
 function BillingEditor({ party, onSaved }) {
-  const [form, setForm] = useState({ gstin: party.gstin || '', address: party.address || '' })
+  const [form, setForm] = useState({
+    gstin: party.gstin || '', address: party.address || '',
+    state_name: party.state_name || '', state_code: party.state_code || '',
+  })
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState('')
@@ -128,7 +131,10 @@ function BillingEditor({ party, onSaved }) {
   async function save(e) {
     e.preventDefault()
     setSaving(true); setMsg(''); setErr('')
-    const patch = { gstin: form.gstin.trim() || null, address: form.address.trim() || null }
+    const patch = {
+      gstin: form.gstin.trim() || null, address: form.address.trim() || null,
+      state_name: form.state_name.trim() || null, state_code: form.state_code.trim() || null,
+    }
     const { error } = await supabase.from('profiles').update(patch).eq('id', party.id)
     setSaving(false)
     if (error) setErr(error.message)
@@ -144,6 +150,10 @@ function BillingEditor({ party, onSaved }) {
       <Field label="GST number" value={form.gstin} onChange={set('gstin')} placeholder="e.g. 27ABCDE1234F1Z5" />
       <Textarea label="Full address" rows={3} value={form.address} onChange={set('address')}
                 placeholder="Street, area, city, state — PIN." />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="State name" value={form.state_name} onChange={set('state_name')} placeholder="e.g. Uttar Pradesh" />
+        <Field label="State code" value={form.state_code} onChange={set('state_code')} placeholder="e.g. 09" maxLength={2} />
+      </div>
       {msg && <p className="rounded-lg bg-profit/10 px-3 py-2 text-xs text-profit">{msg}</p>}
       {err && <p className="rounded-lg bg-dues/10 px-3 py-2 text-xs text-dues">{err}</p>}
       <Button type="submit" disabled={saving}>

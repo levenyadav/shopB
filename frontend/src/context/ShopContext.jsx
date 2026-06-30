@@ -36,7 +36,8 @@ export function ShopProvider({ children }) {
   const loadShop = useCallback(async () => {
     const { data } = await supabase
       .from('shops')
-      .select('id, name, address, phone, currency_symbol, gstin, gst_rate, logo_url, icon_url, brand_text')
+      .select('id, name, address, phone, currency_symbol, gstin, gst_rate, logo_url, icon_url, brand_text, ' +
+        'legal_name, email, pan, state_name, state_code, bank_details, invoice_prefix')
       .order('created_at')
       .limit(1)
       .maybeSingle()

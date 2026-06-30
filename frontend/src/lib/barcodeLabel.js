@@ -33,31 +33,54 @@ function escapeHtml(s) {
   ))
 }
 
-function labelHtml(item, currency, shopName) {
+// Which rate (if any) to print, and where to read it from on the item.
+function rateText(item, currency, rate) {
+  const field = rate === 'customer' ? 'rate' : rate === 'dealer' ? 'dealer_rate' : null
+  if (!field || item[field] == null) return ''
+  return `${currency}${item[field]}`
+}
+
+// `opts` chooses what each label shows (see DEFAULT_LABEL_OPTS). The shop name,
+// item code, and rate can each be turned off; rate is one-at-a-time (customer
+// OR dealer). Item name is off by default but available as an option.
+function labelHtml(item, currency, shopName, opts) {
   const value = barcodeValue(item)
-  const price = item.rate != null ? `${currency}${item.rate}` : ''
+  const price = rateText(item, currency, opts.rate)
+  const showCode = opts.code && value
+  const showMeta = showCode || price
   return `
     <div class="label">
-      ${shopName ? `<div class="shop">${escapeHtml(shopName)}</div>` : ''}
-      <div class="nm">${escapeHtml(item.name || '')}</div>
-      <div class="bc">${barcodeSvg(value)}</div>
-      <div class="meta">
-        <span class="code">${escapeHtml(value)}</span>
+      ${opts.company && shopName ? `<div class="shop">${escapeHtml(shopName)}</div>` : ''}
+      ${opts.itemName ? `<div class="nm">${escapeHtml(item.name || '')}</div>` : ''}
+      ${opts.barcode ? `<div class="bc">${barcodeSvg(value)}</div>` : ''}
+      ${showMeta ? `<div class="meta">
+        <span class="code">${showCode ? escapeHtml(value) : ''}</span>
         <span class="price">${escapeHtml(price)}</span>
-      </div>
+      </div>` : ''}
     </div>`
+}
+
+// Default label contents — item name off per shop preference, retail rate shown.
+export const DEFAULT_LABEL_OPTS = {
+  company: true,
+  itemName: false,
+  barcode: true,
+  code: true,
+  rate: 'customer', // 'none' | 'customer' | 'dealer'
 }
 
 // Print an array of items as labels (pass the same item N times for N copies).
 // shopName is printed across the top of every label as store branding.
-export function printBarcodeLabels(items, { currency = '₹', shopName = '' } = {}) {
+// `labelOpts` selects what each label shows (see DEFAULT_LABEL_OPTS).
+export function printBarcodeLabels(items, { currency = '₹', shopName = '', labelOpts } = {}) {
+  const opts = { ...DEFAULT_LABEL_OPTS, ...labelOpts }
   const printable = items.filter((it) => barcodeValue(it))
   if (!printable.length) {
     window.alert('This item has no barcode or Item No yet, so there is nothing to print. Add a barcode in Edit first.')
     return
   }
 
-  const cells = printable.map((it) => labelHtml(it, currency, shopName)).join('')
+  const cells = printable.map((it) => labelHtml(it, currency, shopName, opts)).join('')
   const html = `<!doctype html>
 <html>
   <head>

@@ -16,7 +16,7 @@ export function AuthProvider({ children }) {
     // RLS allows a user to read their own profile row.
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, full_name, phone, role, balance_due, shop_id, is_active, gstin, address')
+      .select('id, full_name, phone, role, balance_due, shop_id, is_active, gstin, address, state_name, state_code')
       .eq('id', userId)
       .maybeSingle()
     // A failed read (e.g. a migration not yet applied) must not silently look

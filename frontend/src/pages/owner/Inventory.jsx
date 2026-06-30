@@ -8,7 +8,7 @@ import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty } from '../../lib/format'
 import { round2, stockValue } from '../../lib/helpers'
-import { printBarcodeLabels, barcodeValue } from '../../lib/barcodeLabel'
+import { printBarcodeLabels, barcodeValue, DEFAULT_LABEL_OPTS } from '../../lib/barcodeLabel'
 import { Button, Field, Select, Textarea, StockBadge, Badge, Spinner, TagsInput, ImagesInput } from '../../components/ui'
 
 // SPEC §6.2 — Inventory master list. Owner sees all items, searches/filters,
@@ -34,7 +34,7 @@ export default function Inventory() {
       .from('items')
       .select(
         'id, item_no, name, location, quantity, purchase_rate, dealer_rate, rate, ' +
-          'low_stock_threshold, moq, barcode, photo_url, is_active, supplier_id, category_id, ' +
+          'low_stock_threshold, moq, barcode, hsn_sac, photo_url, is_active, supplier_id, category_id, ' +
           'description, tags, images, ' +
           'supplier:suppliers(name), category:categories(name)',
       )
@@ -285,11 +285,15 @@ function RowActions({ onEdit, onPrint }) {
 // to the printer. Defaults to 3 copies — one full row on a terminal label roll.
 function PrintBarcodeModal({ item, currency, shopName, onClose }) {
   const [copies, setCopies] = useState('3')
+  const [opts, setOpts] = useState(DEFAULT_LABEL_OPTS)
   const value = barcodeValue(item)
+
+  const toggle = (key) => (e) => setOpts((o) => ({ ...o, [key]: e.target.checked }))
+  const setRate = (rate) => () => setOpts((o) => ({ ...o, rate }))
 
   function doPrint() {
     const n = Math.max(1, Math.min(100, Math.floor(Number(copies) || 0)))
-    printBarcodeLabels(Array.from({ length: n }, () => item), { currency, shopName })
+    printBarcodeLabels(Array.from({ length: n }, () => item), { currency, shopName, labelOpts: opts })
     onClose()
   }
 
@@ -320,14 +324,29 @@ function PrintBarcodeModal({ item, currency, shopName, onClose }) {
             This item has no barcode or Item No yet. Add a barcode in Edit first.
           </p>
         ) : (
-          <Field
-            label="How many labels?"
-            type="number"
-            min="1"
-            max="100"
-            value={copies}
-            onChange={(e) => setCopies(e.target.value)}
-          />
+          <>
+            <Field
+              label="How many labels?"
+              type="number"
+              min="1"
+              max="100"
+              value={copies}
+              onChange={(e) => setCopies(e.target.value)}
+            />
+
+            <div className="space-y-2 rounded-lg border border-line bg-paper-2 px-4 py-3">
+              <span className="block text-sm font-medium text-ink">What's on the label?</span>
+              <LabelCheck label="Company name" checked={opts.company} onChange={toggle('company')} />
+              <LabelCheck label="Item name" checked={opts.itemName} onChange={toggle('itemName')} />
+              <LabelCheck label="Barcode" checked={opts.barcode} onChange={toggle('barcode')} />
+              <LabelCheck label="Item code" checked={opts.code} onChange={toggle('code')} />
+
+              <span className="block pt-1 text-sm font-medium text-ink">Rate</span>
+              <LabelRadio label="None" checked={opts.rate === 'none'} onChange={setRate('none')} />
+              <LabelRadio label="Customer rate" checked={opts.rate === 'customer'} onChange={setRate('customer')} />
+              <LabelRadio label="Dealer rate" checked={opts.rate === 'dealer'} onChange={setRate('dealer')} />
+            </div>
+          </>
         )}
 
         <p className="flex items-center gap-1.5 text-xs text-muted">
@@ -342,6 +361,28 @@ function PrintBarcodeModal({ item, currency, shopName, onClose }) {
         </div>
       </div>
     </div>
+  )
+}
+
+// Compact label-content toggles for the print modal. Same row styling for both;
+// only the input type differs (checkbox = independent, radio = one-at-a-time).
+function LabelCheck({ label, checked, onChange }) {
+  return (
+    <label className="flex cursor-pointer items-center gap-2.5 text-sm text-ink">
+      <input type="checkbox" checked={checked} onChange={onChange}
+        className="ring-focus h-4 w-4 rounded border-line accent-peacock" />
+      {label}
+    </label>
+  )
+}
+
+function LabelRadio({ label, checked, onChange }) {
+  return (
+    <label className="flex cursor-pointer items-center gap-2.5 text-sm text-ink">
+      <input type="radio" name="bc-rate" checked={checked} onChange={onChange}
+        className="ring-focus h-4 w-4 border-line accent-peacock" />
+      {label}
+    </label>
   )
 }
 
@@ -406,6 +447,7 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
     low_stock_threshold: String(item.low_stock_threshold),
     moq: String(item.moq ?? 1),
     barcode: item.barcode || '',
+    hsn_sac: item.hsn_sac || '',
     description: item.description || '',
     tags: item.tags || [],
     images: item.images || [],
@@ -471,6 +513,7 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
           low_stock_threshold: round2(f.low_stock_threshold || 0),
           moq: round2(f.moq || 1),
           barcode: f.barcode.trim() || null,
+          hsn_sac: f.hsn_sac.trim() || null,
           photo_url,
           description: f.description.trim() || null,
           tags: f.tags,
@@ -564,7 +607,11 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
           <Field label="Dealer Rate" prefix="₹" type="number" min="0" step="0.01" value={f.dealer_rate} onChange={set('dealer_rate')} />
           <Field label="Rate (retail)" prefix="₹" type="number" min="0" step="0.01" value={f.rate} onChange={set('rate')} />
         </div>
-        <Field label="Barcode / QR" value={f.barcode} onChange={set('barcode')} />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Barcode / QR" value={f.barcode} onChange={set('barcode')} />
+          <Field label="HSN / SAC code" value={f.hsn_sac} onChange={set('hsn_sac')}
+                 hint="Optional. Printed on the tax invoice." />
+        </div>
 
         <Textarea
           label="Description" rows={3} value={f.description}

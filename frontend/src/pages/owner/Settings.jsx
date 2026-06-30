@@ -72,6 +72,9 @@ function ShopInfo() {
       name: shop.name || '', address: shop.address || '',
       phone: shop.phone || '', currency_symbol: shop.currency_symbol || '₹',
       gstin: shop.gstin || '', gst_rate: shop.gst_rate ? String(shop.gst_rate) : '',
+      legal_name: shop.legal_name || '', email: shop.email || '', pan: shop.pan || '',
+      state_name: shop.state_name || '', state_code: shop.state_code || '',
+      bank_details: shop.bank_details || '', invoice_prefix: shop.invoice_prefix || 'INV',
     })
   }, [shop])
 
@@ -85,6 +88,13 @@ function ShopInfo() {
       currency_symbol: form.currency_symbol.trim() || '₹',
       gstin: form.gstin.trim() || null,
       gst_rate: round2(form.gst_rate || 0),
+      legal_name: form.legal_name.trim() || null,
+      email: form.email.trim() || null,
+      pan: form.pan.trim() || null,
+      state_name: form.state_name.trim() || null,
+      state_code: form.state_code.trim() || null,
+      bank_details: form.bank_details.trim() || null,
+      invoice_prefix: form.invoice_prefix.trim() || 'INV',
     }).eq('id', shop.id)
     setSaving(false)
     if (error) setErr(error.message)
@@ -114,6 +124,26 @@ function ShopInfo() {
                    value={form.gst_rate} onChange={set('gst_rate')}
                    hint="Shown on invoices when GSTIN is set. Rates are tax-inclusive." />
           </div>
+
+          {/* Invoice billing identity — prints on the customer Tax Invoice. */}
+          <div className="space-y-4 rounded-lg border border-line bg-paper-2/40 p-4">
+            <p className="text-xs font-medium text-ink">Invoice billing details</p>
+            <Field label="Legal / billing name" value={form.legal_name} onChange={set('legal_name')}
+                   placeholder={form.name}
+                   hint="Registered name printed as the seller on invoices. Defaults to the shop name." />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="PAN" value={form.pan} onChange={set('pan')} placeholder="e.g. AAPFK9899Q" />
+              <Field label="Billing e-mail" type="email" value={form.email} onChange={set('email')} />
+              <Field label="State name" value={form.state_name} onChange={set('state_name')} placeholder="e.g. Uttar Pradesh" />
+              <Field label="State code" value={form.state_code} onChange={set('state_code')} placeholder="e.g. 09" maxLength={2} />
+            </div>
+            <Textarea label="Bank / UPI details" rows={2} value={form.bank_details} onChange={set('bank_details')}
+                      placeholder="Bank name, A/C no, IFSC or UPI ID — printed in the invoice footer." />
+            <Field label="Invoice number prefix" value={form.invoice_prefix} onChange={set('invoice_prefix')}
+                   placeholder="INV"
+                   hint="Invoices are numbered automatically, e.g. INV-0001. Changing the prefix only affects new invoices." />
+          </div>
+
           {msg && <Ok>{msg}</Ok>}
           {err && <ErrLine>{err}</ErrLine>}
           <Button type="submit" disabled={saving}>

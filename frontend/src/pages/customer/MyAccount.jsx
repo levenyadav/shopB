@@ -60,14 +60,17 @@ export default function MyAccount() {
 
 // Buyer billing details — GST number + full address for invoices. Optional.
 function BillingDetails({ profile, refreshProfile }) {
-  const [form, setForm] = useState({ gstin: '', address: '' })
+  const [form, setForm] = useState({ gstin: '', address: '', state_name: '', state_code: '' })
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState('')
 
   useEffect(() => {
-    if (profile) setForm({ gstin: profile.gstin || '', address: profile.address || '' })
-  }, [profile?.id, profile?.gstin, profile?.address])
+    if (profile) setForm({
+      gstin: profile.gstin || '', address: profile.address || '',
+      state_name: profile.state_name || '', state_code: profile.state_code || '',
+    })
+  }, [profile?.id, profile?.gstin, profile?.address, profile?.state_name, profile?.state_code])
 
   const set = (k) => (e) => { setForm((f) => ({ ...f, [k]: e.target.value })); setMsg(''); setErr('') }
 
@@ -77,6 +80,8 @@ function BillingDetails({ profile, refreshProfile }) {
     const { error } = await supabase.from('profiles').update({
       gstin: form.gstin.trim() || null,
       address: form.address.trim() || null,
+      state_name: form.state_name.trim() || null,
+      state_code: form.state_code.trim() || null,
     }).eq('id', profile.id)
     setSaving(false)
     if (error) setErr(error.message)
@@ -93,6 +98,10 @@ function BillingDetails({ profile, refreshProfile }) {
              placeholder="e.g. 27ABCDE1234F1Z5" />
       <Textarea label="Full address" rows={3} value={form.address} onChange={set('address')}
                 placeholder="Street, area, city, state — PIN." />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="State name" value={form.state_name} onChange={set('state_name')} placeholder="e.g. Uttar Pradesh" />
+        <Field label="State code" value={form.state_code} onChange={set('state_code')} placeholder="e.g. 09" maxLength={2} />
+      </div>
       {msg && <p className="rounded-lg bg-profit/10 px-3 py-2 text-xs text-profit">{msg}</p>}
       {err && <p className="rounded-lg bg-dues/10 px-3 py-2 text-xs text-dues">{err}</p>}
       <Button type="submit" disabled={saving}>
