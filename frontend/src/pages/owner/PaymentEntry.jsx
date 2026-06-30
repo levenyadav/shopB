@@ -122,7 +122,7 @@ export default function PaymentEntry() {
         />
       </div>
 
-      <div className="space-y-4 rounded-2xl border border-line bg-card p-5">
+      <div className="space-y-4 rounded-lg border border-line bg-card p-5">
         {/* Party */}
         {direction === 'in' && buyers === null ? (
           <div className="flex items-center gap-2 text-sm text-muted"><Spinner /> Loading parties…</div>
@@ -146,7 +146,7 @@ export default function PaymentEntry() {
 
         {/* Selected party's standing */}
         {party && (
-          <div className="flex items-center justify-between rounded-xl bg-paper-2 px-4 py-3 text-sm">
+          <div className="flex items-center justify-between rounded-lg bg-paper-2 px-4 py-3 text-sm">
             <span className="text-muted">
               {direction === 'in' ? 'Udhaar outstanding' : 'We currently owe'}
             </span>
@@ -229,7 +229,7 @@ function DirCard({ active, onClick, icon: Icon, title, sub, iconClass }) {
   return (
     <button
       type="button" onClick={onClick}
-      className={`rounded-2xl border p-4 text-left transition ${
+      className={`rounded-lg border p-4 text-left transition ${
         active ? 'border-peacock bg-peacock/5 shadow-sm' : 'border-line bg-card hover:bg-paper-2'
       }`}
     >
@@ -244,7 +244,7 @@ function DirCard({ active, onClick, icon: Icon, title, sub, iconClass }) {
 
 function NoParties({ direction }) {
   return (
-    <div className="grid place-items-center gap-2 rounded-xl border border-dashed border-line py-8 text-center text-sm text-muted">
+    <div className="grid place-items-center gap-2 rounded-lg border border-dashed border-line py-8 text-center text-sm text-muted">
       <IconUsers size={28} stroke={1.3} />
       {direction === 'in'
         ? <p>No customers or dealers yet. They appear here once they register on the shopfront.</p>
@@ -255,7 +255,7 @@ function NoParties({ direction }) {
 
 function Success({ done, currency, onAnother }) {
   return (
-    <div className="mx-auto max-w-md space-y-5 rounded-2xl border border-profit/30 bg-profit/10 p-8 text-center">
+    <div className="mx-auto max-w-md space-y-5 rounded-lg border border-profit/30 bg-profit/10 p-8 text-center">
       <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-profit/15 text-profit">
         <IconCircleCheck size={30} />
       </div>

@@ -83,7 +83,7 @@ export default function OrderDetail() {
       </Link>
 
       {/* Order summary */}
-      <div className="relative rounded-2xl border border-line bg-card p-5">
+      <div className="relative rounded-lg border border-line bg-card p-5">
         {(order.status === 'approved' || justApproved) && (
           <span className="posted-stamp absolute right-5 top-4 rounded px-3 py-1 text-sm font-bold">
             POSTED
@@ -115,7 +115,7 @@ export default function OrderDetail() {
         </dl>
 
         {/* Owner-only economics */}
-        <div className="mt-4 flex flex-wrap items-center gap-4 rounded-xl bg-paper-2 px-4 py-3 text-sm">
+        <div className="mt-4 flex flex-wrap items-center gap-4 rounded-lg bg-paper-2 px-4 py-3 text-sm">
           <span className="text-muted">Cost <span className="fig text-ink">{money(round2((item?.purchase_rate ?? 0) * order.quantity)).replace('₹', currency)}</span></span>
           <span className="text-muted">Profit <span className="fig font-semibold text-profit">{money(profit).replace('₹', currency)}</span></span>
           <span className="text-muted">Buyer udhaar now <span className="fig text-dues">{money(order.buyer?.balance_due).replace('₹', currency)}</span></span>
@@ -125,7 +125,7 @@ export default function OrderDetail() {
       {/* Actions */}
       {isPending ? (
         available < order.quantity ? (
-          <div className="rounded-2xl border border-dues/30 bg-dues/10 p-5">
+          <div className="rounded-lg border border-dues/30 bg-dues/10 p-5">
             <div className="flex items-center gap-2 text-dues">
               <IconAlertTriangle size={20} />
               <p className="font-semibold">Not enough stock to approve</p>
@@ -150,7 +150,7 @@ export default function OrderDetail() {
           />
         )
       ) : order.status === 'rejected' ? (
-        <div className="rounded-2xl border border-line bg-card p-5 text-sm text-muted">
+        <div className="rounded-lg border border-line bg-card p-5 text-sm text-muted">
           This order was rejected.{order.rejection_reason ? <> Reason: <span className="text-ink">{order.rejection_reason}</span></> : ' No stock or money changed.'}
         </div>
       ) : (
@@ -171,7 +171,7 @@ function ApprovedTracker({ order }) {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-profit/30 bg-profit/10 p-5">
+      <div className="rounded-lg border border-profit/30 bg-profit/10 p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-profit">
             <IconCircleCheck size={20} />
@@ -182,7 +182,7 @@ function ApprovedTracker({ order }) {
         <p className="mt-1 text-sm text-ink/80">Stock has been adjusted and a fulfilment job opened. Track its progress live below.</p>
       </div>
 
-      <div className="rounded-2xl border border-line bg-card p-5">
+      <div className="rounded-lg border border-line bg-card p-5">
         <div className="flex items-center justify-between">
           <p className="text-sm font-semibold">Fulfilment status</p>
           <span className="inline-flex items-center gap-1.5 text-xs text-muted">
@@ -248,7 +248,7 @@ function ApprovePanel({ order, item, profit, ownerId, currency, onApproved, onRe
   if (rejecting) return <RejectPanel order={order} onCancel={() => setRejecting(false)} onDone={onRejected} />
 
   return (
-    <div className="space-y-4 rounded-2xl border border-line bg-card p-5">
+    <div className="space-y-4 rounded-lg border border-line bg-card p-5">
       <p className="font-semibold">Approve this order</p>
 
       <div>
@@ -308,7 +308,7 @@ function RejectPanel({ order, onCancel, onDone }) {
   }
 
   return (
-    <div className="space-y-4 rounded-2xl border border-dues/30 bg-card p-5">
+    <div className="space-y-4 rounded-lg border border-dues/30 bg-card p-5">
       <p className="font-semibold">Reject this order</p>
       <Textarea
         label="Reason (optional — shown to the buyer)"
@@ -347,7 +347,7 @@ function Row({ label, value, full }) {
 
 function Thumb({ url }) {
   return (
-    <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-line bg-paper-2">
+    <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-line bg-paper-2">
       {url ? <img src={url} alt="" className="h-full w-full object-cover" />
            : <div className="grid h-full w-full place-items-center text-muted"><IconPhoto size={22} /></div>}
     </div>
@@ -355,5 +355,5 @@ function Thumb({ url }) {
 }
 
 function Empty({ children }) {
-  return <div className="mx-auto max-w-md rounded-2xl border border-dashed border-line p-10 text-center text-muted">{children}</div>
+  return <div className="mx-auto max-w-md rounded-lg border border-dashed border-line p-10 text-center text-muted">{children}</div>
 }

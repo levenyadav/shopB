@@ -63,7 +63,7 @@ export default function ItemDetail() {
 
       <div className="grid gap-6 md:grid-cols-2">
         {/* Photo */}
-        <div className="overflow-hidden rounded-2xl border border-line bg-paper-2">
+        <div className="overflow-hidden rounded-lg border border-line bg-paper-2">
           <div className="aspect-square">
             {item.photo_url ? (
               <img src={item.photo_url} alt={item.name} className="h-full w-full object-cover" />
@@ -98,7 +98,7 @@ export default function ItemDetail() {
               shopId={shopId} buyerId={profile.id} buyerType={role} currency={currency}
             />
           ) : role === 'owner' || role === 'staff' ? (
-            <p className="rounded-xl border border-line bg-paper-2 px-4 py-3 text-sm text-muted">
+            <p className="rounded-lg border border-line bg-paper-2 px-4 py-3 text-sm text-muted">
               You’re signed in as {role}. Ordering is for customers and dealers — this is how your shopfront looks to them.
             </p>
           ) : (
@@ -144,7 +144,7 @@ function OrderBox({ item, price, available, shopId, buyerId, buyerType, currency
 
   if (done) {
     return (
-      <div className="rounded-2xl border border-profit/30 bg-profit/10 p-5">
+      <div className="rounded-lg border border-profit/30 bg-profit/10 p-5">
         <div className="flex items-center gap-2 text-profit">
           <IconCircleCheck size={22} />
           <p className="font-semibold">Order placed</p>
@@ -161,7 +161,7 @@ function OrderBox({ item, price, available, shopId, buyerId, buyerType, currency
   }
 
   return (
-    <div className="space-y-4 rounded-2xl border border-line bg-card p-5">
+    <div className="space-y-4 rounded-lg border border-line bg-card p-5">
       {/* Quantity stepper */}
       <div>
         <p className="mb-1.5 text-sm font-medium">How many?</p>
@@ -210,7 +210,7 @@ function OrderBox({ item, price, available, shopId, buyerId, buyerType, currency
 
 function Empty({ children }) {
   return (
-    <div className="mx-auto max-w-md rounded-2xl border border-dashed border-line p-10 text-center text-muted">
+    <div className="mx-auto max-w-md rounded-lg border border-dashed border-line p-10 text-center text-muted">
       {children}
     </div>
   )

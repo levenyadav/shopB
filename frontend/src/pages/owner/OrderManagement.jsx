@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { IconSearch, IconPhoto, IconInbox } from '@tabler/icons-react'
+import { IconSearch, IconInbox } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
-import { OrderStatusBadge, InProcessBadge, IN_PROCESS_STATUSES, Badge, Spinner } from '../../components/ui'
+import { OrderStatusBadge, InProcessBadge, IN_PROCESS_STATUSES, Badge, Spinner, PhotoThumb } from '../../components/ui'
 
 // SPEC §6.4 — Order Management. All orders, newest first, with filters. The
 // owner taps through to approve/reject. Pending orders are surfaced first with a
@@ -72,25 +72,25 @@ export default function OrderManagement() {
     <div className="space-y-5">
       {/* Pending summary */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="rounded-xl border border-line bg-card px-5 py-3">
+        <div className="rounded-lg border border-line bg-card px-5 py-3">
           <p className="text-xs text-muted">Orders waiting for approval</p>
           <p className="fig text-2xl font-bold text-saffron">{pendingCount}</p>
         </div>
       </div>
 
       {/* Filters */}
-      <div className="grid gap-3 rounded-xl border border-line bg-card p-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 rounded-lg border border-line bg-card p-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="relative sm:col-span-2 lg:col-span-2">
           <IconSearch size={18} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search buyer or item…"
-            className="w-full rounded-lg border border-line bg-card py-2.5 pl-9 pr-3 text-ink outline-none focus:border-peacock focus:ring-2 focus:ring-peacock/25"
+            className="w-full rounded-lg border border-line bg-card py-2.5 pl-9 pr-3 text-ink outline-none focus:border-peacock focus:ring-1 focus:ring-peacock"
           />
         </div>
         <select value={buyerType} onChange={(e) => setBuyerType(e.target.value)}
-                className="rounded-lg border border-line bg-card px-3 py-2.5 text-ink outline-none focus:border-peacock focus:ring-2 focus:ring-peacock/25">
+                className="rounded-lg border border-line bg-card px-3 py-2.5 text-ink outline-none focus:border-peacock focus:ring-1 focus:ring-peacock">
           <option value="">All buyers</option>
           <option value="customer">Customers</option>
           <option value="dealer">Dealers</option>
@@ -114,7 +114,7 @@ export default function OrderManagement() {
       {orders === null ? (
         <div className="grid place-items-center py-16 text-muted"><Spinner /></div>
       ) : filtered.length === 0 ? (
-        <div className="grid place-items-center gap-3 rounded-2xl border border-dashed border-line py-16 text-center text-muted">
+        <div className="grid place-items-center gap-3 rounded-lg border border-dashed border-line py-16 text-center text-muted">
           <IconInbox size={38} stroke={1.3} />
           <p>No orders here yet.</p>
         </div>
@@ -124,9 +124,9 @@ export default function OrderManagement() {
             <li key={o.id}>
               <Link
                 to={`/owner/orders/${o.id}`}
-                className="flex items-center gap-4 rounded-xl border border-line bg-card p-3 transition hover:shadow-sm"
+                className="flex items-center gap-4 rounded-lg border border-line bg-card p-3 transition hover:border-ink/20"
               >
-                <Thumb url={o.item?.photo_url} />
+                <PhotoThumb url={o.item?.photo_url} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium text-ink">{o.item?.name || 'Item'}</p>
                   <p className="truncate text-xs text-muted">
@@ -154,11 +154,3 @@ export default function OrderManagement() {
   )
 }
 
-function Thumb({ url }) {
-  return (
-    <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-line bg-paper-2">
-      {url ? <img src={url} alt="" className="h-full w-full object-cover" />
-           : <div className="grid h-full w-full place-items-center text-muted"><IconPhoto size={20} /></div>}
-    </div>
-  )
-}

@@ -19,7 +19,7 @@ const ENTRY = {
 export default function LedgerTable({ entries, currency = '₹' }) {
   if (!entries?.length) {
     return (
-      <div className="grid place-items-center gap-3 rounded-2xl border border-dashed border-line py-14 text-center text-muted">
+      <div className="grid place-items-center gap-3 rounded-lg border border-dashed border-line py-14 text-center text-muted">
         <IconReceipt2 size={36} stroke={1.3} />
         <p>No ledger entries yet for this party.</p>
       </div>
@@ -27,7 +27,7 @@ export default function LedgerTable({ entries, currency = '₹' }) {
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-line bg-card">
+    <div className="overflow-hidden rounded-lg border border-line bg-card">
       {/* header — hidden on phones, the cards carry their own labels there */}
       <div className="hidden grid-cols-[1fr_auto_auto] gap-4 border-b border-line bg-paper-2 px-5 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted sm:grid">
         <span>Entry</span>

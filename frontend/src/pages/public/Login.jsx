@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import Credit from '../../components/Credit'
 
 const TABS = { in: 'Sign in', up: 'Create account' }
 
@@ -57,7 +58,7 @@ export default function Login() {
       {/* Left — the khata page */}
       <aside className="relative hidden md:flex flex-col justify-between p-12 khata-page">
         <div className="pl-12">
-          <span className="shop-stamp text-sm font-bold">Shree Card &amp; Gift</span>
+          <span className="shop-stamp text-sm font-bold">Khattri Card Pratham</span>
         </div>
         <div className="pl-12 max-w-md">
           <h1 className="font-[var(--font-display)] text-4xl leading-tight font-extrabold text-ink">
@@ -78,7 +79,7 @@ export default function Login() {
         <div className="w-full max-w-sm">
           {/* mobile brand */}
           <div className="md:hidden mb-8">
-            <span className="shop-stamp text-xs font-bold">Shree Card &amp; Gift</span>
+            <span className="shop-stamp text-xs font-bold">Khattri Card Pratham</span>
           </div>
 
           <div className="inline-flex rounded-lg border border-line bg-card p-1 mb-7">
@@ -163,6 +164,10 @@ export default function Login() {
               {busy ? 'Please wait…' : tab === 'in' ? 'Sign in' : 'Create account'}
             </button>
           </form>
+
+          <div className="mt-8 text-center">
+            <Credit />
+          </div>
         </div>
       </main>
     </div>
@@ -176,7 +181,7 @@ function Field({ label, ...props }) {
       <input
         {...props}
         className="w-full rounded-lg border border-line bg-card px-3 py-2.5 text-ink
-                   outline-none focus:border-peacock focus:ring-2 focus:ring-peacock/25"
+                   outline-none focus:border-peacock focus:ring-1 focus:ring-peacock"
       />
     </label>
   )

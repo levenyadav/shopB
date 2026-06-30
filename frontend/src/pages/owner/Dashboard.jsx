@@ -120,7 +120,7 @@ export default function Dashboard() {
       </div>
 
       {/* Quick actions (SPEC §10.5) */}
-      <section className="rounded-2xl border border-line bg-card p-5">
+      <section className="rounded-lg border border-line bg-card p-5">
         <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">
           Quick actions
         </h3>
@@ -155,7 +155,7 @@ function Stat({ icon: Icon, tone, label, value, sub, to }) {
   return (
     <Link
       to={to}
-      className="group rounded-2xl border border-line bg-card p-5 transition hover:border-peacock/40 hover:shadow-sm"
+      className="group rounded-lg border border-line bg-card p-5 transition hover:border-peacock/40 hover:border-ink/20"
     >
       <div className={`mb-3 grid h-10 w-10 place-items-center rounded-lg ${STAT_TONES[tone]}`}>
         <Icon size={20} />

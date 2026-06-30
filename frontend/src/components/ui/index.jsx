@@ -1,46 +1,51 @@
 // Shared UI primitives — "Counter & Khata" styling (tokens in index.css).
 // Big labels, clear focus rings, one obvious primary action per screen (SPEC §3).
 
-const TONES = {
-  peacock: 'bg-peacock/10 text-peacock',
-  saffron: 'bg-saffron/15 text-saffron',
-  profit: 'bg-profit/10 text-profit',
-  dues: 'bg-dues/10 text-dues',
-  muted: 'bg-paper-2 text-muted',
+import { useState } from 'react'
+import { IconPhoto, IconX } from '@tabler/icons-react'
+
+// Tones set the ink colour; the .stamp utility derives its rule + wash from it.
+const TONE = {
+  peacock: 'text-peacock',
+  saffron: 'text-saffron',
+  profit: 'text-profit',
+  dues: 'text-dues',
+  muted: 'text-muted',
 }
 
 export function Badge({ tone = 'muted', children, className = '' }) {
   return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${TONES[tone] || TONES.muted} ${className}`}
-    >
+    <span className={`stamp ${TONE[tone] || TONE.muted} ${className}`}>
       {children}
     </span>
   )
 }
 
+// Buttons read as pressable counter keys: solid fill, a thin pressed edge
+// underneath (inset shadow, not a floaty drop), nudging down on click. Crisp
+// 6px radius — one step tighter than a sheet, one looser than a stamp.
 const BTN = {
   primary:
-    'bg-peacock hover:bg-peacock-700 text-white shadow-sm disabled:opacity-60',
+    'bg-peacock text-white shadow-[inset_0_-2px_0_var(--color-peacock-700)] hover:bg-peacock-700 hover:shadow-none active:translate-y-px disabled:opacity-60 disabled:shadow-none',
   ghost:
-    'bg-card border border-line text-ink hover:bg-paper-2 disabled:opacity-60',
+    'bg-card border border-line text-ink hover:border-ink/25 hover:bg-paper-2 active:translate-y-px disabled:opacity-60',
   danger:
-    'bg-dues/10 border border-dues/30 text-dues hover:bg-dues/20 disabled:opacity-60',
+    'bg-card border border-dues/40 text-dues hover:bg-dues hover:text-white active:translate-y-px disabled:opacity-60',
   saffron:
-    'bg-saffron hover:brightness-95 text-white shadow-sm disabled:opacity-60',
+    'bg-saffron text-white shadow-[inset_0_-2px_0_color-mix(in_srgb,var(--color-saffron)_70%,#000)] hover:brightness-95 hover:shadow-none active:translate-y-px disabled:opacity-60',
 }
 
 export function Button({ variant = 'primary', className = '', type = 'button', ...props }) {
   return (
     <button
       type={type}
-      className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition ${BTN[variant]} ${className}`}
+      className={`ring-focus inline-flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold transition-colors ${BTN[variant]} ${className}`}
       {...props}
     />
   )
 }
 
-export function Field({ label, hint, error, prefix, className = '', ...props }) {
+export function Field({ label, hint, error, prefix, suffix, className = '', ...props }) {
   return (
     <label className="block">
       {label && (
@@ -51,12 +56,14 @@ export function Field({ label, hint, error, prefix, className = '', ...props }) 
           <span className="pointer-events-none absolute left-3 fig text-muted">{prefix}</span>
         )}
         <input
-          className={`w-full rounded-lg border bg-card px-3 py-2.5 text-ink outline-none transition
-            focus:border-peacock focus:ring-2 focus:ring-peacock/25
-            ${prefix ? 'pl-7' : ''}
+          className={`ring-focus w-full rounded-md border bg-card px-3 py-2.5 text-ink
+            ${prefix ? 'pl-7' : ''} ${suffix ? 'pr-9' : ''}
             ${error ? 'border-dues' : 'border-line'} ${className}`}
           {...props}
         />
+        {suffix && (
+          <span className="pointer-events-none absolute right-3 fig text-muted">{suffix}</span>
+        )}
       </span>
       {error ? (
         <span className="mt-1 block text-xs text-dues">{error}</span>
@@ -74,8 +81,7 @@ export function Select({ label, error, children, className = '', ...props }) {
         <span className="mb-1.5 block text-sm font-medium text-ink">{label}</span>
       )}
       <select
-        className={`w-full rounded-lg border bg-card px-3 py-2.5 text-ink outline-none transition
-          focus:border-peacock focus:ring-2 focus:ring-peacock/25
+        className={`ring-focus w-full rounded-md border bg-card px-3 py-2.5 text-ink
           ${error ? 'border-dues' : 'border-line'} ${className}`}
         {...props}
       >
@@ -93,8 +99,7 @@ export function Textarea({ label, className = '', ...props }) {
         <span className="mb-1.5 block text-sm font-medium text-ink">{label}</span>
       )}
       <textarea
-        className={`w-full rounded-lg border border-line bg-card px-3 py-2.5 text-ink outline-none transition
-          focus:border-peacock focus:ring-2 focus:ring-peacock/25 ${className}`}
+        className={`ring-focus w-full rounded-md border border-line bg-card px-3 py-2.5 text-ink ${className}`}
         {...props}
       />
     </label>
@@ -142,14 +147,12 @@ export function OrderStatusBadge({ status, audience = 'owner' }) {
 // uses this to spot orders still being worked at a glance.
 export const IN_PROCESS_STATUSES = ['approved', 'packed']
 
-// Pulsing "In process" pill for orders mid-fulfilment (owner side).
+// "In process" stamp for orders mid-fulfilment (owner side). A steady inked dot,
+// not a radar ping — the realtime list already moves on its own.
 export function InProcessBadge({ className = '' }) {
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full border border-peacock/30 bg-peacock/5 px-2.5 py-0.5 text-xs font-semibold text-peacock ${className}`}>
-      <span className="relative flex h-2 w-2">
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-peacock/60" />
-        <span className="relative inline-flex h-2 w-2 rounded-full bg-peacock" />
-      </span>
+    <span className={`stamp text-peacock ${className}`}>
+      <span className="h-1.5 w-1.5 rounded-full bg-peacock" />
       In process
     </span>
   )
@@ -161,5 +164,54 @@ export function Spinner({ className = '' }) {
       className={`inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent ${className}`}
       aria-hidden
     />
+  )
+}
+
+// Product thumbnail with a built-in click-to-zoom lightbox. Drop-in replacement
+// for the per-page <Thumb url={...}/>. Manages its own overlay state, so callers
+// just pass the photo URL (and optionally a size class). Anchor-safe: the trigger
+// is a span (not a button) and all clicks preventDefault + stopPropagation, so it
+// works inside a clickable <Link> row without navigating or nesting <button> in <a>.
+export function PhotoThumb({ url, size = 'h-14 w-14', alt = '' }) {
+  const [open, setOpen] = useState(false)
+  const stop = (e) => { e.preventDefault(); e.stopPropagation() }
+  if (!url) {
+    return (
+      <div className={`grid ${size} shrink-0 place-items-center rounded-lg border border-line bg-paper-2 text-muted`}>
+        <IconPhoto size={22} />
+      </div>
+    )
+  }
+  return (
+    <>
+      <span
+        role="button"
+        tabIndex={0}
+        title="View photo"
+        onClick={(e) => { stop(e); setOpen(true) }}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { stop(e); setOpen(true) } }}
+        className={`group ${size} block shrink-0 cursor-pointer overflow-hidden rounded-md border border-line bg-paper-2 transition-colors hover:border-peacock`}
+      >
+        <img src={url} alt={alt} className="h-full w-full object-cover transition group-hover:scale-105" />
+      </span>
+      {open && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-ink/70 p-4" onClick={(e) => { stop(e); setOpen(false) }}>
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => { stop(e); setOpen(false) }}
+            className="absolute right-4 top-4 cursor-pointer rounded-lg bg-card/90 p-2 text-ink hover:bg-card"
+          >
+            <IconX size={22} />
+          </span>
+          <img
+            src={url}
+            alt={alt}
+            onClick={stop}
+            className="max-h-[85vh] max-w-full rounded-lg border border-line object-contain shadow-2xl"
+          />
+        </div>
+      )}
+    </>
   )
 }

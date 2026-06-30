@@ -44,7 +44,7 @@ export default function StockInquiry() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 rounded-xl border border-line bg-card px-5 py-3">
+        <div className="flex items-center gap-2 rounded-lg border border-line bg-card px-5 py-3">
           <IconAlertTriangle size={20} className="text-saffron" />
           <div>
             <p className="text-xs text-muted">Items to reorder</p>
@@ -67,7 +67,7 @@ export default function StockInquiry() {
       {items === null ? (
         <div className="grid place-items-center py-16 text-muted"><Spinner /></div>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-line bg-card">
+        <div className="overflow-hidden rounded-lg border border-line bg-card">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="bg-paper-2 text-muted">

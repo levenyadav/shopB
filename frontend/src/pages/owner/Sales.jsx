@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { IconSearch, IconPhoto, IconInbox, IconCoin } from '@tabler/icons-react'
+import { IconSearch, IconInbox, IconCoin } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
-import { Badge, Spinner } from '../../components/ui'
+import { Badge, Spinner, PhotoThumb } from '../../components/ui'
 
 // SPEC §6.5 / §10.4 — Sales list (owner only). Every approved order becomes a
 // sale row (created by the approval insert in OrderDetail; stock/ledger handled
@@ -91,36 +91,36 @@ export default function Sales() {
       </div>
 
       {/* Filters: search + buyer + category + date, payment as pills */}
-      <div className="grid gap-3 rounded-xl border border-line bg-card p-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 rounded-lg border border-line bg-card p-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="relative sm:col-span-2">
           <IconSearch size={18} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search buyer or item…"
-            className="w-full rounded-lg border border-line bg-card py-2.5 pl-9 pr-3 text-ink outline-none focus:border-peacock focus:ring-2 focus:ring-peacock/25"
+            className="w-full rounded-lg border border-line bg-card py-2.5 pl-9 pr-3 text-ink outline-none focus:border-peacock focus:ring-1 focus:ring-peacock"
           />
         </div>
         <select value={buyerType} onChange={(e) => setBuyerType(e.target.value)}
-                className="rounded-lg border border-line bg-card px-3 py-2.5 text-ink outline-none focus:border-peacock focus:ring-2 focus:ring-peacock/25">
+                className="rounded-lg border border-line bg-card px-3 py-2.5 text-ink outline-none focus:border-peacock focus:ring-1 focus:ring-peacock">
           <option value="">All buyers</option>
           <option value="customer">Customers</option>
           <option value="dealer">Dealers</option>
         </select>
         <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}
-                className="rounded-lg border border-line bg-card px-3 py-2.5 text-ink outline-none focus:border-peacock focus:ring-2 focus:ring-peacock/25">
+                className="rounded-lg border border-line bg-card px-3 py-2.5 text-ink outline-none focus:border-peacock focus:ring-1 focus:ring-peacock">
           <option value="">All categories</option>
           {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
         <label className="flex items-center gap-2 text-sm text-muted">
           <span className="shrink-0">From</span>
           <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)}
-                 className="w-full rounded-lg border border-line bg-card px-3 py-2.5 text-ink outline-none focus:border-peacock focus:ring-2 focus:ring-peacock/25" />
+                 className="w-full rounded-lg border border-line bg-card px-3 py-2.5 text-ink outline-none focus:border-peacock focus:ring-1 focus:ring-peacock" />
         </label>
         <label className="flex items-center gap-2 text-sm text-muted">
           <span className="shrink-0">To</span>
           <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)}
-                 className="w-full rounded-lg border border-line bg-card px-3 py-2.5 text-ink outline-none focus:border-peacock focus:ring-2 focus:ring-peacock/25" />
+                 className="w-full rounded-lg border border-line bg-card px-3 py-2.5 text-ink outline-none focus:border-peacock focus:ring-1 focus:ring-peacock" />
         </label>
         <div className="flex flex-wrap gap-1.5 sm:col-span-2 lg:col-span-4">
           {PAYMENT_FILTERS.map(([key, label]) => (
@@ -141,7 +141,7 @@ export default function Sales() {
       {sales === null ? (
         <div className="grid place-items-center py-16 text-muted"><Spinner /></div>
       ) : filtered.length === 0 ? (
-        <div className="grid place-items-center gap-3 rounded-2xl border border-dashed border-line py-16 text-center text-muted">
+        <div className="grid place-items-center gap-3 rounded-lg border border-dashed border-line py-16 text-center text-muted">
           <IconInbox size={38} stroke={1.3} />
           <p>{sales.length === 0 ? 'No sales yet. Approve an order to record the first sale.' : 'No sales match these filters.'}</p>
         </div>
@@ -153,9 +153,9 @@ export default function Sales() {
               <li key={s.id}>
                 <Link
                   to={`/owner/sales/${s.id}`}
-                  className="flex items-center gap-4 rounded-xl border border-line bg-card p-3 transition hover:shadow-sm"
+                  className="flex items-center gap-4 rounded-lg border border-line bg-card p-3 transition hover:border-ink/20"
                 >
-                  <Thumb url={s.item?.photo_url} />
+                  <PhotoThumb url={s.item?.photo_url} />
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium text-ink">{s.item?.name || 'Item'}</p>
                     <p className="truncate text-xs text-muted">
@@ -183,7 +183,7 @@ export default function Sales() {
 
 function Stat({ label, value, accent }) {
   return (
-    <div className={`rounded-xl border bg-card px-5 py-3 ${accent ? 'border-profit/30' : 'border-line'}`}>
+    <div className={`rounded-lg border bg-card px-5 py-3 ${accent ? 'border-profit/30' : 'border-line'}`}>
       <p className="flex items-center gap-1.5 text-xs text-muted">
         {accent && <IconCoin size={14} className="text-profit" />}{label}
       </p>
@@ -192,11 +192,3 @@ function Stat({ label, value, accent }) {
   )
 }
 
-function Thumb({ url }) {
-  return (
-    <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-line bg-paper-2">
-      {url ? <img src={url} alt="" className="h-full w-full object-cover" />
-           : <div className="grid h-full w-full place-items-center text-muted"><IconPhoto size={20} /></div>}
-    </div>
-  )
-}

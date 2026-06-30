@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  IconPhoto, IconPackage, IconTruckDelivery, IconChecks, IconMapPin,
+  IconPackage, IconTruckDelivery, IconChecks, IconMapPin,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { qty, dateTime } from '../../lib/format'
-import { Badge, Spinner } from '../../components/ui'
+import { Badge, Spinner, PhotoThumb } from '../../components/ui'
 
 // SPEC §6.6 — Fulfilment board. Approved orders land here as packing jobs. Two
 // active buckets: to-pack, then packed-awaiting-handover; completed jobs drop to
@@ -103,7 +103,7 @@ function Section({ title, count, tone, empty, children }) {
         <Badge tone={tone}>{count}</Badge>
       </div>
       {isEmpty ? (
-        <p className="rounded-2xl border border-dashed border-line bg-paper-2 px-5 py-8 text-center text-sm text-muted">
+        <p className="rounded-lg border border-dashed border-line bg-paper-2 px-5 py-8 text-center text-sm text-muted">
           {empty}
         </p>
       ) : (
@@ -119,9 +119,9 @@ function JobCard({ job, detailBase }) {
     <li>
       <Link
         to={`${detailBase}/${job.id}`}
-        className="flex items-center gap-4 rounded-xl border border-line bg-card p-3 transition hover:shadow-sm"
+        className="flex items-center gap-4 rounded-lg border border-line bg-card p-3 transition hover:border-ink/20"
       >
-        <Thumb url={job.photo_url} />
+        <PhotoThumb url={job.photo_url} />
         <div className="min-w-0 flex-1">
           <p className="truncate font-medium text-ink">{job.item_name || 'Item'}</p>
           <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted">
@@ -143,11 +143,3 @@ function JobCard({ job, detailBase }) {
   )
 }
 
-function Thumb({ url }) {
-  return (
-    <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-line bg-paper-2">
-      {url ? <img src={url} alt="" className="h-full w-full object-cover" />
-           : <div className="grid h-full w-full place-items-center text-muted"><IconPhoto size={20} /></div>}
-    </div>
-  )
-}

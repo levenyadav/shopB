@@ -6,6 +6,7 @@ import {
 import { useAuth } from '../context/AuthContext'
 import { useShop } from '../context/ShopContext'
 import { money } from '../lib/format'
+import Credit from './Credit'
 
 // Public shopfront shell (SPEC §10.1–§10.2). The header adapts to who's looking:
 //   not signed in  → Sign in
@@ -18,7 +19,7 @@ export default function ShopLayout() {
 
   return (
     <div className="min-h-screen bg-paper">
-      <header className="sticky top-0 z-20 border-b border-line bg-card/90 backdrop-blur">
+      <header className="sticky top-0 z-20 border-b border-line bg-card">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <Link to="/" className="shrink-0">
             <span className="shop-stamp text-[10px] font-bold sm:text-xs">
@@ -78,8 +79,9 @@ export default function ShopLayout() {
         <Outlet />
       </main>
 
-      <footer className="border-t border-line py-6 text-center text-xs text-muted">
-        {shop?.name || 'Shop'} · {shop?.phone || ''}
+      <footer className="border-t border-line py-6 text-center text-xs text-muted space-y-1">
+        <div>{shop?.name || 'Shop'} · {shop?.phone || ''}</div>
+        <Credit />
       </footer>
     </div>
   )

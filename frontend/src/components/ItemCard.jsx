@@ -18,7 +18,7 @@ export default function ItemCard({ item, categoryName }) {
   return (
     <Link
       to={`/item/${item.id}`}
-      className="group flex flex-col overflow-hidden rounded-2xl border border-line bg-card transition hover:-translate-y-0.5 hover:shadow-md"
+      className="group flex flex-col overflow-hidden rounded-lg border border-line bg-card transition hover:-translate-y-0.5 hover:border-ink/25"
     >
       <div className="relative aspect-square overflow-hidden bg-paper-2">
         {item.photo_url ? (

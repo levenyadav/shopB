@@ -55,7 +55,7 @@ export default function MyOrders() {
       {orders === null ? (
         <div className="grid place-items-center py-16 text-muted"><Spinner /></div>
       ) : orders.length === 0 ? (
-        <div className="grid place-items-center gap-3 rounded-2xl border border-dashed border-line py-16 text-center text-muted">
+        <div className="grid place-items-center gap-3 rounded-lg border border-dashed border-line py-16 text-center text-muted">
           <IconReceipt2 size={38} stroke={1.3} />
           <p>No orders yet.</p>
           <Link to="/" className="font-semibold text-peacock hover:underline">Browse the shop →</Link>
@@ -66,7 +66,7 @@ export default function MyOrders() {
             <li key={o.id}>
               <Link
                 to={`/orders/${o.id}`}
-                className="flex items-center gap-4 rounded-2xl border border-line bg-card p-3 transition hover:shadow-sm"
+                className="flex items-center gap-4 rounded-lg border border-line bg-card p-3 transition hover:border-ink/20"
               >
                 <Thumb url={o.item?.photo_url} />
                 <div className="min-w-0 flex-1">
@@ -90,7 +90,7 @@ export default function MyOrders() {
 
 function Thumb({ url }) {
   return (
-    <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-line bg-paper-2">
+    <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-line bg-paper-2">
       {url ? (
         <img src={url} alt="" className="h-full w-full object-cover" />
       ) : (

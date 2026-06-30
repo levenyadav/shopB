@@ -35,6 +35,53 @@ body {
 /* Every figure in the system is monospaced — the ledger rule. */
 .fig { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
+/* -----------------------------------------------------------------------------
+   Counter signature: ledger stamps, flat sheets, ruled focus.
+   These replace the soft tinted-pill / floaty-shadow defaults so the whole app
+   reads like a register kept by hand, not a stock component kit.
+   ---------------------------------------------------------------------------*/
+
+/* Stamp — a small inked annotation. Square-ish, ruled in its own colour, set in
+   caps like a rubber stamp on a page. Colour comes from currentColor, so a
+   caller just sets the text tone (text-peacock, text-dues …). */
+.stamp {
+  display: inline-flex; align-items: center; gap: .3em;
+  border: 1px solid color-mix(in srgb, currentColor 36%, transparent);
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  border-radius: 4px;
+  padding: .1rem .42rem;
+  font-size: .6875rem; line-height: 1.3;
+  font-weight: 600; letter-spacing: .035em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* A sheet on the counter. Held by a hairline, not a drop shadow. Three radii in
+   the system, descending: sheet 10px, control 6px, stamp 4px. */
+.sheet {
+  background: var(--color-card);
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+}
+/* Recessed ledger panel — the off-white inset used for headers and totals. */
+.sheet-sunk { background: var(--color-paper-2); border: 1px solid var(--color-line); border-radius: 10px; }
+
+/* Column / section label. The "every number has a name" caption. */
+.eyebrow {
+  font-size: .6875rem; font-weight: 600;
+  letter-spacing: .09em; text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+/* Ruled focus — a crisp 2px peacock outline that sits just off the control,
+   not a soft translucent halo. One focus look everywhere. */
+.ring-focus { outline: none; }
+.ring-focus:focus-visible {
+  outline: 2px solid var(--color-peacock);
+  outline-offset: 1px;
+  border-color: var(--color-peacock);
+}
+
 /* Khata page: ruled lines + the classic bahi-khata red margin. */
 .khata-page {
   background-color: var(--color-paper-2);

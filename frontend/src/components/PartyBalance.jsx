@@ -18,7 +18,7 @@ export default function PartyBalance({ partyType, balance, currency = '₹' }) {
 
   return (
     <div
-      className={`rounded-2xl border p-5 ${
+      className={`rounded-lg border p-5 ${
         settled
           ? 'border-profit/30 bg-profit/10'
           : 'border-dues/30 bg-dues/10'

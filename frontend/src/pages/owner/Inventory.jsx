@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  IconSearch, IconPlus, IconPencil, IconPhoto, IconX, IconCircleCheck,
+  IconSearch, IconPlus, IconPencil, IconPhoto, IconX, IconCircleCheck, IconCamera,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
@@ -22,6 +22,7 @@ export default function Inventory() {
   const [show, setShow] = useState('active') // active | inactive | all
   const [lowOnly, setLowOnly] = useState(false)
   const [editing, setEditing] = useState(null)
+  const [zoom, setZoom] = useState(null) // photo_url shown full-size in a lightbox
 
   async function load() {
     setErr('')
@@ -64,7 +65,7 @@ export default function Inventory() {
     <div className="space-y-5">
       {/* Top bar: total value + new item */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="rounded-xl border border-line bg-card px-5 py-3">
+        <div className="rounded-lg border border-line bg-card px-5 py-3">
           <p className="text-xs text-muted">Total stock value (at cost)</p>
           <p className="fig text-2xl font-bold text-profit">{money(totalValue)}</p>
         </div>
@@ -77,14 +78,14 @@ export default function Inventory() {
       </div>
 
       {/* Filters */}
-      <div className="grid gap-3 rounded-xl border border-line bg-card p-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 rounded-lg border border-line bg-card p-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="relative sm:col-span-2 lg:col-span-1">
           <IconSearch size={18} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search name, Item No, barcode…"
-            className="w-full rounded-lg border border-line bg-card py-2.5 pl-9 pr-3 text-ink outline-none focus:border-peacock focus:ring-2 focus:ring-peacock/25"
+            className="w-full rounded-lg border border-line bg-card py-2.5 pl-9 pr-3 text-ink outline-none focus:border-peacock focus:ring-1 focus:ring-peacock"
           />
         </div>
         <Select value={cat} onChange={(e) => setCat(e.target.value)}>
@@ -118,7 +119,7 @@ export default function Inventory() {
       {items === null ? (
         <div className="grid place-items-center py-16 text-muted"><Spinner /></div>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-line bg-card">
+        <div className="overflow-hidden rounded-lg border border-line bg-card">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="bg-paper-2 text-muted">
@@ -136,7 +137,7 @@ export default function Inventory() {
                   <tr key={i.id} className="border-t border-line hover:bg-paper-2/40">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <Thumb url={i.photo_url} />
+                        <Thumb url={i.photo_url} onZoom={() => setZoom(i.photo_url)} />
                         <div className="min-w-0">
                           <p className="truncate font-medium text-ink">
                             {i.name}
@@ -195,23 +196,62 @@ export default function Inventory() {
           onSaved={() => { setEditing(null); load() }}
         />
       )}
+
+      {zoom && <Lightbox url={zoom} onClose={() => setZoom(null)} />}
     </div>
   )
 }
 
-function Thumb({ url }) {
+function Thumb({ url, onZoom }) {
+  if (url) {
+    return (
+      <button
+        type="button"
+        onClick={onZoom}
+        title="View photo"
+        className="group h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-line bg-paper-2 transition hover:ring-2 hover:ring-peacock/40"
+      >
+        <img
+          src={url}
+          alt=""
+          className="h-full w-full object-cover transition group-hover:scale-105"
+        />
+      </button>
+    )
+  }
   return (
-    <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-line bg-paper-2">
-      {url ? (
-        <img src={url} alt="" className="h-full w-full object-cover" />
-      ) : (
-        <div className="grid h-full w-full place-items-center text-muted"><IconPhoto size={18} /></div>
-      )}
+    <div className="grid h-14 w-14 shrink-0 place-items-center rounded-lg border border-line bg-paper-2 text-muted">
+      <IconPhoto size={22} />
+    </div>
+  )
+}
+
+// Full-size photo overlay — click anywhere or the X to dismiss.
+function Lightbox({ url, onClose }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-ink/70 p-4"
+      onClick={onClose}
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute right-4 top-4 rounded-lg bg-card/90 p-2 text-ink hover:bg-card"
+      >
+        <IconX size={22} />
+      </button>
+      <img
+        src={url}
+        alt=""
+        onClick={(e) => e.stopPropagation()}
+        className="max-h-[85vh] max-w-full rounded-lg border border-line object-contain shadow-2xl"
+      />
     </div>
   )
 }
 
 function EditModal({ item, categories, suppliers, onClose, onSaved }) {
+  const { shopId } = useShop()
   const [f, setF] = useState({
     name: item.name,
     supplier_id: item.supplier_id,
@@ -224,32 +264,76 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
     barcode: item.barcode || '',
     is_active: item.is_active,
   })
+  // Photo: either upload a file (-> Storage) or paste an image URL. A picked
+  // file wins over the URL field. photoUrl doubles as the current/preview src.
+  const [photoFile, setPhotoFile] = useState(null)
+  const [photoUrl, setPhotoUrl] = useState(item.photo_url || '')
+  const [preview, setPreview] = useState(item.photo_url || '')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }))
+
+  function onPhotoFile(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (preview.startsWith('blob:')) URL.revokeObjectURL(preview)
+    setPhotoFile(file)
+    setPreview(URL.createObjectURL(file))
+  }
+  function onPhotoUrl(e) {
+    const url = e.target.value
+    setPhotoUrl(url)
+    setPhotoFile(null)
+    if (preview.startsWith('blob:')) URL.revokeObjectURL(preview)
+    setPreview(url.trim())
+  }
+  function clearPhoto() {
+    if (preview.startsWith('blob:')) URL.revokeObjectURL(preview)
+    setPhotoFile(null)
+    setPhotoUrl('')
+    setPreview('')
+  }
+
+  async function uploadPhoto() {
+    if (!photoFile) return photoUrl.trim() || null
+    const ext = (photoFile.name.split('.').pop() || 'jpg').toLowerCase()
+    const path = `${shopId}/${crypto.randomUUID()}.${ext}`
+    const { error } = await supabase.storage
+      .from('item-photos')
+      .upload(path, photoFile, { upsert: false, contentType: photoFile.type })
+    if (error) throw new Error('Photo upload failed: ' + error.message)
+    return supabase.storage.from('item-photos').getPublicUrl(path).data.publicUrl
+  }
 
   async function save(e) {
     e.preventDefault()
     if (!f.name.trim()) { setErr('Item name is required.'); return }
     setBusy(true); setErr('')
-    const { error } = await supabase
-      .from('items')
-      .update({
-        name: f.name.trim(),
-        supplier_id: f.supplier_id,
-        category_id: f.category_id,
-        location: f.location.trim() || null,
-        purchase_rate: round2(f.purchase_rate),
-        dealer_rate: round2(f.dealer_rate),
-        rate: round2(f.rate),
-        low_stock_threshold: round2(f.low_stock_threshold || 0),
-        barcode: f.barcode.trim() || null,
-        is_active: f.is_active,
-      })
-      .eq('id', item.id)
-    setBusy(false)
-    if (error) { setErr(error.message); return }
-    onSaved()
+    try {
+      const photo_url = await uploadPhoto()
+      const { error } = await supabase
+        .from('items')
+        .update({
+          name: f.name.trim(),
+          supplier_id: f.supplier_id,
+          category_id: f.category_id,
+          location: f.location.trim() || null,
+          purchase_rate: round2(f.purchase_rate),
+          dealer_rate: round2(f.dealer_rate),
+          rate: round2(f.rate),
+          low_stock_threshold: round2(f.low_stock_threshold || 0),
+          barcode: f.barcode.trim() || null,
+          photo_url,
+          is_active: f.is_active,
+        })
+        .eq('id', item.id)
+      if (error) throw new Error(error.message)
+      onSaved()
+    } catch (e2) {
+      setErr(e2.message)
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -257,7 +341,7 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
       <form
         onClick={(e) => e.stopPropagation()}
         onSubmit={save}
-        className="my-8 w-full max-w-lg space-y-4 rounded-2xl border border-line bg-card p-6"
+        className="my-8 w-full max-w-lg space-y-4 rounded-lg border border-line bg-card p-6"
       >
         <div className="flex items-center justify-between">
           <div>
@@ -269,6 +353,46 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
           </button>
         </div>
         {err && <p className="rounded-lg bg-dues/10 px-3 py-2 text-sm text-dues">{err}</p>}
+
+        {/* Photo: upload a file OR paste an image link. Both optional. */}
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-ink">Photo</p>
+          <div className="flex flex-wrap items-start gap-4">
+            <div className="h-24 w-24 shrink-0 overflow-hidden rounded-lg border border-line bg-paper-2">
+              {preview ? (
+                <img
+                  src={preview}
+                  alt="preview"
+                  className="h-full w-full object-cover"
+                  onError={() => setPreview('')}
+                />
+              ) : (
+                <div className="grid h-full w-full place-items-center text-muted">
+                  <IconPhoto size={24} />
+                </div>
+              )}
+            </div>
+            <div className="min-w-[12rem] flex-1 space-y-2">
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-line bg-card px-4 py-2.5 text-sm font-semibold hover:bg-paper-2">
+                <IconCamera size={18} /> {preview ? 'Change photo' : 'Add photo'}
+                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={onPhotoFile} />
+              </label>
+              <Field
+                label="Or paste image URL"
+                placeholder="https://…"
+                value={photoFile ? '' : photoUrl}
+                onChange={onPhotoUrl}
+                disabled={!!photoFile}
+              />
+              {preview && (
+                <button type="button" onClick={clearPhoto}
+                        className="inline-flex items-center gap-1 text-xs text-dues hover:underline">
+                  <IconX size={14} /> Remove photo
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
 
         <Field label="Item name" value={f.name} onChange={set('name')} />
         <div className="grid gap-4 sm:grid-cols-2">

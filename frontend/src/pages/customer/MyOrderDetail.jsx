@@ -77,7 +77,7 @@ export default function MyOrderDetail() {
         <IconArrowLeft size={17} /> My orders
       </Link>
 
-      <div className="rounded-2xl border border-line bg-card p-5">
+      <div className="rounded-lg border border-line bg-card p-5">
         <div className="flex items-center gap-4">
           <Thumb url={order.item?.photo_url} />
           <div className="min-w-0 flex-1">
@@ -97,7 +97,7 @@ export default function MyOrderDetail() {
 
       {/* Status */}
       {rejected ? (
-        <div className="rounded-2xl border border-dues/30 bg-dues/10 p-5">
+        <div className="rounded-lg border border-dues/30 bg-dues/10 p-5">
           <div className="flex items-center gap-2 text-dues">
             <IconCircleX size={20} />
             <p className="font-semibold">Order not accepted</p>
@@ -109,7 +109,7 @@ export default function MyOrderDetail() {
           </p>
         </div>
       ) : (
-        <div className="rounded-2xl border border-line bg-card p-5">
+        <div className="rounded-lg border border-line bg-card p-5">
           <p className="text-sm font-semibold">Progress</p>
           <p className="mb-4 mt-0.5 text-sm text-muted">{STATUS_NOTE[order.status] || ''}</p>
           <ol className="space-y-3">
@@ -150,7 +150,7 @@ function Row({ label, value, full }) {
 
 function Thumb({ url }) {
   return (
-    <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-line bg-paper-2">
+    <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-line bg-paper-2">
       {url ? <img src={url} alt="" className="h-full w-full object-cover" />
            : <div className="grid h-full w-full place-items-center text-muted"><IconPhoto size={22} /></div>}
     </div>
@@ -158,5 +158,5 @@ function Thumb({ url }) {
 }
 
 function Empty({ children }) {
-  return <div className="mx-auto max-w-md rounded-2xl border border-dashed border-line p-10 text-center text-muted">{children}</div>
+  return <div className="mx-auto max-w-md rounded-lg border border-dashed border-line p-10 text-center text-muted">{children}</div>
 }

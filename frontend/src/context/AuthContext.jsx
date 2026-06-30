@@ -14,11 +14,14 @@ export function AuthProvider({ children }) {
       return
     }
     // RLS allows a user to read their own profile row.
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('profiles')
-      .select('id, full_name, phone, role, balance_due, shop_id, is_active')
+      .select('id, full_name, phone, role, balance_due, shop_id, is_active, gstin, address')
       .eq('id', userId)
       .maybeSingle()
+    // A failed read (e.g. a migration not yet applied) must not silently look
+    // like "not signed in" — surface it so the cause is visible, not hidden.
+    if (error) console.error('Failed to load profile:', error.message)
     setProfile(data ?? null)
   }, [])
 

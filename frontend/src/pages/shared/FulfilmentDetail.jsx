@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   IconArrowLeft, IconPhoto, IconMapPin, IconPrinter, IconPackage,
-  IconTruckDelivery, IconBuildingStore, IconChecks,
+  IconTruckDelivery, IconBuildingStore, IconChecks, IconShare,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { qty, dateTime } from '../../lib/format'
+import { buildSlipPdf, sharePdf } from '../../lib/pdf'
 import { Button, Textarea, Badge, Spinner } from '../../components/ui'
 import SupplySlip from '../../components/SupplySlip'
 import { FULFIL_STATUS } from './Fulfilment'
@@ -60,7 +61,7 @@ export default function FulfilmentDetail({ listPath }) {
       </Link>
 
       {/* Job summary */}
-      <div className="rounded-2xl border border-line bg-card p-5">
+      <div className="rounded-lg border border-line bg-card p-5">
         <div className="flex items-center gap-4">
           <Thumb url={job.photo_url} />
           <div className="min-w-0 flex-1">
@@ -80,7 +81,7 @@ export default function FulfilmentDetail({ listPath }) {
         </dl>
 
         {(job.packed_at || job.completed_at) && (
-          <div className="mt-4 flex flex-wrap gap-x-6 gap-y-1 rounded-xl bg-paper-2 px-4 py-3 text-xs text-muted">
+          <div className="mt-4 flex flex-wrap gap-x-6 gap-y-1 rounded-lg bg-paper-2 px-4 py-3 text-xs text-muted">
             {job.packed_at && <span>Packed {dateTime(job.packed_at)}</span>}
             {job.completed_at && <span>Completed {dateTime(job.completed_at)}</span>}
             {job.delivery_note && <span>Note: {job.delivery_note}</span>}
@@ -93,7 +94,7 @@ export default function FulfilmentDetail({ listPath }) {
         {err && job && <p className="rounded-lg bg-dues/10 px-4 py-3 text-sm text-dues">{err}</p>}
 
         {job.status === 'pending_pack' && (
-          <div className="rounded-2xl border border-line bg-card p-5">
+          <div className="rounded-lg border border-line bg-card p-5">
             <p className="mb-1 font-semibold">Pack this order</p>
             <p className="mb-4 text-sm text-muted">
               Pull <span className="fig font-medium text-ink">{qty(job.quantity)}</span> pcs of{' '}
@@ -104,13 +105,13 @@ export default function FulfilmentDetail({ listPath }) {
               <Button onClick={() => setStatus('packed')} disabled={busy} className="flex-1">
                 {busy ? <><Spinner /> Saving…</> : <><IconPackage size={18} /> Mark as Packed</>}
               </Button>
-              <PrintButton />
+              <PrintButton job={job} shop={shop} />
             </div>
           </div>
         )}
 
         {job.status === 'packed' && (
-          <div className="rounded-2xl border border-line bg-card p-5">
+          <div className="rounded-lg border border-line bg-card p-5">
             <p className="mb-1 font-semibold">How did it leave the shop?</p>
             <p className="mb-4 text-sm text-muted">Choose delivered (sent out) or picked up (collected at the counter).</p>
             <Textarea
@@ -125,20 +126,20 @@ export default function FulfilmentDetail({ listPath }) {
               <Button variant="ghost" onClick={() => setStatus('picked_up')} disabled={busy} className="flex-1">
                 <IconBuildingStore size={18} /> Picked up
               </Button>
-              <PrintButton />
+              <PrintButton job={job} shop={shop} />
             </div>
           </div>
         )}
 
         {isDone && (
-          <div className="rounded-2xl border border-profit/30 bg-profit/10 p-5">
+          <div className="rounded-lg border border-profit/30 bg-profit/10 p-5">
             <div className="flex items-center gap-2 text-profit">
               <IconChecks size={20} />
               <p className="font-semibold">
                 {job.status === 'delivered' ? 'Delivered' : 'Picked up'} — order complete
               </p>
             </div>
-            <div className="mt-3"><PrintButton label="Reprint slip" /></div>
+            <div className="mt-3"><PrintButton label="Reprint slip" job={job} shop={shop} /></div>
           </div>
         )}
       </div>
@@ -149,11 +150,19 @@ export default function FulfilmentDetail({ listPath }) {
   )
 }
 
-function PrintButton({ label = 'Print supply slip' }) {
+function PrintButton({ label = 'Print supply slip', job, shop }) {
+  const ref = job?.order_id?.slice(0, 8).toUpperCase()
   return (
-    <Button variant="ghost" onClick={() => window.print()}>
-      <IconPrinter size={18} /> {label}
-    </Button>
+    <>
+      <Button variant="ghost" onClick={() => window.print()}>
+        <IconPrinter size={18} /> {label}
+      </Button>
+      {job && (
+        <Button variant="ghost" onClick={() => sharePdf(buildSlipPdf(job, shop), `supply-slip-${ref}.pdf`, `Supply slip #${ref}`)}>
+          <IconShare size={18} /> Share slip
+        </Button>
+      )}
+    </>
   )
 }
 
@@ -168,7 +177,7 @@ function Row({ label, value, full }) {
 
 function Thumb({ url }) {
   return (
-    <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-line bg-paper-2">
+    <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-line bg-paper-2">
       {url ? <img src={url} alt="" className="h-full w-full object-cover" />
            : <div className="grid h-full w-full place-items-center text-muted"><IconPhoto size={22} /></div>}
     </div>
@@ -176,5 +185,5 @@ function Thumb({ url }) {
 }
 
 function Empty({ children }) {
-  return <div className="mx-auto max-w-md rounded-2xl border border-dashed border-line p-10 text-center text-muted">{children}</div>
+  return <div className="mx-auto max-w-md rounded-lg border border-dashed border-line p-10 text-center text-muted">{children}</div>
 }

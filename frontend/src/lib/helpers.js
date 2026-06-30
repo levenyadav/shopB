@@ -30,3 +30,18 @@ export function lineProfit(rateCharged, purchaseRate, quantity) {
 export function stockValue(item) {
   return round2(Number(item.quantity || 0) * Number(item.purchase_rate || 0))
 }
+
+// GST breakup for a customer invoice (SPEC §15). The sale amount is locked
+// (Golden Rule #5) and is what the buyer owes, so we treat it as tax-INCLUSIVE
+// and back out the tax — the grand total stays equal to the sale amount. CGST
+// and SGST split the tax in half (intra-state). Returns null when no GST applies.
+export function gstBreakup(amountInclusive, ratePct) {
+  const rate = Number(ratePct || 0)
+  const amount = round2(amountInclusive)
+  if (rate <= 0) return null
+  const taxable = round2(amount / (1 + rate / 100))
+  const tax = round2(amount - taxable)
+  const cgst = round2(tax / 2)
+  const sgst = round2(tax - cgst) // remainder, so cgst + sgst === tax exactly
+  return { rate, taxable, cgst, sgst, tax, total: amount }
+}

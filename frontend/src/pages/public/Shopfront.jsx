@@ -65,7 +65,7 @@ export default function Shopfront() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search items…"
-            className="w-full rounded-lg border border-line bg-card py-2.5 pl-9 pr-3 text-ink outline-none focus:border-peacock focus:ring-2 focus:ring-peacock/25"
+            className="w-full rounded-lg border border-line bg-card py-2.5 pl-9 pr-3 text-ink outline-none focus:border-peacock focus:ring-1 focus:ring-peacock"
           />
         </div>
       </div>
@@ -85,7 +85,7 @@ export default function Shopfront() {
       {items === null ? (
         <div className="grid place-items-center py-20 text-muted"><Spinner /></div>
       ) : visible.length === 0 ? (
-        <div className="grid place-items-center gap-3 rounded-2xl border border-dashed border-line py-20 text-center text-muted">
+        <div className="grid place-items-center gap-3 rounded-lg border border-dashed border-line py-20 text-center text-muted">
           <IconMoodEmpty size={40} stroke={1.3} />
           <p>
             {q || categoryId

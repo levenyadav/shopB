@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import {
   IconBuildingStore, IconCategory, IconUsers, IconPlus, IconCheck,
-  IconPencil, IconDeviceFloppy, IconInfoCircle,
+  IconPencil, IconDeviceFloppy, IconInfoCircle, IconUserPlus,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
-import { Button, Field, Select, Badge, Spinner } from '../../components/ui'
+import { round2 } from '../../lib/helpers'
+import { Button, Field, Select, Textarea, Badge, Spinner } from '../../components/ui'
 
 // SPEC §6.11 — Settings (owner only): shop info, categories, staff. Kept to the
 // three named blocks; each writes the table the owner already controls under RLS
@@ -29,7 +30,7 @@ const CAT_TYPE_LABEL = Object.fromEntries(CAT_TYPES.map((t) => [t.value, t.label
 
 function Card({ icon: Icon, title, hint, children }) {
   return (
-    <section className="rounded-2xl border border-line bg-card p-5">
+    <section className="rounded-lg border border-line bg-card p-5">
       <div className="mb-4 flex items-center gap-3">
         <div className="grid h-9 w-9 place-items-center rounded-lg bg-peacock/10 text-peacock">
           <Icon size={18} />
@@ -68,6 +69,7 @@ function ShopInfo() {
     if (shop) setForm({
       name: shop.name || '', address: shop.address || '',
       phone: shop.phone || '', currency_symbol: shop.currency_symbol || '₹',
+      gstin: shop.gstin || '', gst_rate: shop.gst_rate ? String(shop.gst_rate) : '',
     })
   }, [shop])
 
@@ -79,6 +81,8 @@ function ShopInfo() {
       address: form.address.trim() || null,
       phone: form.phone.trim() || null,
       currency_symbol: form.currency_symbol.trim() || '₹',
+      gstin: form.gstin.trim() || null,
+      gst_rate: round2(form.gst_rate || 0),
     }).eq('id', shop.id)
     setSaving(false)
     if (error) setErr(error.message)
@@ -94,10 +98,19 @@ function ShopInfo() {
       ) : (
         <form onSubmit={save} className="space-y-4">
           <Field label="Shop name" value={form.name} onChange={set('name')} required />
-          <Field label="Address" value={form.address} onChange={set('address')} />
+          <Textarea label="Address" rows={3} value={form.address} onChange={set('address')}
+                    placeholder="Street, area, city, state — PIN. Prints on slips & invoices." />
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Phone" value={form.phone} onChange={set('phone')} inputMode="tel" />
             <Field label="Currency symbol" value={form.currency_symbol} onChange={set('currency_symbol')} maxLength={3} />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="GSTIN" value={form.gstin} onChange={set('gstin')}
+                   placeholder="e.g. 27ABCDE1234F1Z5"
+                   hint="Leave blank if you don't bill with GST." />
+            <Field label="GST rate" suffix="%" type="number" min="0" max="100" step="0.01" inputMode="decimal"
+                   value={form.gst_rate} onChange={set('gst_rate')}
+                   hint="Shown on invoices when GSTIN is set. Rates are tax-inclusive." />
           </div>
           {msg && <Ok>{msg}</Ok>}
           {err && <ErrLine>{err}</ErrLine>}
@@ -196,7 +209,7 @@ function Categories() {
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') rename(c.id); if (e.key === 'Escape') setEditId(null) }}
-                  className="flex-1 rounded-lg border border-peacock bg-card px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-peacock/25"
+                  className="flex-1 rounded-lg border border-peacock bg-card px-2.5 py-1.5 text-sm outline-none focus:ring-1 focus:ring-peacock"
                 />
               ) : (
                 <span className="min-w-0 flex-1">
@@ -231,12 +244,21 @@ function Categories() {
 }
 
 // ---------------------------------------------------------------------------
-// Staff — list, activate/deactivate. Creating login accounts needs Supabase
-// admin (service-role), so that stays a documented note rather than a fake form.
+// Staff — add (via the create-staff Edge Function), list, activate/deactivate.
+// Creating a login needs the service-role key, so the actual account creation
+// happens server-side; the owner just fills the form here.
 // ---------------------------------------------------------------------------
+const EMPTY_STAFF = { full_name: '', phone: '', email: '', password: '' }
+
 function Staff() {
   const [staff, setStaff] = useState(null)
   const [err, setErr] = useState('')
+
+  // add-form state
+  const [form, setForm] = useState(EMPTY_STAFF)
+  const [adding, setAdding] = useState(false)
+  const [addErr, setAddErr] = useState('')
+  const [addMsg, setAddMsg] = useState('')
 
   async function load() {
     const { data, error } = await supabase
@@ -249,6 +271,31 @@ function Staff() {
   }
   useEffect(() => { load() }, [])
 
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
+
+  async function add(e) {
+    e.preventDefault()
+    setAdding(true); setAddErr(''); setAddMsg('')
+    const { data, error } = await supabase.functions.invoke('create-staff', {
+      body: {
+        full_name: form.full_name.trim(),
+        phone: form.phone.trim(),
+        email: form.email.trim(),
+        password: form.password,
+      },
+    })
+    setAdding(false)
+    // Edge Function returns a non-2xx with { error } on failure; supabase-js
+    // surfaces that as `error`, but the body carries the readable message.
+    const fnError = error
+      ? (await error.context?.json?.().then((b) => b?.error).catch(() => null)) || error.message
+      : data?.error
+    if (fnError) { setAddErr(fnError); return }
+    setAddMsg(`${form.full_name.trim()} can now sign in with ${form.email.trim()}.`)
+    setForm(EMPTY_STAFF)
+    load()
+  }
+
   async function toggle(p) {
     setErr('')
     const { error } = await supabase.from('profiles')
@@ -259,12 +306,32 @@ function Staff() {
 
   return (
     <Card icon={IconUsers} title="Staff" hint="Who can enter purchases and pack orders.">
+      <form onSubmit={add} className="mb-5 space-y-3 rounded-lg border border-line bg-paper-2/40 p-4">
+        <p className="text-xs font-medium text-ink">Add a staff member</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Full name" value={form.full_name} onChange={set('full_name')} required />
+          <Field label="Phone" value={form.phone} onChange={set('phone')} inputMode="tel" />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Login email" type="email" value={form.email} onChange={set('email')}
+                 autoComplete="off" required />
+          <Field label="Temporary password" type="password" value={form.password} onChange={set('password')}
+                 autoComplete="new-password" minLength={6} required
+                 hint="At least 6 characters. Share it with the staff member to sign in." />
+        </div>
+        {addMsg && <Ok>{addMsg}</Ok>}
+        {addErr && <ErrLine>{addErr}</ErrLine>}
+        <Button type="submit" disabled={adding}>
+          {adding ? <Spinner /> : <IconUserPlus size={18} />} Add staff
+        </Button>
+      </form>
+
       {err && <ErrLine>{err}</ErrLine>}
 
       {staff === null ? (
         <div className="grid place-items-center py-8 text-muted"><Spinner /></div>
       ) : staff.length === 0 ? (
-        <p className="py-6 text-center text-sm text-muted">No staff accounts yet.</p>
+        <p className="py-6 text-center text-sm text-muted">No staff accounts yet. Add your first above.</p>
       ) : (
         <ul className="divide-y divide-line">
           {staff.map((p) => (
@@ -288,9 +355,9 @@ function Staff() {
       <div className="mt-4 flex items-start gap-2">
         <IconInfoCircle size={16} className="mt-0.5 shrink-0 text-muted" />
         <p className="text-xs text-muted">
-          To add a new staff login or reset a password, create the account in
-          Supabase Auth and set its profile role to <span className="font-medium">staff</span>.
-          A self-serve "Add staff" flow arrives with the admin Edge Function.
+          Staff sign in with the email and password you set here. Disabling a
+          member blocks their access without deleting their history. To reset a
+          password, remove and re-add the member, or change it in Supabase Auth.
         </p>
       </div>
     </Card>

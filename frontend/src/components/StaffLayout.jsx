@@ -12,7 +12,7 @@ export default function StaffLayout() {
 
   return (
     <div className="min-h-screen bg-paper">
-      <header className="no-print sticky top-0 z-20 border-b border-line bg-card/90 backdrop-blur">
+      <header className="no-print sticky top-0 z-20 border-b border-line bg-card">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <Link to="/staff" className="flex items-center gap-2">
             <span className="shop-stamp text-[10px] font-bold">

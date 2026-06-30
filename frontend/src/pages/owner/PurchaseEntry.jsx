@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
-  IconCamera, IconPlus, IconBarcode, IconCircleCheck, IconX,
+  IconCamera, IconPlus, IconBarcode, IconCircleCheck, IconX, IconFileSpreadsheet,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
@@ -159,6 +159,12 @@ function NewItemEntry() {
 
   return (
     <div className="mx-auto max-w-2xl">
+      <div className="mb-4 flex justify-end">
+        <Link to="/owner/bulk-purchase"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-peacock hover:underline">
+          <IconFileSpreadsheet size={17} /> Bulk import from CSV
+        </Link>
+      </div>
       <form onSubmit={onSubmit} className="space-y-6">
         {topError && (
           <p className="rounded-lg border border-dues/30 bg-dues/10 px-4 py-3 text-sm text-dues">
@@ -227,7 +233,7 @@ function NewItemEntry() {
         {/* Photo & barcode */}
         <Section title="Photo & barcode" hint="Both optional. A photo helps staff and the shopfront.">
           <div className="flex flex-wrap items-start gap-4">
-            <div className="h-28 w-28 shrink-0 overflow-hidden rounded-xl border border-line bg-paper-2">
+            <div className="h-28 w-28 shrink-0 overflow-hidden rounded-lg border border-line bg-paper-2">
               {photoPreview ? (
                 <img src={photoPreview} alt="preview" className="h-full w-full object-cover" />
               ) : (
@@ -292,7 +298,7 @@ function NewItemEntry() {
 
 function Section({ title, hint, children }) {
   return (
-    <section className="rounded-2xl border border-line bg-card p-5 sm:p-6">
+    <section className="rounded-lg border border-line bg-card p-5 sm:p-6">
       <h3 className="font-[var(--font-display)] text-lg font-bold">{title}</h3>
       {hint && <p className="mb-4 mt-0.5 text-sm text-muted">{hint}</p>}
       <div className="space-y-4">{children}</div>
@@ -302,7 +308,7 @@ function Section({ title, hint, children }) {
 
 function Success({ done, onAnother }) {
   return (
-    <div className="mx-auto max-w-md rounded-2xl border border-line bg-card p-8 text-center">
+    <div className="mx-auto max-w-md rounded-lg border border-line bg-card p-8 text-center">
       <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-full bg-profit/10 text-profit">
         <IconCircleCheck size={34} />
       </div>
@@ -329,7 +335,7 @@ function Success({ done, onAnother }) {
 
 function Box({ label, value, tone }) {
   return (
-    <div className="rounded-xl bg-paper-2 px-4 py-3">
+    <div className="rounded-lg bg-paper-2 px-4 py-3">
       <p className="text-xs text-muted">{label}</p>
       <p className={`fig text-lg font-bold ${tone === 'dues' ? 'text-dues' : 'text-ink'}`}>{value}</p>
     </div>
@@ -410,7 +416,7 @@ function RestockEntry({ itemId }) {
 
   if (loadErr) {
     return (
-      <div className="mx-auto max-w-md rounded-2xl border border-line bg-card p-8 text-center">
+      <div className="mx-auto max-w-md rounded-lg border border-line bg-card p-8 text-center">
         <p className="text-dues">{loadErr}</p>
         <Link to="/owner/stock" className="mt-4 inline-block font-medium text-peacock hover:underline">
           ← Back to Stock Inquiry
@@ -422,7 +428,7 @@ function RestockEntry({ itemId }) {
 
   if (done) {
     return (
-      <div className="mx-auto max-w-md rounded-2xl border border-line bg-card p-8 text-center">
+      <div className="mx-auto max-w-md rounded-lg border border-line bg-card p-8 text-center">
         <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-full bg-profit/10 text-profit">
           <IconCircleCheck size={34} />
         </div>
@@ -464,7 +470,7 @@ function RestockEntry({ itemId }) {
         )}
 
         {/* Fixed identity of the item being restocked */}
-        <section className="rounded-2xl border border-line bg-card p-5 sm:p-6">
+        <section className="rounded-lg border border-line bg-card p-5 sm:p-6">
           <p className="text-sm text-muted">Restocking</p>
           <h3 className="font-[var(--font-display)] text-xl font-bold">{item.name}</h3>
           <p className="fig mt-0.5 text-xs text-muted">
@@ -538,7 +544,7 @@ function SupplierModal({ shopId, onClose, onCreated }) {
       <form
         onClick={(e) => e.stopPropagation()}
         onSubmit={save}
-        className="w-full max-w-md space-y-4 rounded-2xl border border-line bg-card p-6"
+        className="w-full max-w-md space-y-4 rounded-lg border border-line bg-card p-6"
       >
         <div className="flex items-center justify-between">
           <h3 className="font-[var(--font-display)] text-xl font-bold">New supplier</h3>

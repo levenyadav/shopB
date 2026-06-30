@@ -16,8 +16,9 @@ begin
     return;
   end if;
 
-  insert into public.shops (name, address, phone)
-  values ('Shree Card & Gift House', 'Main Bazaar, Varanasi', '+91 90000 00000')
+  insert into public.shops (name, address, phone, gstin)
+  values ('Khattri Card Pratham', 'D 58/12 A-13, Sigra Main Road, Varanasi - 221010',
+          '+91 93350 48885', '09AAPFK9899Q1ZN')
   returning id into v_shop;
 
   insert into public.categories (shop_id, name, type) values

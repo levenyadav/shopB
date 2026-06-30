@@ -5,7 +5,7 @@ import { IconTools } from '@tabler/icons-react'
 // dead ends (SPEC §3.4). Each says plainly what it will be and where to go now.
 export default function ComingSoon({ title, phase }) {
   return (
-    <div className="mx-auto max-w-md rounded-2xl border border-line bg-card p-10 text-center">
+    <div className="mx-auto max-w-md rounded-lg border border-line bg-card p-10 text-center">
       <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-full bg-saffron/15 text-saffron">
         <IconTools size={26} />
       </div>

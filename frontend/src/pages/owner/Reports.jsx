@@ -126,7 +126,7 @@ export default function Reports() {
             { label: 'Customers (retail)', amount: pnl.byType.customer.profit, sub: money(pnl.byType.customer.revenue) + ' sales' },
             { label: 'Dealers (wholesale)', amount: pnl.byType.dealer.profit, sub: money(pnl.byType.dealer.revenue) + ' sales' },
           ]} />
-          <div className="rounded-2xl border border-line bg-card p-5">
+          <div className="rounded-lg border border-line bg-card p-5">
             <p className="mb-3 text-sm font-semibold text-ink">Margin</p>
             <p className="fig text-3xl font-bold text-profit">
               {pnl.revenue > 0 ? Math.round((pnl.profit / pnl.revenue) * 100) : 0}%
@@ -141,7 +141,7 @@ export default function Reports() {
       {/* ---- Sales by category ---- */}
       <section className="space-y-3">
         <SectionTitle>Sales by category</SectionTitle>
-        <div className="rounded-2xl border border-line bg-card p-5">
+        <div className="rounded-lg border border-line bg-card p-5">
           {byCategory.length === 0 ? (
             <Empty>No sales in this range.</Empty>
           ) : (
@@ -184,7 +184,7 @@ export default function Reports() {
         </div>
 
         {stock.zero.length > 0 && (
-          <div className="overflow-hidden rounded-2xl border border-line bg-card">
+          <div className="overflow-hidden rounded-lg border border-line bg-card">
             <div className="border-b border-line bg-paper-2 px-4 py-2.5 text-sm font-semibold text-ink">
               Items with zero stock — reorder soon
             </div>
@@ -273,15 +273,15 @@ function Stat({ icon: Icon, tone, label, value, to }) {
       <p className="fig mt-0.5 text-2xl font-bold">{value}</p>
     </>
   )
-  const cls = 'block rounded-2xl border border-line bg-card p-5'
+  const cls = 'block rounded-lg border border-line bg-card p-5'
   return to
-    ? <Link to={to} className={`${cls} transition hover:border-peacock/40 hover:shadow-sm`}>{inner}</Link>
+    ? <Link to={to} className={`${cls} transition hover:border-peacock/40 hover:border-ink/20`}>{inner}</Link>
     : <div className={cls}>{inner}</div>
 }
 
 function PeriodCard({ label, data }) {
   return (
-    <div className="rounded-2xl border border-line bg-card p-5">
+    <div className="rounded-lg border border-line bg-card p-5">
       <p className="text-sm font-semibold text-ink">{label}</p>
       <p className="mt-2 text-xs text-muted">Sales</p>
       <p className="fig text-2xl font-bold text-peacock">{money(data.revenue)}</p>
@@ -294,7 +294,7 @@ function PeriodCard({ label, data }) {
 
 function SplitCard({ title, rows }) {
   return (
-    <div className="rounded-2xl border border-line bg-card p-5">
+    <div className="rounded-lg border border-line bg-card p-5">
       <p className="mb-3 text-sm font-semibold text-ink">{title}</p>
       <ul className="space-y-3">
         {rows.map((r) => (
@@ -313,7 +313,7 @@ function SplitCard({ title, rows }) {
 
 function TopList({ title, rows, render }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-line bg-card">
+    <div className="overflow-hidden rounded-lg border border-line bg-card">
       <div className="border-b border-line bg-paper-2 px-4 py-2.5 text-sm font-semibold text-ink">{title}</div>
       {rows.length === 0 ? (
         <Empty>No sales in this range.</Empty>
@@ -344,7 +344,7 @@ function DateInput({ label, value, min, max, onChange }) {
         min={min}
         max={max}
         onChange={(e) => onChange(e.target.value)}
-        className="fig rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink outline-none focus:border-peacock focus:ring-2 focus:ring-peacock/25"
+        className="fig rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink outline-none focus:border-peacock focus:ring-1 focus:ring-peacock"
       />
     </label>
   )

@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   IconArrowLeft, IconPhoto, IconPrinter, IconMapPin, IconReceipt2,
+  IconShare, IconDownload,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
-import { round2 } from '../../lib/helpers'
+import { round2, gstBreakup } from '../../lib/helpers'
+import { buildSlipPdf, buildInvoicePdf, sharePdf, downloadPdf } from '../../lib/pdf'
 import { Button, Badge, Spinner } from '../../components/ui'
 import SupplySlip from '../../components/SupplySlip'
 import { PAYMENT_META } from './Sales'
@@ -29,7 +31,7 @@ export default function SaleDetail() {
       .select(
         'id, order_id, quantity, rate_charged, amount, purchase_rate, profit, payment_type, buyer_type, created_at, ' +
           'item:items(name, item_no, photo_url, location), ' +
-          'buyer:profiles!sales_buyer_id_fkey(full_name, phone, balance_due), ' +
+          'buyer:profiles!sales_buyer_id_fkey(full_name, phone, balance_due, gstin, address), ' +
           'category:categories(name), ' +
           'order:orders!sales_order_id_fkey(notes, created_at)',
       )
@@ -67,6 +69,33 @@ export default function SaleDetail() {
     notes: sale.order?.notes,
   }
 
+  // Customer invoice data — buyer-facing figures only (Golden Rule #4). GST is
+  // applied only when the shop is GST-registered; gstBreakup is tax-inclusive so
+  // the grand total equals the locked sale amount (Rule #5).
+  const ref = sale.order_id?.slice(0, 8).toUpperCase()
+  const invoice = {
+    number: 'INV-' + ref,
+    date: sale.created_at,
+    buyer: {
+      name: sale.buyer?.full_name,
+      phone: sale.buyer?.phone,
+      type: sale.buyer_type,
+      gstin: sale.buyer?.gstin,
+      address: sale.buyer?.address,
+    },
+    lines: [{
+      item_no: item?.item_no,
+      name: item?.name,
+      qty: sale.quantity,
+      rate: sale.rate_charged,
+      amount: sale.amount,
+    }],
+    gst: shop?.gstin ? gstBreakup(sale.amount, shop?.gst_rate) : null,
+    total: sale.amount,
+  }
+  const slipFile = `supply-slip-${ref}.pdf`
+  const invoiceFile = `invoice-${ref}.pdf`
+
   return (
     <div className="mx-auto max-w-2xl space-y-5">
       <Link to="/owner/sales" className="no-print inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-ink">
@@ -74,7 +103,7 @@ export default function SaleDetail() {
       </Link>
 
       {/* Sale summary */}
-      <div className="relative rounded-2xl border border-line bg-card p-5">
+      <div className="relative rounded-lg border border-line bg-card p-5">
         <span className="posted-stamp absolute right-5 top-4 rounded px-3 py-1 text-sm font-bold">SOLD</span>
         <div className="flex items-center gap-4">
           <Thumb url={item?.photo_url} />
@@ -100,7 +129,7 @@ export default function SaleDetail() {
         </dl>
 
         {/* Owner-only economics (Golden Rules #3, #4 — never on the slip) */}
-        <div className="mt-4 flex flex-wrap items-center gap-4 rounded-xl bg-paper-2 px-4 py-3 text-sm">
+        <div className="mt-4 flex flex-wrap items-center gap-4 rounded-lg bg-paper-2 px-4 py-3 text-sm">
           <span className="text-muted">Cost <span className="fig text-ink">{money(cost).replace('₹', currency)}</span></span>
           <span className="text-muted">Profit <span className="fig font-semibold text-profit">{money(sale.profit).replace('₹', currency)}</span></span>
           {sale.payment_type === 'udhaar' && (
@@ -111,6 +140,15 @@ export default function SaleDetail() {
 
       {/* Actions */}
       <div className="no-print flex flex-wrap items-center gap-3">
+        <Button onClick={() => sharePdf(buildInvoicePdf(invoice, shop), invoiceFile, `Invoice ${invoice.number}`)}>
+          <IconShare size={18} /> Share invoice
+        </Button>
+        <Button variant="ghost" onClick={() => downloadPdf(buildInvoicePdf(invoice, shop), invoiceFile)}>
+          <IconDownload size={18} /> Download invoice
+        </Button>
+        <Button variant="ghost" onClick={() => sharePdf(buildSlipPdf(slip, shop), slipFile, `Supply slip #${ref}`)}>
+          <IconShare size={18} /> Share slip
+        </Button>
         <Button variant="ghost" onClick={() => window.print()}>
           <IconPrinter size={18} /> Reprint supply slip
         </Button>
@@ -138,7 +176,7 @@ function Row({ label, value }) {
 
 function Thumb({ url }) {
   return (
-    <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-line bg-paper-2">
+    <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-line bg-paper-2">
       {url ? <img src={url} alt="" className="h-full w-full object-cover" />
            : <div className="grid h-full w-full place-items-center text-muted"><IconPhoto size={22} /></div>}
     </div>
@@ -146,5 +184,5 @@ function Thumb({ url }) {
 }
 
 function Empty({ children }) {
-  return <div className="mx-auto max-w-md rounded-2xl border border-dashed border-line p-10 text-center text-muted">{children}</div>
+  return <div className="mx-auto max-w-md rounded-lg border border-dashed border-line p-10 text-center text-muted">{children}</div>
 }
