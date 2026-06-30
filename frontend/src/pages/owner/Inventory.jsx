@@ -9,7 +9,7 @@ import { useShop } from '../../context/ShopContext'
 import { money, qty } from '../../lib/format'
 import { round2, stockValue } from '../../lib/helpers'
 import { printBarcodeLabels, barcodeValue } from '../../lib/barcodeLabel'
-import { Button, Field, Select, StockBadge, Badge, Spinner } from '../../components/ui'
+import { Button, Field, Select, Textarea, StockBadge, Badge, Spinner, TagsInput, ImagesInput } from '../../components/ui'
 
 // SPEC §6.2 — Inventory master list. Owner sees all items, searches/filters,
 // and edits any field EXCEPT quantity (stock changes only via Purchase Entry,
@@ -21,6 +21,7 @@ export default function Inventory() {
   const [q, setQ] = useState('')
   const [cat, setCat] = useState('')
   const [sup, setSup] = useState('')
+  const [tag, setTag] = useState('')
   const [show, setShow] = useState('active') // active | inactive | all
   const [lowOnly, setLowOnly] = useState(false)
   const [editing, setEditing] = useState(null)
@@ -33,7 +34,8 @@ export default function Inventory() {
       .from('items')
       .select(
         'id, item_no, name, location, quantity, purchase_rate, dealer_rate, rate, ' +
-          'low_stock_threshold, barcode, photo_url, is_active, supplier_id, category_id, ' +
+          'low_stock_threshold, moq, barcode, photo_url, is_active, supplier_id, category_id, ' +
+          'description, tags, images, ' +
           'supplier:suppliers(name), category:categories(name)',
       )
       .order('item_no')
@@ -41,6 +43,14 @@ export default function Inventory() {
     else setItems(data ?? [])
   }
   useEffect(() => { load() }, [])
+
+  // All distinct tags across items, for the tag filter dropdown.
+  const allTags = useMemo(() => {
+    if (!items) return []
+    const set = new Set()
+    items.forEach((i) => (i.tags || []).forEach((t) => set.add(t)))
+    return [...set].sort((a, b) => a.localeCompare(b))
+  }, [items])
 
   const filtered = useMemo(() => {
     if (!items) return []
@@ -50,14 +60,15 @@ export default function Inventory() {
       if (show === 'inactive' && i.is_active) return false
       if (cat && i.category_id !== cat) return false
       if (sup && i.supplier_id !== sup) return false
+      if (tag && !(i.tags || []).includes(tag)) return false
       if (lowOnly && !(Number(i.quantity) < Number(i.low_stock_threshold))) return false
       if (needle) {
-        const hay = `${i.item_no} ${i.name} ${i.barcode || ''} ${i.supplier?.name || ''} ${i.category?.name || ''}`.toLowerCase()
+        const hay = `${i.item_no} ${i.name} ${i.barcode || ''} ${i.supplier?.name || ''} ${i.category?.name || ''} ${(i.tags || []).join(' ')} ${i.description || ''}`.toLowerCase()
         if (!hay.includes(needle)) return false
       }
       return true
     })
-  }, [items, q, cat, sup, show, lowOnly])
+  }, [items, q, cat, sup, tag, show, lowOnly])
 
   const totalValue = useMemo(
     () => (items ? items.reduce((s, i) => s + stockValue(i), 0) : 0),
@@ -99,6 +110,12 @@ export default function Inventory() {
           <option value="">All suppliers</option>
           {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </Select>
+        {allTags.length > 0 && (
+          <Select value={tag} onChange={(e) => setTag(e.target.value)}>
+            <option value="">All tags</option>
+            {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
+          </Select>
+        )}
         <div className="flex items-center gap-2">
           <Select value={show} onChange={(e) => setShow(e.target.value)} className="flex-1">
             <option value="active">Active</option>
@@ -387,7 +404,11 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
     dealer_rate: String(item.dealer_rate),
     rate: String(item.rate),
     low_stock_threshold: String(item.low_stock_threshold),
+    moq: String(item.moq ?? 1),
     barcode: item.barcode || '',
+    description: item.description || '',
+    tags: item.tags || [],
+    images: item.images || [],
     is_active: item.is_active,
   })
   // Photo: either upload a file (-> Storage) or paste an image URL. A picked
@@ -448,8 +469,12 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
           dealer_rate: round2(f.dealer_rate),
           rate: round2(f.rate),
           low_stock_threshold: round2(f.low_stock_threshold || 0),
+          moq: round2(f.moq || 1),
           barcode: f.barcode.trim() || null,
           photo_url,
+          description: f.description.trim() || null,
+          tags: f.tags,
+          images: f.images,
           is_active: f.is_active,
         })
         .eq('id', item.id)
@@ -529,9 +554,10 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
             {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </Select>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-3">
           <Field label="Location / Rack No" value={f.location} onChange={set('location')} />
           <Field label="Low stock threshold" type="number" min="0" value={f.low_stock_threshold} onChange={set('low_stock_threshold')} />
+          <Field label="Min order qty (MOQ)" type="number" min="1" value={f.moq} onChange={set('moq')} hint="Least a customer can order" />
         </div>
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="Purchase Rate" prefix="₹" type="number" min="0" step="0.01" value={f.purchase_rate} onChange={set('purchase_rate')} />
@@ -539,6 +565,22 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
           <Field label="Rate (retail)" prefix="₹" type="number" min="0" step="0.01" value={f.rate} onChange={set('rate')} />
         </div>
         <Field label="Barcode / QR" value={f.barcode} onChange={set('barcode')} />
+
+        <Textarea
+          label="Description" rows={3} value={f.description}
+          onChange={set('description')}
+          placeholder="Shown on the shopfront item page — material, size, occasion…"
+        />
+        <TagsInput
+          label="Tags" value={f.tags}
+          onChange={(tags) => setF((s) => ({ ...s, tags }))}
+          hint="Used for search & filtering, e.g. wedding, premium, handmade."
+        />
+        <ImagesInput
+          label="More photos (gallery)" value={f.images}
+          onChange={(images) => setF((s) => ({ ...s, images }))}
+          hint="Extra images shown on the item page. The photo above stays the cover."
+        />
 
         <div className="flex items-center justify-between rounded-lg bg-paper-2 px-4 py-3">
           <div>

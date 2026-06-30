@@ -13,6 +13,7 @@ export default function StockInquiry() {
   const [items, setItems] = useState(null)
   const [err, setErr] = useState('')
   const [lowOnly, setLowOnly] = useState(false)
+  const [highFirst, setHighFirst] = useState(false) // sort highest-stock first
 
   useEffect(() => {
     supabase
@@ -36,10 +37,12 @@ export default function StockInquiry() {
     [items],
   )
 
-  const rows = useMemo(
-    () => (!items ? [] : lowOnly ? items.filter(needsReorder) : items),
-    [items, lowOnly],
-  )
+  const rows = useMemo(() => {
+    if (!items) return []
+    const base = lowOnly ? items.filter(needsReorder) : items
+    // items load ascending (lowest first). "High stock" flips to highest first.
+    return highFirst ? [...base].sort((a, b) => Number(b.quantity) - Number(a.quantity)) : base
+  }, [items, lowOnly, highFirst])
 
   return (
     <div className="space-y-5">
@@ -51,15 +54,26 @@ export default function StockInquiry() {
             <p className="fig text-2xl font-bold">{items === null ? '—' : qty(lowCount)}</p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => setLowOnly((v) => !v)}
-          className={`rounded-lg border px-4 py-2.5 text-sm font-medium transition ${
-            lowOnly ? 'border-saffron bg-saffron/15 text-saffron' : 'border-line bg-card text-muted hover:text-ink'
-          }`}
-        >
-          {lowOnly ? 'Showing low only' : 'Show low only'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setLowOnly((v) => !v)}
+            className={`rounded-lg border px-4 py-2.5 text-sm font-medium transition ${
+              lowOnly ? 'border-saffron bg-saffron/15 text-saffron' : 'border-line bg-card text-muted hover:text-ink'
+            }`}
+          >
+            {lowOnly ? 'Showing low only' : 'Show low only'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setHighFirst((v) => !v)}
+            className={`rounded-lg border px-4 py-2.5 text-sm font-medium transition ${
+              highFirst ? 'border-profit bg-profit/15 text-profit' : 'border-line bg-card text-muted hover:text-ink'
+            }`}
+          >
+            {highFirst ? 'Highest stock first' : 'Show high stock'}
+          </button>
+        </div>
       </div>
 
       {err && <p className="rounded-lg bg-dues/10 px-4 py-3 text-sm text-dues">{err}</p>}

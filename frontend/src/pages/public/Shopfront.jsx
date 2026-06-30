@@ -17,6 +17,7 @@ export default function Shopfront() {
   const [items, setItems] = useState(null)
   const [err, setErr] = useState('')
   const [q, setQ] = useState('')
+  const [activeTag, setActiveTag] = useState('')
 
   // shopfront_items is the column-safe view (no purchase_rate — Golden Rule #4).
   // Category names come from ShopContext, so no embed through the view is needed.
@@ -29,7 +30,7 @@ export default function Shopfront() {
     let active = true
     supabase
       .from('shopfront_items')
-      .select('id, name, quantity, rate, dealer_rate, low_stock_threshold, photo_url, category_id')
+      .select('id, name, quantity, rate, dealer_rate, low_stock_threshold, photo_url, category_id, tags, description')
       .order('name')
       .then(({ data, error }) => {
         if (!active) return
@@ -39,15 +40,27 @@ export default function Shopfront() {
     return () => { active = false }
   }, [])
 
+  // Distinct tags across the in-stock catalogue, for the filter chips.
+  const allTags = useMemo(() => {
+    if (!items) return []
+    const set = new Set()
+    items.forEach((i) => (i.tags || []).forEach((t) => set.add(t)))
+    return [...set].sort((a, b) => a.localeCompare(b))
+  }, [items])
+
   const visible = useMemo(() => {
     if (!items) return []
     const needle = q.trim().toLowerCase()
     return items.filter((i) => {
       if (categoryId && i.category_id !== categoryId) return false
-      if (needle && !i.name.toLowerCase().includes(needle)) return false
+      if (activeTag && !(i.tags || []).includes(activeTag)) return false
+      if (needle) {
+        const hay = `${i.name} ${(i.tags || []).join(' ')} ${i.description || ''}`.toLowerCase()
+        if (!hay.includes(needle)) return false
+      }
       return true
     })
-  }, [items, categoryId, q])
+  }, [items, categoryId, q, activeTag])
 
   const setCategory = (id) => navigate(id ? `/shop/${id}` : '/')
 
@@ -79,6 +92,18 @@ export default function Shopfront() {
           </Tab>
         ))}
       </div>
+
+      {/* Tag filter chips */}
+      {allTags.length > 0 && (
+        <div className="-mx-1 flex flex-wrap gap-2">
+          <Chip active={!activeTag} onClick={() => setActiveTag('')}>All tags</Chip>
+          {allTags.map((t) => (
+            <Chip key={t} active={activeTag === t} onClick={() => setActiveTag(activeTag === t ? '' : t)}>
+              #{t}
+            </Chip>
+          ))}
+        </div>
+      )}
 
       {err && <p className="rounded-lg bg-dues/10 px-4 py-3 text-sm text-dues">{err}</p>}
 
@@ -112,6 +137,22 @@ function Tab({ active, onClick, children }) {
       className={`shrink-0 rounded-full border px-4 py-1.5 text-sm font-medium transition ${
         active
           ? 'border-peacock bg-peacock text-white'
+          : 'border-line bg-card text-muted hover:text-ink'
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
+
+function Chip({ active, onClick, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition ${
+        active
+          ? 'border-saffron bg-saffron/15 text-saffron'
           : 'border-line bg-card text-muted hover:text-ink'
       }`}
     >

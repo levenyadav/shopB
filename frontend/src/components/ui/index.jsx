@@ -106,6 +106,91 @@ export function Textarea({ label, className = '', ...props }) {
   )
 }
 
+// Chip-style tag editor. Type a label and press Enter/comma to add it; Backspace
+// on an empty box removes the last chip. value/onChange work on a string[].
+export function TagsInput({ label, hint, value = [], onChange, placeholder = 'Type a tag, press Enter' }) {
+  const [draft, setDraft] = useState('')
+  function add(raw) {
+    const t = String(raw).trim()
+    if (!t) return
+    if (!value.some((x) => x.toLowerCase() === t.toLowerCase())) onChange([...value, t])
+    setDraft('')
+  }
+  function remove(i) { onChange(value.filter((_, idx) => idx !== i)) }
+  function onKey(e) {
+    if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); add(draft) }
+    else if (e.key === 'Backspace' && !draft && value.length) remove(value.length - 1)
+  }
+  return (
+    <label className="block">
+      {label && <span className="mb-1.5 block text-sm font-medium text-ink">{label}</span>}
+      <div className="ring-focus flex flex-wrap items-center gap-1.5 rounded-md border border-line bg-card px-2 py-2">
+        {value.map((t, i) => (
+          <span key={i} className="inline-flex items-center gap-1 rounded bg-peacock/10 px-2 py-1 text-xs font-medium text-peacock">
+            {t}
+            <button type="button" onClick={() => remove(i)} className="hover:text-peacock-700" aria-label={`Remove ${t}`}>
+              <IconX size={12} />
+            </button>
+          </span>
+        ))}
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={onKey}
+          onBlur={() => add(draft)}
+          placeholder={value.length ? '' : placeholder}
+          className="min-w-[8rem] flex-1 bg-transparent px-1 py-0.5 text-sm text-ink outline-none"
+        />
+      </div>
+      {hint && <span className="mt-1 block text-xs text-muted">{hint}</span>}
+    </label>
+  )
+}
+
+// Multiple image URLs (a gallery). Paste a link and press Enter / tap Add. Each
+// added URL shows a thumbnail with a remove button. value/onChange = string[].
+export function ImagesInput({ label, hint, value = [], onChange }) {
+  const [draft, setDraft] = useState('')
+  function add() {
+    const u = draft.trim()
+    if (!u) return
+    if (!value.includes(u)) onChange([...value, u])
+    setDraft('')
+  }
+  function remove(i) { onChange(value.filter((_, idx) => idx !== i)) }
+  return (
+    <div className="block">
+      {label && <span className="mb-1.5 block text-sm font-medium text-ink">{label}</span>}
+      {value.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-2">
+          {value.map((u, i) => (
+            <div key={i} className="relative h-16 w-16 overflow-hidden rounded-md border border-line bg-paper-2">
+              <img src={u} alt="" className="h-full w-full object-cover" onError={(e) => { e.currentTarget.style.opacity = '0.3' }} />
+              <button
+                type="button" onClick={() => remove(i)} aria-label="Remove image"
+                className="absolute right-0.5 top-0.5 rounded bg-ink/60 p-0.5 text-white hover:bg-ink"
+              >
+                <IconX size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex gap-2">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add() } }}
+          placeholder="https://… image URL"
+          className="ring-focus w-full rounded-md border border-line bg-card px-3 py-2.5 text-sm text-ink"
+        />
+        <Button variant="ghost" onClick={add}>Add</Button>
+      </div>
+      {hint && <span className="mt-1 block text-xs text-muted">{hint}</span>}
+    </div>
+  )
+}
+
 import { stockStatus } from '../../lib/helpers'
 
 export function StockBadge({ quantity, threshold }) {

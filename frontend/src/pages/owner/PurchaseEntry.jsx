@@ -9,7 +9,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { money, qty } from '../../lib/format'
 import { round2 } from '../../lib/helpers'
-import { Button, Field, Select, Textarea, Spinner, StockBadge } from '../../components/ui'
+import { Button, Field, Select, Textarea, Spinner, StockBadge, TagsInput, ImagesInput } from '../../components/ui'
 import BarcodeScanner from '../../components/BarcodeScanner'
 
 // Public barcode → product lookup (Open Food Facts; free, keyless, CORS-friendly).
@@ -52,7 +52,8 @@ export default function PurchaseEntry() {
 const BLANK = {
   name: '', supplier_id: '', category_id: '', location: '',
   quantity: '', purchase_rate: '', dealer_rate: '', rate: '',
-  low_stock_threshold: '10', barcode: '', notes: '',
+  low_stock_threshold: '10', moq: '1', barcode: '', notes: '',
+  description: '', tags: [], images: [],
 }
 
 function NewItemEntry() {
@@ -152,6 +153,7 @@ function NewItemEntry() {
     if (form.purchase_rate === '' || Number(form.purchase_rate) < 0) e.purchase_rate = 'Enter the cost rate.'
     if (form.dealer_rate === '' || Number(form.dealer_rate) < 0) e.dealer_rate = 'Enter the dealer rate.'
     if (form.rate === '' || Number(form.rate) < 0) e.rate = 'Enter the retail rate.'
+    if (form.moq !== '' && Number(form.moq) < 1) e.moq = 'MOQ must be at least 1.'
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -191,8 +193,12 @@ function NewItemEntry() {
           dealer_rate: round2(form.dealer_rate),
           rate: round2(form.rate),
           low_stock_threshold: round2(form.low_stock_threshold || 10),
+          moq: round2(form.moq || 1),
           barcode: form.barcode.trim() || null,
           photo_url,
+          description: form.description.trim() || null,
+          tags: form.tags,
+          images: form.images,
         })
         .select('id, item_no, name')
         .single()
@@ -281,16 +287,25 @@ function NewItemEntry() {
           </div>
           <Field label="Location / Rack No" placeholder="e.g. R1-A (display only)"
                  value={form.location} onChange={set('location')} />
+          <Textarea label="Description (optional)" rows={3} value={form.description}
+                    onChange={set('description')}
+                    placeholder="Shown on the shopfront item page — material, size, occasion…" />
+          <TagsInput label="Tags (optional)" value={form.tags}
+                     onChange={(tags) => setForm((f) => ({ ...f, tags }))}
+                     hint="Used for search & filtering, e.g. wedding, premium, handmade." />
         </Section>
 
         {/* Stock & pricing */}
         <Section title="Opening stock & rates" hint="Purchase Rate is your cost — it is never shown to buyers.">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-3">
             <Field label="Quantity coming in" type="number" min="0" inputMode="decimal"
                    value={form.quantity} onChange={set('quantity')} error={errors.quantity} />
             <Field label="Low stock threshold" type="number" min="0" inputMode="decimal"
                    value={form.low_stock_threshold} onChange={set('low_stock_threshold')}
                    hint="Flag as Low below this" />
+            <Field label="Min order qty (MOQ)" type="number" min="1" inputMode="decimal"
+                   value={form.moq} onChange={set('moq')} error={errors.moq}
+                   hint="Least a customer can order" />
           </div>
           <div className="grid gap-4 sm:grid-cols-3">
             <Field label="Purchase Rate" prefix="₹" type="number" min="0" step="0.01" inputMode="decimal"
@@ -376,6 +391,10 @@ function NewItemEntry() {
               No matching product found. The code was saved — fill in the rest of the details below.
             </p>
           )}
+
+          <ImagesInput label="More photos (optional)" value={form.images}
+                       onChange={(images) => setForm((f) => ({ ...f, images }))}
+                       hint="Extra images shown in a gallery on the item page. The photo above stays the cover." />
         </Section>
 
         <Textarea label="Notes (optional)" rows={2} value={form.notes}
