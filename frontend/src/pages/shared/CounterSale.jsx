@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   IconSearch, IconBarcode, IconPlus, IconMinus, IconTrash, IconUserPlus,
-  IconCheck, IconPrinter, IconX, IconShoppingCart, IconArrowLeft,
+  IconCheck, IconPrinter, IconX, IconShoppingCart, IconArrowLeft, IconFileInvoice,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
@@ -12,12 +12,17 @@ import { rateForBuyer, lineProfit, round2 } from '../../lib/helpers'
 import { Button, Field, Spinner, Badge, PhotoThumb } from '../../components/ui'
 import BarcodeScanner from '../../components/BarcodeScanner'
 import CounterReceipt from '../../components/CounterReceipt'
+import { buildInvoiceModel, printInvoice } from '../../lib/invoiceTemplate'
 
 // POS / Counter Sale (SPEC §6.5a — walk-in billing). Owner OR staff ring up a
 // walk-in on the spot: scan/search items into a cart, pick or quick-add a named
 // buyer, take payment, and finalize via the atomic create_counter_sale RPC (one
 // transaction → stock drops, ledger/udhaar booked, fulfilment auto-completed).
 const PAYMENTS = [['cash', 'Cash'], ['upi', 'UPI'], ['udhaar', 'Udhaar (credit)']]
+
+// Commas and parentheses are PostgREST's `.or()` grammar; a search term that
+// contains one otherwise throws a 400 and looks like "no results". Strip them.
+const orSafe = (s) => s.replace(/[,()]/g, ' ').trim()
 
 export default function CounterSale() {
   const { profile } = useAuth()
@@ -60,7 +65,7 @@ export default function CounterSale() {
       }
       return [...ls, {
         id: it.id, item_no: it.item_no, name: it.name, category_id: it.category_id,
-        photo_url: it.photo_url, stock: Number(it.quantity) || 0,
+        photo_url: it.photo_url, stock: Number(it.quantity) || 0, hsn_sac: it.hsn_sac ?? null,
         rate: Number(it.rate), dealer_rate: Number(it.dealer_rate),
         purchase_rate: Number(it.purchase_rate ?? 0),
         quantity: 1, charge: rateForBuyer(it, buyerType),
@@ -79,7 +84,7 @@ export default function CounterSale() {
     if (cart.some((l) => l.quantity <= 0 || l.charge < 0)) return setErr('Check the quantities and rates.')
 
     setBusy(true)
-    const { data: billId, error } = await supabase.rpc('create_counter_sale', {
+    const { data, error } = await supabase.rpc('create_counter_sale', {
       p_buyer_id: buyer.id,
       p_buyer_type: buyerType,
       p_payment_type: payment,
@@ -90,15 +95,22 @@ export default function CounterSale() {
     setBusy(false)
     if (error) { setErr(error.message); return }
 
+    // 019 returns { bill_id, invoice_no }; older DBs return the bare bill_id uuid.
+    const billId = typeof data === 'string' ? data : data?.bill_id
+    const invoiceNo = typeof data === 'string' ? null : (data?.invoice_no ?? null)
+
     setDone({
       bill_id: billId,
+      invoice_no: invoiceNo,
       created_at: new Date().toISOString(),
       buyer_name: buyer.full_name, buyer_phone: buyer.phone, buyer_type: buyerType,
+      buyer_gstin: buyer.gstin ?? null, buyer_address: buyer.address ?? null,
+      buyer_state_name: buyer.state_name ?? null, buyer_state_code: buyer.state_code ?? null,
       payment_type: payment,
       tendered: payment === 'cash' && tendered !== '' ? Number(tendered) : null,
       total,
       lines: cart.map((l) => ({
-        item_name: l.name, item_no: l.item_no, quantity: l.quantity,
+        item_name: l.name, item_no: l.item_no, hsn_sac: l.hsn_sac ?? null, quantity: l.quantity,
         rate: l.charge, amount: round2(l.charge * l.quantity),
       })),
     })
@@ -238,10 +250,11 @@ function ItemPicker({ shopId, isOwner, onAdd, currency }) {
     const t = setTimeout(async () => {
       let query = supabase
         .from('items')
-        .select('id, item_no, name, category_id, photo_url, quantity, rate, dealer_rate' + (isOwner ? ', purchase_rate' : ''))
+        .select('id, item_no, name, category_id, photo_url, quantity, rate, dealer_rate, hsn_sac' + (isOwner ? ', purchase_rate' : ''))
         .eq('shop_id', shopId).eq('is_active', true).gt('quantity', 0)
         .order('name').limit(24)
-      if (term) query = query.or(`name.ilike.%${term}%,item_no.ilike.%${term}%`)
+      const safe = orSafe(term)
+      if (safe) query = query.or(`name.ilike.%${safe}%,item_no.ilike.%${safe}%`)
       const { data } = await query
       if (id === seq.current) { setRows(data || []); setLoading(false) }
     }, 200)
@@ -314,11 +327,13 @@ function BuyerPanel({ buyer, setBuyer, shopId }) {
     const term = q.trim()
     if (!term) { setRows([]); return }
     const t = setTimeout(async () => {
+      const safe = orSafe(term)
+      if (!safe) { if (id === seq.current) setRows([]); return }
       const { data } = await supabase
         .from('profiles')
-        .select('id, full_name, phone, role, balance_due')
+        .select('id, full_name, phone, role, balance_due, gstin, address, state_name, state_code')
         .eq('shop_id', shopId).in('role', ['customer', 'dealer'])
-        .or(`full_name.ilike.%${term}%,phone.ilike.%${term}%`)
+        .or(`full_name.ilike.%${safe}%,phone.ilike.%${safe}%`)
         .limit(8)
       if (id === seq.current) setRows(data || [])
     }, 200)
@@ -332,7 +347,7 @@ function BuyerPanel({ buyer, setBuyer, shopId }) {
     const { data, error } = await supabase
       .from('profiles')
       .insert({ shop_id: shopId, full_name: form.full_name.trim(), phone: form.phone.trim() || null, role: form.role })
-      .select('id, full_name, phone, role, balance_due').single()
+      .select('id, full_name, phone, role, balance_due, gstin, address, state_name, state_code').single()
     setBusy(false)
     if (error) { setErr(error.message); return }
     setBuyer(data); setAdding(false); setForm({ full_name: '', phone: '', role: 'customer' })
@@ -403,21 +418,43 @@ function BuyerPanel({ buyer, setBuyer, shopId }) {
 // ---- Receipt / success screen ------------------------------------------------
 function ReceiptScreen({ bill, shop, currency, onNew, home, navigate }) {
   const m = (n) => money(n).replace('₹', currency)
+  // The bill's reference: the real gap-free invoice number (016/019) when we have
+  // it, else the short bill_id — kept as a graceful fallback for pre-019 DBs.
+  const ref = bill.invoice_no || `#${bill.bill_id?.slice(0, 8).toUpperCase()}`
+
+  // Full A5 Tax Invoice, reusing the same builder/printer as the customer copy.
+  function printTaxInvoice() {
+    const model = buildInvoiceModel({
+      shop,
+      buyer: {
+        name: bill.buyer_name, address: bill.buyer_address, gstin: bill.buyer_gstin,
+        state_name: bill.buyer_state_name, state_code: bill.buyer_state_code,
+      },
+      invoice: { invoice_no: ref, date: bill.created_at },
+      lines: bill.lines.map((l) => ({
+        name: l.item_name, item_no: l.item_no, hsn: l.hsn_sac, qty: l.quantity, rate: l.rate,
+      })),
+      gstRate: shop?.gst_rate,
+    })
+    printInvoice(model)
+  }
+
   return (
     <div className="mx-auto max-w-md">
       <div className="no-print rounded-lg border border-line bg-card p-6 text-center">
         <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-profit/10 text-profit"><IconCheck size={26} /></div>
         <p className="text-lg font-bold">Sale complete</p>
         <p className="mt-1 text-sm text-muted">
-          Bill <span className="fig">#{bill.bill_id?.slice(0, 8).toUpperCase()}</span> · {bill.lines.length} item{bill.lines.length === 1 ? '' : 's'} · <span className="fig font-semibold text-ink">{m(bill.total)}</span>
+          Bill <span className="fig">{ref}</span> · {bill.lines.length} item{bill.lines.length === 1 ? '' : 's'} · <span className="fig font-semibold text-ink">{m(bill.total)}</span>
         </p>
         {bill.payment_type === 'cash' && bill.tendered != null && (
           <p className="mt-1 fig text-sm">Change due: <span className="font-semibold">{m(Math.max(0, bill.tendered - bill.total))}</span></p>
         )}
-        <div className="mt-5 flex gap-2">
-          <Button variant="ghost" onClick={() => window.print()} className="flex-1"><IconPrinter size={18} /> Print receipt</Button>
-          <Button onClick={onNew} className="flex-1"><IconPlus size={18} /> New sale</Button>
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          <Button variant="ghost" onClick={() => window.print()}><IconPrinter size={18} /> Receipt slip</Button>
+          <Button variant="ghost" onClick={printTaxInvoice}><IconFileInvoice size={18} /> Tax Invoice (A5)</Button>
         </div>
+        <Button onClick={onNew} className="mt-2 w-full"><IconPlus size={18} /> New sale</Button>
         <button onClick={() => navigate(home)} className="mt-3 text-sm text-muted hover:text-ink">Done — back to {home === '/owner' ? 'dashboard' : 'fulfilment'}</button>
       </div>
       <CounterReceipt bill={bill} shop={shop} />
