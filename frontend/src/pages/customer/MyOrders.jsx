@@ -23,7 +23,7 @@ export default function MyOrders() {
       // now out of stock / inactive aren't in the view → neutral fallback below.
       const { data: rows, error } = await supabase
         .from('orders')
-        .select('id, item_id, quantity, amount, status, notes, created_at')
+        .select('id, item_id, quantity, amount, status, notes, created_at, order_group_id')
         .order('created_at', { ascending: false })
       if (!active) return
       if (error) { setErr(error.message); return }
@@ -37,7 +37,8 @@ export default function MyOrders() {
           .in('id', ids)
         for (const it of items ?? []) byId[it.id] = it
       }
-      if (active) setOrders((rows ?? []).map((o) => ({ ...o, item: byId[o.item_id] || null })))
+      const withItem = (rows ?? []).map((o) => ({ ...o, item: byId[o.item_id] || null }))
+      if (active) setOrders(groupOrders(withItem))
     }
     load()
     return () => { active = false }
@@ -62,22 +63,22 @@ export default function MyOrders() {
         </div>
       ) : (
         <ul className="space-y-3">
-          {orders.map((o) => (
-            <li key={o.id}>
+          {orders.map((g) => (
+            <li key={g.id}>
               <Link
-                to={`/orders/${o.id}`}
+                to={`/orders/${g.id}`}
                 className="flex items-center gap-4 rounded-lg border border-line bg-card p-3 transition hover:border-ink/20"
               >
-                <Thumb url={o.item?.photo_url} />
+                <Thumb url={g.lines[0]?.item?.photo_url} />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium text-ink">{o.item?.name || 'Item'}</p>
+                  <p className="truncate font-medium text-ink">{groupTitle(g)}</p>
                   <p className="text-xs text-muted">
-                    <span className="fig">{qty(o.quantity)}</span> pcs · {dateTime(o.created_at)}
+                    <span className="fig">{qty(g.totalQty)}</span> pcs · {dateTime(g.created_at)}
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="fig font-semibold">{money(o.amount).replace('₹', currency)}</p>
-                  <div className="mt-1"><OrderStatusBadge status={o.status} audience="buyer" /></div>
+                  <p className="fig font-semibold">{money(g.totalAmount).replace('₹', currency)}</p>
+                  <div className="mt-1"><OrderStatusBadge status={g.status} audience="buyer" /></div>
                 </div>
               </Link>
             </li>
@@ -86,6 +87,37 @@ export default function MyOrders() {
       )}
     </div>
   )
+}
+
+// Buyer-facing label for a grouped order: the first item's name, plus "+N more"
+// when the cart had several items.
+function groupTitle(g) {
+  const first = g.lines[0]?.item?.name || 'Item'
+  return g.lines.length > 1 ? `${first} +${g.lines.length - 1} more` : first
+}
+
+// Collapse order rows that share an order_group_id into one card (a cart). Legacy
+// rows with a null group_id stand alone (a group of one). Order is preserved from
+// the newest-first input, so the link target is the group's first (newest) row.
+const STATUS_RANK = ['pending', 'approved', 'packed', 'delivered', 'picked_up', 'rejected']
+function groupOrders(rows) {
+  const groups = []
+  const byKey = new Map()
+  for (const o of rows) {
+    const key = o.order_group_id || o.id
+    let g = byKey.get(key)
+    if (!g) {
+      g = { id: o.id, created_at: o.created_at, lines: [], totalAmount: 0, totalQty: 0, status: o.status }
+      byKey.set(key, g)
+      groups.push(g)
+    }
+    g.lines.push(o)
+    g.totalAmount += Number(o.amount) || 0
+    g.totalQty += Number(o.quantity) || 0
+    // Show the least-progressed status so the buyer sees the group as still open.
+    if (STATUS_RANK.indexOf(o.status) < STATUS_RANK.indexOf(g.status)) g.status = o.status
+  }
+  return groups
 }
 
 function Thumb({ url }) {

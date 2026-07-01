@@ -33,8 +33,9 @@ const STATUS_NOTE = {
 export default function MyOrderDetail() {
   const { id } = useParams()
   const { shop, currency } = useShop()
-  const [order, setOrder] = useState(null)
-  const [invoice, setInvoice] = useState(null)
+  const [order, setOrder] = useState(null)   // the representative (clicked) line
+  const [lines, setLines] = useState([])     // all lines of the group
+  const [invoices, setInvoices] = useState({}) // order_id -> customer_invoices row
   const [err, setErr] = useState('')
   const [missing, setMissing] = useState(false)
 
@@ -45,30 +46,50 @@ export default function MyOrderDetail() {
         .from('orders')
         .select(
           'id, item_id, quantity, rate_at_order, amount, status, notes, ' +
-            'rejection_reason, created_at, updated_at',
+            'rejection_reason, created_at, updated_at, order_group_id',
         )
         .eq('id', id)
         .maybeSingle()
       if (!active) return
       if (error) { setErr(error.message); return }
       if (!data) { setMissing(true); return }
-      // Resolve item name/photo from the column-safe view (Golden Rule #4).
-      const { data: item } = await supabase
-        .from('shopfront_items')
-        .select('name, photo_url')
-        .eq('id', data.item_id)
-        .maybeSingle()
-      if (active) setOrder({ ...data, item: item || null })
 
-      // Once approved, a Sale (and its invoice) exists. Read it from the
-      // buyer-safe customer_invoices view — never the sales table (cost leak).
-      if (data.status !== 'pending' && data.status !== 'rejected') {
-        const { data: inv } = await supabase
-          .from('customer_invoices')
-          .select('*')
-          .eq('order_id', id)
-          .maybeSingle()
-        if (active) setInvoice(inv || null)
+      // A grouped order (cart) shows all its lines; a legacy order is a group of
+      // one. RLS already scopes orders to this buyer, so the sibling query is safe.
+      let rows = [data]
+      if (data.order_group_id) {
+        const { data: sibs } = await supabase
+          .from('orders')
+          .select('id, item_id, quantity, rate_at_order, amount, status, notes, rejection_reason, created_at, order_group_id')
+          .eq('order_group_id', data.order_group_id)
+          .order('created_at')
+        if (sibs?.length) rows = sibs
+      }
+
+      // Resolve item name/photo for every line from the column-safe view (Golden
+      // Rule #4 — buyers never read the items table / purchase_rate).
+      const itemIds = [...new Set(rows.map((r) => r.item_id))]
+      const byId = {}
+      if (itemIds.length) {
+        const { data: items } = await supabase
+          .from('shopfront_items').select('id, name, photo_url').in('id', itemIds)
+        for (const it of items ?? []) byId[it.id] = it
+      }
+      const withItem = rows.map((r) => ({ ...r, item: byId[r.item_id] || null }))
+
+      // Invoices for the lines that have a Sale (approved+). Buyer-safe view only.
+      const billable = withItem.filter((r) => r.status !== 'pending' && r.status !== 'rejected').map((r) => r.id)
+      const invMap = {}
+      if (billable.length) {
+        const { data: invs } = await supabase
+          .from('customer_invoices').select('*').in('order_id', billable)
+        for (const iv of invs ?? []) invMap[iv.order_id] = iv
+      }
+
+      if (active) {
+        setOrder(data)
+        setLines(withItem)
+        setInvoices(invMap)
       }
     }
     load()
@@ -79,22 +100,16 @@ export default function MyOrderDetail() {
   if (err) return <Empty>{err}</Empty>
   if (!order) return <div className="grid place-items-center py-20 text-muted"><Spinner /></div>
 
-  const rejected = order.status === 'rejected'
-  const invoiceModel = invoice && buildInvoiceModel({
-    shop,
-    buyer: {
-      name: invoice.bill_to_name,
-      address: invoice.bill_to_address,
-      gstin: invoice.bill_to_gstin,
-      state_name: invoice.bill_to_state_name,
-      state_code: invoice.bill_to_state_code,
-      type: invoice.buyer_type,
-    },
-    invoice: { invoice_no: invoice.invoice_no, date: invoice.created_at, notes: invoice.invoice_notes },
-    lines: [{ name: invoice.item_name, item_no: invoice.item_no, hsn: invoice.hsn_sac, qty: invoice.quantity, rate: invoice.rate_charged }],
-    gstRate: shop?.gst_rate,
-  })
-  const reachedIndex = ORDER.indexOf(order.status)
+  const totalAmount = lines.reduce((s, l) => s + (Number(l.amount) || 0), 0)
+  const isGroup = lines.length > 1
+  // Group status = least-progressed line, so the timeline reflects what's left.
+  const groupStatus = lines.reduce(
+    (acc, l) => (ORDER.indexOf(l.status) >= 0 && (acc == null || ORDER.indexOf(l.status) < ORDER.indexOf(acc)) ? l.status : acc),
+    lines.every((l) => l.status === 'rejected') ? 'rejected' : null,
+  ) || lines[0].status
+  const rejected = groupStatus === 'rejected'
+
+  const reachedIndex = ORDER.indexOf(groupStatus)
   // picked_up maps onto the final "Delivered / Picked up" step, so the active
   // step never runs past the last visible row.
   const currentStep = Math.min(reachedIndex, STEPS.length - 1)
@@ -106,35 +121,63 @@ export default function MyOrderDetail() {
       </Link>
 
       <div className="rounded-lg border border-line bg-card p-5">
-        <div className="flex items-center gap-4">
-          <Thumb url={order.item?.photo_url} />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-lg font-semibold">{order.item?.name || 'Item'}</p>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-lg font-semibold">{isGroup ? `Order · ${lines.length} items` : (lines[0].item?.name || 'Item')}</p>
             <p className="text-xs text-muted">Placed {dateTime(order.created_at)}</p>
           </div>
-          <OrderStatusBadge status={order.status} audience="buyer" />
+          <OrderStatusBadge status={groupStatus} audience="buyer" />
         </div>
 
-        <dl className="mt-5 grid grid-cols-2 gap-3 text-sm">
-          <Row label="Quantity" value={<span className="fig">{qty(order.quantity)} pcs</span>} />
-          <Row label="Rate (each)" value={<span className="fig">{money(order.rate_at_order).replace('₹', currency)}</span>} />
-          <Row label="Total amount" value={<span className="fig font-semibold">{money(order.amount).replace('₹', currency)}</span>} />
-          {order.notes && <Row label="Your note" value={order.notes} full />}
-        </dl>
+        {/* Line items */}
+        <ul className="mt-4 divide-y divide-line">
+          {lines.map((l) => {
+            const inv = invoices[l.id]
+            const model = inv && buildInvoiceModel({
+              shop,
+              buyer: {
+                name: inv.bill_to_name, address: inv.bill_to_address, gstin: inv.bill_to_gstin,
+                state_name: inv.bill_to_state_name, state_code: inv.bill_to_state_code, type: inv.buyer_type,
+              },
+              invoice: { invoice_no: inv.invoice_no, date: inv.created_at, notes: inv.invoice_notes },
+              lines: [{ name: inv.item_name, item_no: inv.item_no, hsn: inv.hsn_sac, qty: inv.quantity, rate: inv.rate_charged }],
+              gstRate: shop?.gst_rate,
+            })
+            return (
+              <li key={l.id} className="flex items-start gap-3 py-3 first:pt-0">
+                <Thumb url={l.item?.photo_url} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium text-ink">{l.item?.name || 'Item'}</p>
+                  <p className="text-xs text-muted">
+                    <span className="fig">{qty(l.quantity)}</span> × <span className="fig">{money(l.rate_at_order).replace('₹', currency)}</span>
+                    {isGroup && <span className="ml-2"><OrderStatusBadge status={l.status} audience="buyer" /></span>}
+                  </p>
+                  {l.notes && <p className="mt-0.5 text-xs text-muted">Note: {l.notes}</p>}
+                  {model && (
+                    <div className="mt-1.5 flex flex-wrap items-center gap-3">
+                      <span className="text-xs text-muted">Invoice <span className="fig text-ink">{inv.invoice_no}</span></span>
+                      <button onClick={() => viewInvoice(model)} className="inline-flex items-center gap-1 text-xs font-medium text-peacock hover:underline">
+                        <IconEye size={14} /> View
+                      </button>
+                      <button onClick={() => printInvoice(model)} className="inline-flex items-center gap-1 text-xs font-medium text-muted hover:text-ink">
+                        <IconPrinter size={14} /> Download
+                      </button>
+                    </div>
+                  )}
+                  {l.status === 'rejected' && l.rejection_reason && (
+                    <p className="mt-0.5 text-xs text-dues">Rejected: {l.rejection_reason}</p>
+                  )}
+                </div>
+                <span className="fig shrink-0 font-semibold">{money(l.amount).replace('₹', currency)}</span>
+              </li>
+            )
+          })}
+        </ul>
 
-        {invoiceModel && (
-          <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-line pt-4">
-            <span className="text-sm text-muted">
-              Invoice <span className="fig font-medium text-ink">{invoice.invoice_no}</span>
-            </span>
-            <Button onClick={() => viewInvoice(invoiceModel)}>
-              <IconEye size={18} /> View invoice
-            </Button>
-            <Button variant="ghost" onClick={() => printInvoice(invoiceModel)}>
-              <IconPrinter size={18} /> Download
-            </Button>
-          </div>
-        )}
+        <div className="mt-3 flex items-center justify-between border-t border-line pt-3 text-sm">
+          <span className="text-muted">Total amount</span>
+          <span className="fig text-lg font-bold">{money(totalAmount).replace('₹', currency)}</span>
+        </div>
       </div>
 
       {/* Status */}

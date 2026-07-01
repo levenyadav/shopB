@@ -7,6 +7,8 @@ import ShopLayout from './components/ShopLayout'
 import Login from './pages/public/Login'
 import Shopfront from './pages/public/Shopfront'
 import ItemDetail from './pages/public/ItemDetail'
+import Cart from './pages/public/Cart'
+import ContentPage from './pages/public/ContentPage'
 import MyOrders from './pages/customer/MyOrders'
 import MyOrderDetail from './pages/customer/MyOrderDetail'
 import MyAccount from './pages/customer/MyAccount'
@@ -71,6 +73,11 @@ export default function App() {
         <Route path="/" element={<Shopfront />} />
         <Route path="/shop/:categoryId" element={<Shopfront />} />
         <Route path="/item/:id" element={<ItemDetail />} />
+        <Route path="/cart" element={<Cart />} />
+        <Route path="/about" element={<ContentPage column="about_us" title="About Us" />} />
+        <Route path="/contact" element={<ContentPage column="contact_info" title="Contact" />} />
+        <Route path="/privacy" element={<ContentPage column="privacy_policy" title="Privacy Policy" />} />
+        <Route path="/terms" element={<ContentPage column="terms" title="Terms & Conditions" />} />
         <Route path="/orders" element={<BuyerOnly><MyOrders /></BuyerOnly>} />
         <Route path="/orders/:id" element={<BuyerOnly><MyOrderDetail /></BuyerOnly>} />
         <Route path="/account" element={<BuyerOnly><MyAccount /></BuyerOnly>} />

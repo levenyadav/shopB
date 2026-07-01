@@ -1,23 +1,26 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
-  IconPhoto, IconArrowLeft, IconMinus, IconPlus, IconCircleCheck, IconLogin2,
+  IconPhoto, IconArrowLeft, IconMinus, IconPlus, IconCircleCheck, IconShoppingCartPlus,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
+import { useCart } from '../../context/CartContext'
 import { money } from '../../lib/format'
 import { rateForBuyer, round2 } from '../../lib/helpers'
 import { Button, Textarea, Badge, Spinner } from '../../components/ui'
 
-// SPEC §6.3 — item detail + place order. Buyers see the price for their tier
-// (dealer → Dealer Rate, else Rate); purchase rate is never exposed. Placing an
-// order inserts a 'pending' row only — stock does NOT move until the owner
-// approves (Golden Rules #2, #5: rate is locked here as rate_at_order).
+// SPEC §6.3 — item detail + add to cart. Buyers see the price for their tier
+// (dealer → Dealer Rate, else Rate); purchase rate is never exposed. Items go
+// into the client-side cart; the order (a 'pending' row per line) is placed from
+// the cart, where rate is locked as rate_at_order (Golden Rules #2, #5). Owner/
+// staff only preview. Anonymous browsers may build a cart, then sign in to check
+// out.
 export default function ItemDetail() {
   const { id } = useParams()
-  const { role, profile } = useAuth()
-  const { shopId, currency, categories } = useShop()
+  const { role } = useAuth()
+  const { currency, categories } = useShop()
   const [item, setItem] = useState(null)
   const [err, setErr] = useState('')
   const [notFound, setNotFound] = useState(false)
@@ -53,7 +56,7 @@ export default function ItemDetail() {
 
   const price = rateForBuyer(item, role)
   const available = Number(item.quantity)
-  const isBuyer = role === 'customer' || role === 'dealer'
+  const isStaffSide = role === 'owner' || role === 'staff'
 
   return (
     <div className="space-y-5">
@@ -93,22 +96,12 @@ export default function ItemDetail() {
             <p className="whitespace-pre-line text-sm leading-relaxed text-ink/80">{item.description}</p>
           )}
 
-          {isBuyer ? (
-            <OrderBox
-              item={item} price={price} available={available}
-              shopId={shopId} buyerId={profile.id} buyerType={role} currency={currency}
-            />
-          ) : role === 'owner' || role === 'staff' ? (
+          {isStaffSide ? (
             <p className="rounded-lg border border-line bg-paper-2 px-4 py-3 text-sm text-muted">
               You’re signed in as {role}. Ordering is for customers and dealers — this is how your shopfront looks to them.
             </p>
           ) : (
-            <Link
-              to="/login"
-              className="inline-flex w-fit items-center gap-2 rounded-lg bg-peacock px-5 py-3 font-semibold text-white hover:bg-peacock-700"
-            >
-              <IconLogin2 size={19} /> Sign in to place an order
-            </Link>
+            <OrderBox item={item} price={price} available={available} currency={currency} />
           )}
         </div>
       </div>
@@ -116,50 +109,40 @@ export default function ItemDetail() {
   )
 }
 
-function OrderBox({ item, price, available, shopId, buyerId, buyerType, currency }) {
+function OrderBox({ item, price, available, currency }) {
+  const { add } = useCart()
   const moq = Math.max(1, Number(item.moq) || 1)
   const belowMoq = available < moq // not enough stock to meet the minimum order
   const [n, setN] = useState(moq)
   const [note, setNote] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState('')
-  const [done, setDone] = useState(false)
+  const [added, setAdded] = useState(false)
 
   const clamp = (v) => Math.max(moq, Math.min(available, v))
   const amount = round2(price * n)
 
-  async function placeOrder() {
-    if (n < moq) { setErr(`Minimum order for this item is ${moq} pcs.`); return }
-    setBusy(true); setErr('')
-    const { error } = await supabase.from('orders').insert({
-      shop_id: shopId,
-      item_id: item.id,
-      buyer_id: buyerId,
-      buyer_type: buyerType,
-      quantity: n,
-      rate_at_order: round2(price),
-      amount,
-      notes: note.trim() || null,
-    })
-    setBusy(false)
-    if (error) { setErr(error.message); return }
-    setDone(true)
+  function addToCart() {
+    add(item, n, note)
+    setAdded(true)
   }
 
-  if (done) {
+  if (added) {
     return (
       <div className="rounded-lg border border-profit/30 bg-profit/10 p-5">
         <div className="flex items-center gap-2 text-profit">
           <IconCircleCheck size={22} />
-          <p className="font-semibold">Order placed</p>
+          <p className="font-semibold">Added to cart</p>
         </div>
         <p className="mt-1 text-sm text-ink/80">
-          {n} × {item.name} for <span className="fig">{money(amount).replace('₹', currency)}</span>.
-          The shop will review and confirm it shortly.
+          {n} × {item.name} (<span className="fig">{money(amount).replace('₹', currency)}</span>) is in your cart.
         </p>
-        <Link to="/orders" className="mt-3 inline-block text-sm font-semibold text-peacock hover:underline">
-          Track my order →
-        </Link>
+        <div className="mt-3 flex flex-wrap gap-4">
+          <Link to="/cart" className="text-sm font-semibold text-peacock hover:underline">
+            Go to cart →
+          </Link>
+          <button type="button" onClick={() => setAdded(false)} className="text-sm font-medium text-muted hover:text-ink">
+            Add more
+          </button>
+        </div>
       </div>
     )
   }
@@ -209,14 +192,12 @@ function OrderBox({ item, price, available, shopId, buyerId, buyerType, currency
       />
 
       <div className="flex items-center justify-between border-t border-line pt-3">
-        <span className="text-sm text-muted">Total</span>
+        <span className="text-sm text-muted">Subtotal</span>
         <span className="fig text-xl font-bold">{money(amount).replace('₹', currency)}</span>
       </div>
 
-      {err && <p className="rounded-lg bg-dues/10 px-3 py-2 text-sm text-dues">{err}</p>}
-
-      <Button onClick={placeOrder} disabled={busy || belowMoq} className="w-full">
-        {busy ? <><Spinner /> Placing…</> : 'Place order'}
+      <Button onClick={addToCart} disabled={belowMoq} className="w-full">
+        <IconShoppingCartPlus size={18} /> Add to cart
       </Button>
       <p className="text-center text-xs text-muted">
         Stock is held only after the shop confirms your order.

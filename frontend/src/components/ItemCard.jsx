@@ -1,7 +1,9 @@
 import { Link } from 'react-router-dom'
-import { IconPhoto } from '@tabler/icons-react'
+import { IconPhoto, IconShoppingCartPlus, IconCheck } from '@tabler/icons-react'
+import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useShop } from '../context/ShopContext'
+import { useCart } from '../context/CartContext'
 import { money } from '../lib/format'
 import { rateForBuyer } from '../lib/helpers'
 import { Badge } from './ui'
@@ -12,8 +14,20 @@ import { Badge } from './ui'
 export default function ItemCard({ item, categoryName }) {
   const { role } = useAuth()
   const { currency } = useShop()
+  const { add } = useCart()
+  const [added, setAdded] = useState(false)
   const price = rateForBuyer(item, role)
   const low = Number(item.quantity) < Number(item.low_stock_threshold)
+  // Owner/staff preview the shopfront but don't order; out-of-stock can't be added.
+  const canAdd = role !== 'owner' && role !== 'staff' && Number(item.quantity) > 0
+
+  function onAdd(e) {
+    e.preventDefault()  // the tile is a Link — don't navigate
+    e.stopPropagation()
+    add(item, Math.max(1, Number(item.moq) || 1))
+    setAdded(true)
+    setTimeout(() => setAdded(false), 1200)
+  }
 
   return (
     <Link
@@ -49,11 +63,25 @@ export default function ItemCard({ item, categoryName }) {
           {categoryName || item.category?.name || ' '}
         </p>
         <p className="line-clamp-2 font-medium text-ink">{item.name}</p>
-        <p className="mt-auto pt-1">
+        <div className="mt-auto flex items-center justify-between gap-2 pt-1">
           <span className="fig text-lg font-bold text-peacock">
             {money(price).replace('₹', currency)}
           </span>
-        </p>
+          {canAdd && (
+            <button
+              type="button"
+              onClick={onAdd}
+              aria-label={`Add ${item.name} to cart`}
+              className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg border transition ${
+                added
+                  ? 'border-profit bg-profit/10 text-profit'
+                  : 'border-line bg-card text-muted hover:border-peacock hover:text-peacock'
+              }`}
+            >
+              {added ? <IconCheck size={18} /> : <IconShoppingCartPlus size={18} />}
+            </button>
+          )}
+        </div>
       </div>
     </Link>
   )

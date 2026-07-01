@@ -3,6 +3,9 @@ import {
   IconBuildingStore, IconCategory, IconUsers, IconPlus, IconCheck,
   IconPencil, IconDeviceFloppy, IconInfoCircle, IconUserPlus,
   IconPalette, IconPhoto, IconUpload, IconX,
+  IconSlideshow, IconArrowUp, IconArrowDown, IconTrash,
+  IconShare, IconBrandWhatsapp, IconBrandInstagram, IconBrandFacebook,
+  IconBrandYoutube, IconMapPin, IconFileText,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
@@ -17,6 +20,9 @@ export default function Settings() {
     <div className="mx-auto max-w-3xl space-y-6">
       <ShopInfo />
       <Branding />
+      <Banners />
+      <SocialLinks />
+      <Pages />
       <Categories />
       <Staff />
     </div>
@@ -281,6 +287,243 @@ function Branding() {
           {err && <ErrLine>{err}</ErrLine>}
           <Button type="submit" disabled={saving}>
             {saving ? <Spinner /> : <IconDeviceFloppy size={18} />} Save branding
+          </Button>
+        </form>
+      )}
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Banners — the shopfront carousel. Each slide is { image_url, caption, link };
+// stored as the shops.banners JSONB array (order = display order). Images upload
+// to the same public 'brand-assets' bucket as branding. Saved as one array.
+// ---------------------------------------------------------------------------
+function Banners() {
+  const { shop, shopId, refreshShop } = useShop()
+  const [list, setList] = useState(null)   // [{ image_url, caption, link }]
+  const [busy, setBusy] = useState(false)  // uploading a new slide
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    if (shop) setList(Array.isArray(shop.banners) ? shop.banners : [])
+  }, [shop])
+
+  async function addFile(file) {
+    if (!file) return
+    setBusy(true); setMsg(''); setErr('')
+    try {
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+      const path = `${shopId}/banners/${crypto.randomUUID()}.${ext}`
+      const { error } = await supabase.storage
+        .from('brand-assets').upload(path, file, { upsert: false, contentType: file.type })
+      if (error) throw new Error('Upload failed: ' + error.message)
+      const image_url = supabase.storage.from('brand-assets').getPublicUrl(path).data.publicUrl
+      setList((l) => [...l, { image_url, caption: '', link: '' }])
+    } catch (e) {
+      setErr(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const setField = (i, k) => (e) =>
+    setList((l) => l.map((b, idx) => (idx === i ? { ...b, [k]: e.target.value } : b)))
+  const remove = (i) => setList((l) => l.filter((_, idx) => idx !== i))
+  const move = (i, d) => setList((l) => {
+    const j = i + d
+    if (j < 0 || j >= l.length) return l
+    const next = [...l]
+    ;[next[i], next[j]] = [next[j], next[i]]
+    return next
+  })
+
+  async function save() {
+    setSaving(true); setMsg(''); setErr('')
+    // Trim empties; keep order. Only image_url is required for a slide.
+    const clean = list
+      .filter((b) => b.image_url)
+      .map((b) => ({
+        image_url: b.image_url,
+        caption: (b.caption || '').trim() || null,
+        link: (b.link || '').trim() || null,
+      }))
+    const { error } = await supabase.from('shops').update({ banners: clean }).eq('id', shop.id)
+    setSaving(false)
+    if (error) setErr(error.message)
+    else { setMsg('Banners saved.'); await refreshShop() }
+  }
+
+  return (
+    <Card icon={IconSlideshow} title="Shopfront banners"
+          hint="Sliding banner shown at the top of your shopfront. Drag-free reorder with the arrows.">
+      {!list ? (
+        <div className="grid place-items-center py-8 text-muted"><Spinner /></div>
+      ) : (
+        <div className="space-y-4">
+          {list.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-line py-6 text-center text-sm text-muted">
+              No banners yet. Add one below — it shows at the top of your shopfront.
+            </p>
+          ) : (
+            <ul className="space-y-3">
+              {list.map((b, i) => (
+                <li key={i} className="flex flex-wrap items-start gap-3 rounded-lg border border-line bg-paper-2/40 p-3">
+                  <div className="h-16 w-28 shrink-0 overflow-hidden rounded-md border border-line bg-paper-2">
+                    <img src={b.image_url} alt="" className="h-full w-full object-cover"
+                         onError={(e) => { e.currentTarget.style.opacity = '0.3' }} />
+                  </div>
+                  <div className="min-w-[12rem] flex-1 space-y-2">
+                    <Field label="Caption (optional)" value={b.caption || ''} onChange={setField(i, 'caption')}
+                           placeholder="e.g. Diwali sale — 20% off cards" />
+                    <Field label="Link (optional)" value={b.link || ''} onChange={setField(i, 'link')}
+                           placeholder="/shop/<category> or https://…" />
+                  </div>
+                  <div className="flex flex-col items-center gap-1">
+                    <button type="button" onClick={() => move(i, -1)} disabled={i === 0}
+                            className="rounded-lg p-1.5 text-muted hover:bg-card hover:text-ink disabled:opacity-30" title="Move up">
+                      <IconArrowUp size={16} />
+                    </button>
+                    <button type="button" onClick={() => move(i, 1)} disabled={i === list.length - 1}
+                            className="rounded-lg p-1.5 text-muted hover:bg-card hover:text-ink disabled:opacity-30" title="Move down">
+                      <IconArrowDown size={16} />
+                    </button>
+                    <button type="button" onClick={() => remove(i)}
+                            className="rounded-lg p-1.5 text-dues hover:bg-dues/10" title="Remove banner">
+                      <IconTrash size={16} />
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-line bg-card px-4 py-2.5 text-sm font-semibold hover:bg-paper-2">
+            {busy ? <Spinner /> : <IconUpload size={18} />} Add banner image
+            <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" disabled={busy}
+                   onChange={(e) => { addFile(e.target.files?.[0] || null); e.target.value = '' }} />
+          </label>
+          <p className="text-xs text-muted">Wide images (about 3:1) look best. Upload, then add an optional caption/link and save.</p>
+
+          {msg && <Ok>{msg}</Ok>}
+          {err && <ErrLine>{err}</ErrLine>}
+          <div>
+            <Button onClick={save} disabled={saving || busy}>
+              {saving ? <Spinner /> : <IconDeviceFloppy size={18} />} Save banners
+            </Button>
+          </div>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Social links — optional footer icons. Each blank field simply hides its icon
+// on the shopfront. WhatsApp accepts a bare number or a full wa.me link.
+// ---------------------------------------------------------------------------
+const SOCIALS = [
+  { key: 'whatsapp',  label: 'WhatsApp',  icon: IconBrandWhatsapp,  placeholder: '9876543210 or https://wa.me/91…' },
+  { key: 'instagram', label: 'Instagram', icon: IconBrandInstagram, placeholder: 'https://instagram.com/…' },
+  { key: 'facebook',  label: 'Facebook',  icon: IconBrandFacebook,  placeholder: 'https://facebook.com/…' },
+  { key: 'youtube',   label: 'YouTube',   icon: IconBrandYoutube,   placeholder: 'https://youtube.com/@…' },
+  { key: 'map_url',   label: 'Map / location', icon: IconMapPin,    placeholder: 'https://maps.google.com/…' },
+]
+
+function SocialLinks() {
+  const { shop, refreshShop } = useShop()
+  const [form, setForm] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    if (shop) setForm(Object.fromEntries(SOCIALS.map((s) => [s.key, shop[s.key] || ''])))
+  }, [shop])
+
+  async function save(e) {
+    e.preventDefault()
+    setSaving(true); setMsg(''); setErr('')
+    const patch = Object.fromEntries(SOCIALS.map((s) => [s.key, form[s.key].trim() || null]))
+    const { error } = await supabase.from('shops').update(patch).eq('id', shop.id)
+    setSaving(false)
+    if (error) setErr(error.message)
+    else { setMsg('Social links saved.'); await refreshShop() }
+  }
+
+  return (
+    <Card icon={IconShare} title="Social links"
+          hint="Shown as icons in the shopfront footer. Leave a field blank to hide its icon.">
+      {!form ? (
+        <div className="grid place-items-center py-8 text-muted"><Spinner /></div>
+      ) : (
+        <form onSubmit={save} className="space-y-3">
+          {SOCIALS.map((s) => (
+            <Field key={s.key} label={s.label} value={form[s.key]} placeholder={s.placeholder}
+                   prefix={<s.icon size={16} className="text-muted" />}
+                   onChange={(e) => setForm((f) => ({ ...f, [s.key]: e.target.value }))} />
+          ))}
+          {msg && <Ok>{msg}</Ok>}
+          {err && <ErrLine>{err}</ErrLine>}
+          <Button type="submit" disabled={saving}>
+            {saving ? <Spinner /> : <IconDeviceFloppy size={18} />} Save social links
+          </Button>
+        </form>
+      )}
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Pages — About / Privacy / Terms / Contact. Free text (plain or light Markdown).
+// A blank field hides that page link in the footer (the route shows "not found").
+// ---------------------------------------------------------------------------
+const PAGES = [
+  { key: 'about_us',       label: 'About Us' },
+  { key: 'contact_info',   label: 'Contact' },
+  { key: 'privacy_policy', label: 'Privacy Policy' },
+  { key: 'terms',          label: 'Terms & Conditions' },
+]
+
+function Pages() {
+  const { shop, refreshShop } = useShop()
+  const [form, setForm] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    if (shop) setForm(Object.fromEntries(PAGES.map((p) => [p.key, shop[p.key] || ''])))
+  }, [shop])
+
+  async function save(e) {
+    e.preventDefault()
+    setSaving(true); setMsg(''); setErr('')
+    const patch = Object.fromEntries(PAGES.map((p) => [p.key, form[p.key].trim() || null]))
+    const { error } = await supabase.from('shops').update(patch).eq('id', shop.id)
+    setSaving(false)
+    if (error) setErr(error.message)
+    else { setMsg('Pages saved.'); await refreshShop() }
+  }
+
+  return (
+    <Card icon={IconFileText} title="Footer pages"
+          hint="About, Contact, Privacy and Terms. Leave one blank to hide its footer link. Blank lines start new paragraphs; **bold** and lists work.">
+      {!form ? (
+        <div className="grid place-items-center py-8 text-muted"><Spinner /></div>
+      ) : (
+        <form onSubmit={save} className="space-y-4">
+          {PAGES.map((p) => (
+            <Textarea key={p.key} label={p.label} rows={5} value={form[p.key]}
+                      onChange={(e) => setForm((f) => ({ ...f, [p.key]: e.target.value }))}
+                      placeholder={`Write your ${p.label} content here. Leave blank to hide this page.`} />
+          ))}
+          {msg && <Ok>{msg}</Ok>}
+          {err && <ErrLine>{err}</ErrLine>}
+          <Button type="submit" disabled={saving}>
+            {saving ? <Spinner /> : <IconDeviceFloppy size={18} />} Save pages
           </Button>
         </form>
       )}

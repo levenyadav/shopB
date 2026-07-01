@@ -56,13 +56,17 @@ alter table public.items
 
 comment on column public.items.hsn_sac is 'Optional HSN/SAC code; printed on tax invoices and the HSN-wise tax summary.';
 
--- shopfront_items (007) is fixed-column, so add hsn_sac to it for the buyer view.
+-- shopfront_items (015) is fixed-column. CREATE OR REPLACE can only APPEND new
+-- columns at the end, so hsn_sac goes last — after the 015 columns
+-- (moq/description/tags/images), which must be preserved or the buyer view breaks.
 create or replace view public.shopfront_items
 with (security_invoker = false) as
 select
   i.id, i.shop_id, i.item_no, i.name, i.category_id,
-  i.quantity, i.dealer_rate, i.rate, i.photo_url, i.hsn_sac,
-  i.low_stock_threshold, i.created_at
+  i.quantity, i.dealer_rate, i.rate, i.photo_url,
+  i.low_stock_threshold, i.created_at,
+  i.moq, i.description, i.tags, i.images,
+  i.hsn_sac
 from public.items i
 where i.is_active = true and i.quantity > 0;
 grant select on public.shopfront_items to anon, authenticated;
@@ -194,9 +198,11 @@ declare r record; v_n int; v_prefix text;
 begin
   for r in
     select coalesce(s.bill_id, s.id) as unit,
-           min(s.shop_id)            as shop_id,
-           max(s.bill_id)            as bill_id,   -- null = shopfront sale
-           (array_agg(s.id order by s.created_at))[1] as first_sale_id,
+           -- shop_id & bill_id are constant within each group, but uuid has no
+           -- min/max aggregate, so pick one row's value via array_agg.
+           (array_agg(s.shop_id order by s.created_at))[1] as shop_id,
+           (array_agg(s.bill_id  order by s.created_at))[1] as bill_id, -- null = shopfront
+           (array_agg(s.id       order by s.created_at))[1] as first_sale_id,
            min(s.created_at)         as ts
       from public.sales s
      where not exists (select 1 from public.invoices i where i.sale_id = s.id)
