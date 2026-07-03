@@ -11,6 +11,11 @@ import Credit from '../../components/Credit'
 // yields a REAL session (RLS-protected data loads). To go live with real SMS:
 // remove VITE_DEV_OTP and the Test OTP entries — no code change needed.
 const DEV_OTP = import.meta.env.VITE_DEV_OTP || ''
+// Dev mock only: with no SMS provider wired, Supabase's OTP send/verify can't
+// run. When DEV_OTP is set we skip it entirely and mint a REAL session via a
+// password grant (needs no SMS provider) using this shared dev password, which
+// must be set on the auth user. Clear both vars for production.
+const DEV_PASSWORD = import.meta.env.VITE_DEV_PASSWORD || ''
 
 // SPEC §4.3/§4.4 — buyers sign in with their MOBILE NUMBER + a one-time SMS code
 // (phone OTP). Email is an optional contact field, never the login handle.
@@ -33,13 +38,18 @@ export default function Login() {
     if (!phoneE164) { setError('Enter a valid 10-digit mobile number.'); return }
     setBusy(true)
     try {
-      const { error } = await supabase.auth.signInWithOtp({
-        phone: phoneE164,
-        // Sign-in must never silently create an account for a wrong number.
-        // Accounts are provisioned by the shop, not at the login screen.
-        options: { shouldCreateUser: false },
-      })
-      if (error) throw error
+      // DEV MOCK: no SMS provider — skip Supabase's OTP send (it fails with
+      // phone_provider_disabled) and just reveal the fixed code. The real
+      // session is minted at verify time via the password grant below.
+      if (!DEV_OTP) {
+        const { error } = await supabase.auth.signInWithOtp({
+          phone: phoneE164,
+          // Sign-in must never silently create an account for a wrong number.
+          // Accounts are provisioned by the shop, not at the login screen.
+          options: { shouldCreateUser: false },
+        })
+        if (error) throw error
+      }
       setE164(phoneE164)
       setStep('otp')
       setNotice(DEV_OTP
@@ -58,12 +68,27 @@ export default function Login() {
     if (!/^\d{4,8}$/.test(code.trim())) { setError('Enter the code from the SMS.'); return }
     setBusy(true)
     try {
-      const { error } = await supabase.auth.verifyOtp({
-        phone: e164,
-        token: code.trim(),
-        type: 'sms',
-      })
-      if (error) throw error
+      if (DEV_OTP) {
+        // DEV MOCK: accept the fixed on-screen code, then get a REAL RLS
+        // session via a password grant. Phone logins are disabled when no SMS
+        // provider is wired, so we sign in by a deterministic EMAIL derived
+        // from the number (<digits>@dev.local) — set on the auth user, with
+        // the same dev password. Email password login needs no SMS provider.
+        if (code.trim() !== DEV_OTP) throw new Error('invalid otp code')
+        const devEmail = `${e164.replace(/\D/g, '')}@dev.local`
+        const { error } = await supabase.auth.signInWithPassword({
+          email: devEmail,
+          password: DEV_PASSWORD,
+        })
+        if (error) throw error
+      } else {
+        const { error } = await supabase.auth.verifyOtp({
+          phone: e164,
+          token: code.trim(),
+          type: 'sms',
+        })
+        if (error) throw error
+      }
       navigate('/', { replace: true })
     } catch (err) {
       setError(humanError(err?.message))
@@ -186,6 +211,7 @@ function Alert({ tone, children }) {
 
 function humanError(msg) {
   if (!msg) return 'Something went wrong. Please try again.'
+  if (/invalid login credentials|email not confirmed/i.test(msg)) return 'That code is wrong, or dev login isn’t set up for this number yet.'
   if (/token has expired|expired|invalid.*(otp|token|code)/i.test(msg)) return 'That code is wrong or expired. Request a new one.'
   if (/signups? not allowed|user not found/i.test(msg)) return 'No account for this number yet. Ask the shop to add you.'
   if (/sms|phone provider|not configured|unsupported phone/i.test(msg)) return 'SMS login isn’t available right now. Please try again later.'

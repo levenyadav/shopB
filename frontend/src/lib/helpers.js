@@ -16,6 +16,20 @@ export function stockStatus(quantity, threshold = 10) {
   return { key: 'normal', label: 'Normal', tone: 'muted' }
 }
 
+// Normalise a typed Indian mobile number to E.164 (+91XXXXXXXXXX) for Supabase
+// phone auth and wa.me links. Accepts "98765 43210", "098765-43210",
+// "+91 98765 43210", "919876543210". Returns null if it isn't a plausible
+// 10-digit mobile (so callers can reject before sending an OTP).
+export function toE164India(input) {
+  const digits = String(input || '').replace(/\D/g, '')
+  let local = digits
+  if (local.startsWith('91') && local.length === 12) local = local.slice(2)
+  else if (local.length === 11 && local.startsWith('0')) local = local.slice(1)
+  // Indian mobiles are 10 digits starting 6–9.
+  if (!/^[6-9]\d{9}$/.test(local)) return null
+  return '+91' + local
+}
+
 // SPEC §12.2 — which tier a buyer pays.
 export function rateForBuyer(item, buyerType) {
   return buyerType === 'dealer' ? Number(item.dealer_rate) : Number(item.rate)

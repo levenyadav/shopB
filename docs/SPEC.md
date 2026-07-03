@@ -99,7 +99,8 @@
   exposes a buyer's running balance at the counter
 
 ### 4.3 Customer
-- Registers on Shopfront (name + phone)
+- Registers on Shopfront (name + mobile number; email optional). Authenticates by
+  **mobile number + one-time SMS code (phone OTP)** — no password
 - Browses items and sees retail Rate
 - Places orders with quantity and optional note
 - Tracks own order status
@@ -131,7 +132,9 @@
 
 ### 5.2 Database & Backend
 - **Database:** Supabase (PostgreSQL underneath)
-- **Authentication:** Supabase Auth — email/phone + password
+- **Authentication:** Supabase Auth — **mobile number + SMS one-time code (phone
+  OTP)** for buyers; email is an optional contact field on the profile, not a
+  login handle. Requires an SMS provider (Twilio/MSG91) enabled in Supabase Auth.
 - **File Storage:** Supabase Storage (item photos)
 - **Real-time:** Supabase Realtime (live order notifications)
 - **Server Logic:** Supabase Edge Functions (PDF generation, QR codes, notifications)
@@ -312,8 +315,9 @@ shopfront order needed. (Routes `/owner/counter-sale`, `/staff/counter-sale`.)
 
 #### 6.7.2 Customers & Dealers
 - Auto-created when customer/dealer registers on shopfront
-- Owner can also add manually
-- Fields: name, phone, buyer type (Customer / Dealer)
+- Owner can also add manually — creates a **login-less** party (they sign in later
+  themselves via phone OTP); owner can then **share the shop link on WhatsApp**
+- Fields: name, mobile number, buyer type (Customer / Dealer)
 - Running balance — udhaar / credit owed to shop
 - Full order history
 - Full payment history

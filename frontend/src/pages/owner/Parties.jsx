@@ -1,11 +1,32 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { IconSearch, IconUsers, IconChevronRight } from '@tabler/icons-react'
+import {
+  IconSearch, IconUsers, IconChevronRight, IconUserPlus,
+  IconBrandWhatsapp, IconX,
+} from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
+import { useAuth } from '../../context/AuthContext'
 import { money } from '../../lib/format'
-import { round2 } from '../../lib/helpers'
+import { round2, toE164India } from '../../lib/helpers'
 import { Badge, Spinner } from '../../components/ui'
+
+// Build a WhatsApp deep link that opens a chat with `phone`, pre-filled with an
+// invite to browse the shop. Dealers are told they'll see wholesale rates once
+// they sign in with this number. Returns null if the phone isn't valid.
+function whatsappInvite({ phone, name, type, shopName }) {
+  const e164 = toE164India(phone)
+  if (!e164) return null
+  const shop = shopName || 'our shop'
+  const hello = name ? `Hello ${name},` : 'Hello,'
+  const rateLine = type === 'dealer'
+    ? ` Sign in with this mobile number (${e164}) to see your dealer (wholesale) rates.`
+    : ''
+  const text =
+    `${hello} welcome to ${shop}! Browse our shop and place your order here: ` +
+    `${window.location.origin}/${rateLine}`
+  return `https://wa.me/${e164.replace('+', '')}?text=${encodeURIComponent(text)}`
+}
 
 // SPEC §6.7 / §6.10 — Parties. One directory for customers, dealers and
 // suppliers with running balances. The "Only with balance" toggle turns this
@@ -16,12 +37,14 @@ const TABS = [
 ]
 
 export default function Parties() {
-  const { currency, suppliers } = useShop()
+  const { currency, shop, suppliers } = useShop()
+  const { profile } = useAuth()
   const [buyers, setBuyers] = useState(null)
   const [err, setErr] = useState('')
   const [tab, setTab] = useState('all')
   const [q, setQ] = useState('')
   const [duesOnly, setDuesOnly] = useState(false)
+  const [showAdd, setShowAdd] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -72,8 +95,42 @@ export default function Parties() {
 
   const loading = buyers === null
 
+  function onCreated(party) {
+    // Prepend the freshly created buyer so it shows immediately (RLS lets the
+    // owner read it back). balance_due starts at 0 for a new account.
+    setBuyers((list) => [
+      { id: party.id, full_name: party.full_name, phone: party.phone,
+        role: party.role, balance_due: 0 },
+      ...(list ?? []),
+    ])
+  }
+
   return (
     <div className="space-y-5">
+      {/* Header + create action (SPEC §6.7.2 — owner adds customers/dealers) */}
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-ink">Parties</h1>
+          <p className="text-sm text-muted">Customers, dealers &amp; suppliers</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowAdd(true)}
+          className="inline-flex items-center gap-2 rounded-lg bg-peacock px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-peacock-700"
+        >
+          <IconUserPlus size={18} /> New account
+        </button>
+      </div>
+
+      {showAdd && (
+        <AddPartyModal
+          shopId={profile?.shop_id}
+          shopName={shop?.name}
+          onClose={() => setShowAdd(false)}
+          onCreated={onCreated}
+        />
+      )}
+
       {/* Money owed both ways — labelled figures (SPEC §3.3) */}
       <div className="grid gap-3 sm:grid-cols-2">
         <SummaryCard
@@ -155,6 +212,20 @@ export default function Parties() {
                     <p className="text-xs text-profit">Settled</p>
                   )}
                 </div>
+                {p.type !== 'supplier' && p.phone && (
+                  <button
+                    type="button"
+                    aria-label={`Share shop link with ${p.name} on WhatsApp`}
+                    onClick={(e) => {
+                      e.preventDefault(); e.stopPropagation()
+                      const url = whatsappInvite({ phone: p.phone, name: p.name, type: p.type, shopName: shop?.name })
+                      if (url) window.open(url, '_blank', 'noopener')
+                    }}
+                    className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line text-[#25D366] transition hover:border-[#25D366] hover:bg-[#25D366]/10"
+                  >
+                    <IconBrandWhatsapp size={18} />
+                  </button>
+                )}
                 <IconChevronRight size={18} className="text-muted" />
               </Link>
             </li>
@@ -187,6 +258,135 @@ function Avatar({ name }) {
   return (
     <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-paper-2 text-sm font-bold text-muted">
       {initial}
+    </div>
+  )
+}
+
+// SPEC §6.7.2 — owner adds a customer/dealer. This creates a login-LESS party
+// row (no auth user): they authenticate later on their own with phone OTP. The
+// row exists so the shop can bill them and track udhaar now, and so the owner
+// can share the shop link on WhatsApp. Insert is allowed by the
+// profiles_counter_buyer_insert RLS policy (owner/staff, own shop, buyer role).
+function AddPartyModal({ shopId, shopName, onClose, onCreated }) {
+  const [form, setForm] = useState({ name: '', phone: '', type: 'customer' })
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+  const [created, setCreated] = useState(null)  // the saved party, once done
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
+
+  async function save(e) {
+    e.preventDefault()
+    setErr('')
+    const name = form.name.trim()
+    if (!name) { setErr('Enter a name.'); return }
+    const phone = toE164India(form.phone)
+    if (!phone) { setErr('Enter a valid 10-digit mobile number.'); return }
+    if (!shopId) { setErr('No shop context — reload and try again.'); return }
+    setSaving(true)
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .insert({ shop_id: shopId, full_name: name, phone, role: form.type })
+        .select('id, full_name, phone, role')
+        .single()
+      if (error) throw error
+      onCreated(data)
+      setCreated(data)
+    } catch (e2) {
+      setErr(e2.message || 'Could not create the account.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function shareWhatsApp() {
+    const p = created
+    const url = whatsappInvite({ phone: p.phone, name: p.full_name, type: p.role, shopName })
+    if (url) window.open(url, '_blank', 'noopener')
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 p-4" onClick={onClose}>
+      <div
+        className="w-full max-w-sm rounded-xl border border-line bg-card p-5 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-lg font-bold text-ink">
+            {created ? 'Account created' : 'New customer / dealer'}
+          </h3>
+          <button type="button" onClick={onClose} className="text-muted hover:text-ink" aria-label="Close">
+            <IconX size={20} />
+          </button>
+        </div>
+
+        {created ? (
+          <div className="space-y-4">
+            <div className="rounded-lg border border-line bg-paper-2 p-3">
+              <p className="font-medium text-ink">{created.full_name}</p>
+              <p className="fig text-sm text-muted">{created.phone} · <span className="capitalize">{created.role}</span></p>
+            </div>
+            <p className="text-sm text-muted">
+              Share the shop link so they can browse and order. They’ll sign in with
+              this mobile number to place orders{created.role === 'dealer' ? ' and see dealer rates' : ''}.
+            </p>
+            <button
+              type="button"
+              onClick={shareWhatsApp}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#25D366] px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-95"
+            >
+              <IconBrandWhatsapp size={18} /> Share on WhatsApp
+            </button>
+            <button
+              type="button"
+              onClick={() => { setCreated(null); setForm({ name: '', phone: '', type: 'customer' }) }}
+              className="w-full rounded-lg border border-line px-4 py-2.5 text-sm font-medium text-ink transition hover:bg-paper-2"
+            >
+              Add another
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={save} className="space-y-4">
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-medium text-ink">Name</span>
+              <input
+                value={form.name} onChange={set('name')} autoFocus
+                className="w-full rounded-lg border border-line bg-card px-3 py-2.5 text-ink outline-none focus:border-peacock focus:ring-1 focus:ring-peacock"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-medium text-ink">Mobile number</span>
+              <input
+                value={form.phone} onChange={set('phone')} type="tel" inputMode="numeric"
+                placeholder="98765 43210"
+                className="w-full rounded-lg border border-line bg-card px-3 py-2.5 text-ink outline-none focus:border-peacock focus:ring-1 focus:ring-peacock"
+              />
+            </label>
+            <div>
+              <span className="mb-1.5 block text-sm font-medium text-ink">Type</span>
+              <div className="inline-flex w-full rounded-lg border border-line bg-card p-1">
+                {[['customer', 'Customer'], ['dealer', 'Dealer']].map(([key, label]) => (
+                  <button
+                    key={key} type="button"
+                    onClick={() => setForm((f) => ({ ...f, type: key }))}
+                    className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                      form.type === key ? 'bg-peacock text-white' : 'text-muted hover:text-ink'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {err && <p className="rounded-md border border-dues/30 bg-dues/10 px-3 py-2 text-sm text-dues">{err}</p>}
+
+            <button type="submit" disabled={saving} className="w-full rounded-lg bg-peacock px-4 py-2.5 font-semibold text-white transition hover:bg-peacock-700 disabled:opacity-60">
+              {saving ? 'Saving…' : 'Create account'}
+            </button>
+          </form>
+        )}
+      </div>
     </div>
   )
 }
