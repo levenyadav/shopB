@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   IconSearch, IconPlus, IconPencil, IconPhoto, IconX, IconCircleCheck, IconCamera,
-  IconDotsVertical, IconBarcode, IconPrinter,
+  IconDotsVertical, IconBarcode, IconPrinter, IconArchive, IconArchiveOff, IconAlertTriangle,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
@@ -26,6 +26,7 @@ export default function Inventory() {
   const [lowOnly, setLowOnly] = useState(false)
   const [editing, setEditing] = useState(null)
   const [printing, setPrinting] = useState(null) // item whose barcode label we're printing
+  const [retiring, setRetiring] = useState(null) // item pending discontinue / reactivate confirm
   const [zoom, setZoom] = useState(null) // photo_url shown full-size in a lightbox
 
   async function load() {
@@ -34,7 +35,7 @@ export default function Inventory() {
       .from('items')
       .select(
         'id, item_no, name, location, quantity, purchase_rate, dealer_rate, rate, ' +
-          'low_stock_threshold, moq, barcode, hsn_sac, photo_url, is_active, supplier_id, category_id, ' +
+          'low_stock_threshold, moq, barcode, hsn_sac, photo_url, is_active, discontinued, discontinued_at, supplier_id, category_id, ' +
           'description, tags, images, ' +
           'supplier:suppliers(name), category:categories(name)',
       )
@@ -56,8 +57,12 @@ export default function Inventory() {
     if (!items) return []
     const needle = q.trim().toLowerCase()
     return items.filter((i) => {
-      if (show === 'active' && !i.is_active) return false
-      if (show === 'inactive' && i.is_active) return false
+      // `show` blends the two independent flags into one plain-language filter:
+      // live items (not discontinued) split by shopfront visibility, plus a
+      // dedicated bucket for retired lines.
+      if (show === 'active' && (!i.is_active || i.discontinued)) return false
+      if (show === 'inactive' && (i.is_active || i.discontinued)) return false
+      if (show === 'discontinued' && !i.discontinued) return false
       if (cat && i.category_id !== cat) return false
       if (sup && i.supplier_id !== sup) return false
       if (tag && !(i.tags || []).includes(tag)) return false
@@ -120,6 +125,7 @@ export default function Inventory() {
           <Select value={show} onChange={(e) => setShow(e.target.value)} className="flex-1">
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
+            <option value="discontinued">Discontinued</option>
             <option value="all">All</option>
           </Select>
           <button
@@ -161,7 +167,9 @@ export default function Inventory() {
                         <div className="min-w-0">
                           <p className="truncate font-medium text-ink">
                             {i.name}
-                            {!i.is_active && <Badge className="ml-2" tone="muted">Inactive</Badge>}
+                            {i.discontinued
+                              ? <Badge className="ml-2" tone="dues">Discontinued</Badge>
+                              : !i.is_active && <Badge className="ml-2" tone="muted">Inactive</Badge>}
                           </p>
                           <p className="fig text-xs text-muted">
                             {i.item_no} · {i.supplier?.name || '—'}
@@ -180,8 +188,10 @@ export default function Inventory() {
                     <td className="px-4 py-3 text-right fig text-muted">{money(stockValue(i))}</td>
                     <td className="px-4 py-3 text-right">
                       <RowActions
+                        discontinued={i.discontinued}
                         onEdit={() => setEditing(i)}
                         onPrint={() => setPrinting(i)}
+                        onDiscontinue={() => setRetiring(i)}
                       />
                     </td>
                   </tr>
@@ -224,13 +234,21 @@ export default function Inventory() {
         />
       )}
 
+      {retiring && (
+        <DiscontinueModal
+          item={retiring}
+          onClose={() => setRetiring(null)}
+          onDone={() => { setRetiring(null); load() }}
+        />
+      )}
+
       {zoom && <Lightbox url={zoom} onClose={() => setZoom(null)} />}
     </div>
   )
 }
 
 // Per-row "action dot" menu: a three-dot button that opens Edit + Print barcode.
-function RowActions({ onEdit, onPrint }) {
+function RowActions({ discontinued, onEdit, onPrint, onDiscontinue }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -275,8 +293,104 @@ function RowActions({ onEdit, onPrint }) {
           >
             <IconBarcode size={15} className="text-muted" /> Print barcode
           </button>
+          <div className="my-1 border-t border-line" />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => { setOpen(false); onDiscontinue() }}
+            className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-paper-2 ${
+              discontinued ? 'text-profit' : 'text-dues'
+            }`}
+          >
+            {discontinued
+              ? <><IconArchiveOff size={15} /> Reactivate</>
+              : <><IconArchive size={15} /> Discontinue</>}
+          </button>
         </div>
       )}
+    </div>
+  )
+}
+
+// Confirms discontinuing (retiring) an item or bringing it back. Discontinuing
+// only sets the flag — it never touches stock. If physical stock remains we warn
+// the owner: the leftover is stranded from the shopfront but can still be sold at
+// the Counter (POS) to clear it. Reactivating just clears the flag.
+function DiscontinueModal({ item, onClose, onDone }) {
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const reactivating = item.discontinued
+  const leftover = Number(item.quantity) || 0
+
+  async function confirm() {
+    setBusy(true); setErr('')
+    const { error } = await supabase
+      .from('items')
+      .update(
+        reactivating
+          ? { discontinued: false, discontinued_at: null }
+          : { discontinued: true, discontinued_at: new Date().toISOString() },
+      )
+      .eq('id', item.id)
+    if (error) { setErr(error.message); setBusy(false); return }
+    onDone()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 p-4" onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm space-y-4 rounded-lg border border-line bg-card p-6"
+      >
+        <div className="flex items-center gap-3">
+          <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-full ${reactivating ? 'bg-profit/10 text-profit' : 'bg-dues/10 text-dues'}`}>
+            {reactivating ? <IconArchiveOff size={22} /> : <IconArchive size={22} />}
+          </div>
+          <div>
+            <h3 className="font-[var(--font-display)] text-xl font-bold">
+              {reactivating ? 'Reactivate item?' : 'Discontinue item?'}
+            </h3>
+            <p className="fig text-xs text-muted">{item.name} · {item.item_no}</p>
+          </div>
+        </div>
+
+        {err && <p className="rounded-lg bg-dues/10 px-3 py-2 text-sm text-dues">{err}</p>}
+
+        {reactivating ? (
+          <p className="text-sm text-muted">
+            This brings <span className="font-medium text-ink">{item.name}</span> back as a live product.
+            It will show on the shopfront again (as long as it's marked active and in stock).
+          </p>
+        ) : (
+          <>
+            <p className="text-sm text-muted">
+              <span className="font-medium text-ink">{item.name}</span> will be retired: removed from
+              the shopfront and hidden from customers. Its sales history stays intact, and it can still
+              be sold at the Counter to clear any stock left.
+            </p>
+            {leftover > 0 && (
+              <p className="flex items-start gap-2 rounded-lg bg-saffron/10 px-3 py-2.5 text-sm text-saffron">
+                <IconAlertTriangle size={18} className="mt-0.5 shrink-0" />
+                <span>
+                  This item still has <span className="fig font-semibold">{qty(leftover)}</span> in stock.
+                  That stock will no longer be shown to customers. Discontinue anyway?
+                </span>
+              </p>
+            )}
+          </>
+        )}
+
+        <div className="flex justify-end gap-3 pt-1">
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button
+            variant={reactivating ? 'primary' : 'danger'}
+            onClick={confirm}
+            disabled={busy}
+          >
+            {busy ? <><Spinner /> Saving…</> : reactivating ? 'Reactivate' : 'Discontinue'}
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }
