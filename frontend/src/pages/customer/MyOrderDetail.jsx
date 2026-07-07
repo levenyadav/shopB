@@ -36,6 +36,7 @@ export default function MyOrderDetail() {
   const [order, setOrder] = useState(null)   // the representative (clicked) line
   const [lines, setLines] = useState([])     // all lines of the group
   const [invoices, setInvoices] = useState({}) // order_id -> customer_invoices row
+  const [bills, setBills] = useState({})       // order_id -> customer_bills row
   const [err, setErr] = useState('')
   const [missing, setMissing] = useState(false)
 
@@ -80,16 +81,23 @@ export default function MyOrderDetail() {
       // Invoices for the lines that have a Sale (approved+). Buyer-safe view only.
       const billable = withItem.filter((r) => r.status !== 'pending' && r.status !== 'rejected').map((r) => r.id)
       const invMap = {}
+      const billMap = {}
       if (billable.length) {
-        const { data: invs } = await supabase
-          .from('customer_invoices').select('*').in('order_id', billable)
+        const [{ data: invs }, { data: bls }] = await Promise.all([
+          supabase.from('customer_invoices').select('*').in('order_id', billable),
+          // Charge breakdown (023) — subtotal/discount/shipping/packing/other/grand
+          // total — via the buyer-safe view, so the invoice foots to what's owed.
+          supabase.from('customer_bills').select('*').in('order_id', billable),
+        ])
         for (const iv of invs ?? []) invMap[iv.order_id] = iv
+        for (const bl of bls ?? []) billMap[bl.order_id] = bl
       }
 
       if (active) {
         setOrder(data)
         setLines(withItem)
         setInvoices(invMap)
+        setBills(billMap)
       }
     }
     load()
@@ -141,6 +149,7 @@ export default function MyOrderDetail() {
               },
               invoice: { invoice_no: inv.invoice_no, date: inv.created_at, notes: inv.invoice_notes },
               lines: [{ name: inv.item_name, item_no: inv.item_no, hsn: inv.hsn_sac, qty: inv.quantity, rate: inv.rate_charged }],
+              bill: bills[l.id],
               gstRate: shop?.gst_rate,
             })
             return (

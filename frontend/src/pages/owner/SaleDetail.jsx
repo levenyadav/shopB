@@ -25,6 +25,7 @@ export default function SaleDetail() {
   const { shop, currency } = useShop()
   const [sale, setSale] = useState(null)
   const [invoice, setInvoice] = useState(null)
+  const [bill, setBill] = useState(null)
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -45,6 +46,17 @@ export default function SaleDetail() {
     setInvoice(data || null)
   }
 
+  // The finalize-bill breakdown (023): discount + shipping/packing/other, shown
+  // as adjustment lines on the invoice. Only shopfront sales carry one.
+  async function loadBill(saleRow) {
+    const { data } = await supabase
+      .from('order_bills')
+      .select('subtotal, discount_amount, shipping_fee, packing_fee, other_charge, grand_total')
+      .eq('sale_id', saleRow.id)
+      .maybeSingle()
+    setBill(data || null)
+  }
+
   async function load() {
     setErr('')
     const { data, error } = await supabase
@@ -60,7 +72,7 @@ export default function SaleDetail() {
       .maybeSingle()
     if (error) setErr(error.message)
     else if (!data) setMissing(true)
-    else { setSale(data); loadInvoice(data) }
+    else { setSale(data); loadInvoice(data); loadBill(data) }
   }
   useEffect(() => { load() }, [id])
 
@@ -105,6 +117,7 @@ export default function SaleDetail() {
     buyer: billTo,
     invoice: { invoice_no: invoice?.invoice_no, date: sale.created_at, notes: invoice?.notes },
     lines: [{ name: item?.name, item_no: item?.item_no, hsn: item?.hsn_sac, qty: sale.quantity, rate: sale.rate_charged }],
+    bill,
     gstRate: shop?.gst_rate,
   })
 

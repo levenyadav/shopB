@@ -262,11 +262,11 @@ function Avatar({ name }) {
   )
 }
 
-// SPEC §6.7.2 — owner adds a customer/dealer. This creates a login-LESS party
-// row (no auth user): they authenticate later on their own with phone OTP. The
-// row exists so the shop can bill them and track udhaar now, and so the owner
-// can share the shop link on WhatsApp. Insert is allowed by the
-// profiles_counter_buyer_insert RLS policy (owner/staff, own shop, buyer role).
+// SPEC §6.7.2 — owner/staff adds a customer/dealer. This provisions a real auth
+// login (via the create-party Edge Function) whose id becomes the party's
+// profile id, so they can later sign in themselves with phone OTP. The row
+// exists so the shop can bill them and track udhaar now, and so the owner can
+// share the shop link on WhatsApp.
 function AddPartyModal({ shopId, shopName, onClose, onCreated }) {
   const [form, setForm] = useState({ name: '', phone: '', type: 'customer' })
   const [saving, setSaving] = useState(false)
@@ -284,14 +284,22 @@ function AddPartyModal({ shopId, shopName, onClose, onCreated }) {
     if (!shopId) { setErr('No shop context — reload and try again.'); return }
     setSaving(true)
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .insert({ shop_id: shopId, full_name: name, phone, role: form.type })
-        .select('id, full_name, phone, role')
-        .single()
-      if (error) throw error
-      onCreated(data)
-      setCreated(data)
+      // Provision through the create-party Edge Function: the party needs a real
+      // auth.users row whose id becomes their profile id, or phone-OTP login
+      // fails ("Login for this account is not set up"). See create-party/index.ts.
+      const { data, error } = await supabase.functions.invoke('create-party', {
+        body: { full_name: name, phone, type: form.type },
+      })
+      // functions.invoke surfaces non-2xx as a FunctionsHttpError whose real
+      // message lives in the JSON body — dig it out for a useful error.
+      if (error) {
+        let msg = error.message
+        try { msg = (await error.context?.json())?.error || msg } catch { /* keep */ }
+        throw new Error(msg)
+      }
+      if (data?.error) throw new Error(data.error)
+      onCreated(data.party)
+      setCreated(data.party)
     } catch (e2) {
       setErr(e2.message || 'Could not create the account.')
     } finally {

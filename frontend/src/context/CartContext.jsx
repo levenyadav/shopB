@@ -36,12 +36,16 @@ export function CartProvider({ children }) {
   // a fresh note replaces the old one.
   const add = useCallback((item, n = 1, notes = null) => {
     setLines((prev) => {
+      // Made-to-order items are produced on demand, so the buyer may order any
+      // quantity — we don't cap against on-hand stock (which is a placeholder).
+      const mto = !!item.made_to_order
       const available = Number(item.quantity) || 0
+      const cap = mto ? Infinity : available
       const moq = Math.max(1, Number(item.moq) || 1)
       const note = notes?.trim() || null
       const i = prev.findIndex((l) => l.id === item.id)
       if (i === -1) {
-        const want = Math.min(Math.max(moq, n), available)
+        const want = Math.min(Math.max(moq, n), cap)
         return [...prev, {
           id: item.id,
           name: item.name,
@@ -50,15 +54,16 @@ export function CartProvider({ children }) {
           dealer_rate: Number(item.dealer_rate),
           moq,
           available,
+          made_to_order: mto,
           qty: want,
           notes: note,
         }]
       }
       const next = [...prev]
-      const merged = Math.min(next[i].qty + n, available)
+      const merged = Math.min(next[i].qty + n, cap)
       // refresh stock/price/moq snapshot in case it changed since last add
       next[i] = {
-        ...next[i], qty: merged, available, moq,
+        ...next[i], qty: merged, available, moq, made_to_order: mto,
         rate: Number(item.rate), dealer_rate: Number(item.dealer_rate),
         notes: note ?? next[i].notes,
       }
@@ -69,7 +74,9 @@ export function CartProvider({ children }) {
   const setQty = useCallback((id, qty) => {
     setLines((prev) => prev.map((l) => {
       if (l.id !== id) return l
-      const clamped = Math.max(l.moq, Math.min(l.available, Number(qty) || l.moq))
+      // Made-to-order lines have no stock ceiling.
+      const cap = l.made_to_order ? Infinity : l.available
+      const clamped = Math.max(l.moq, Math.min(cap, Number(qty) || l.moq))
       return { ...l, qty: clamped }
     }))
   }, [])

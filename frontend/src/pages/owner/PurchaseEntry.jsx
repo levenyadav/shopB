@@ -53,7 +53,7 @@ const BLANK = {
   name: '', supplier_id: '', category_id: '', location: '',
   quantity: '', purchase_rate: '', dealer_rate: '', rate: '',
   low_stock_threshold: '10', moq: '1', barcode: '', notes: '',
-  description: '', tags: [], images: [],
+  description: '', tags: [], images: [], made_to_order: false,
 }
 
 function NewItemEntry() {
@@ -148,9 +148,13 @@ function NewItemEntry() {
     if (!form.name.trim()) e.name = 'Item name is required.'
     if (!form.supplier_id) e.supplier_id = 'Choose a company / supplier.'
     if (!form.category_id) e.category_id = 'Choose a category.'
-    const q = Number(form.quantity)
-    if (!form.quantity || q <= 0) e.quantity = 'Enter how many came in.'
-    if (form.purchase_rate === '' || Number(form.purchase_rate) < 0) e.purchase_rate = 'Enter the cost rate.'
+    // Made-to-order items carry no opening stock and no cost yet (cost is set by
+    // the owner at approval), so quantity/purchase rate are not required for them.
+    if (!form.made_to_order) {
+      const q = Number(form.quantity)
+      if (!form.quantity || q <= 0) e.quantity = 'Enter how many came in.'
+      if (form.purchase_rate === '' || Number(form.purchase_rate) < 0) e.purchase_rate = 'Enter the cost rate.'
+    }
     if (form.dealer_rate === '' || Number(form.dealer_rate) < 0) e.dealer_rate = 'Enter the dealer rate.'
     if (form.rate === '' || Number(form.rate) < 0) e.rate = 'Enter the retail rate.'
     if (form.moq !== '' && Number(form.moq) < 1) e.moq = 'MOQ must be at least 1.'
@@ -176,8 +180,11 @@ function NewItemEntry() {
     setBusy(true)
     try {
       const photo_url = (await uploadPhoto()) || scannedPhotoUrl || null
-      const quantity = round2(form.quantity)
-      const purchase_rate = round2(form.purchase_rate)
+      const mto = form.made_to_order
+      const quantity = mto ? 0 : round2(form.quantity)
+      // Made-to-order carries no cost yet — the owner enters it at approval; use 0
+      // as the placeholder on the catalogue row (never shown to buyers anyway).
+      const purchase_rate = mto ? 0 : round2(form.purchase_rate)
 
       // 1) create the catalogue item with NO opening stock
       const { data: item, error: itemErr } = await supabase
@@ -199,31 +206,35 @@ function NewItemEntry() {
           description: form.description.trim() || null,
           tags: form.tags,
           images: form.images,
+          made_to_order: mto,
         })
         .select('id, item_no, name')
         .single()
       if (itemErr) throw new Error(itemErr.message)
 
-      // 2) record the opening purchase -> trigger raises stock + supplier + ledger
+      // 2) record the opening purchase -> trigger raises stock + supplier + ledger.
+      //    Made-to-order items hold no stock, so there is no opening purchase.
       const total_cost = round2(quantity * purchase_rate)
-      const { error: pErr } = await supabase.from('purchases').insert({
-        shop_id: shopId,
-        item_id: item.id,
-        supplier_id: form.supplier_id,
-        quantity,
-        purchase_rate,
-        total_cost,
-        entered_by: profile.id,
-        notes: form.notes.trim() || null,
-      })
-      if (pErr) {
-        throw new Error(
-          `Item ${item.item_no} was created, but recording the stock-in failed: ${pErr.message}. ` +
-            `Restock it from Inventory.`,
-        )
+      if (!mto) {
+        const { error: pErr } = await supabase.from('purchases').insert({
+          shop_id: shopId,
+          item_id: item.id,
+          supplier_id: form.supplier_id,
+          quantity,
+          purchase_rate,
+          total_cost,
+          entered_by: profile.id,
+          notes: form.notes.trim() || null,
+        })
+        if (pErr) {
+          throw new Error(
+            `Item ${item.item_no} was created, but recording the stock-in failed: ${pErr.message}. ` +
+              `Restock it from Inventory.`,
+          )
+        }
       }
 
-      setDone({ item_no: item.item_no, name: item.name, quantity, total_cost })
+      setDone({ item_no: item.item_no, name: item.name, quantity, total_cost, made_to_order: mto })
       setForm(BLANK)
       clearPhoto()
       setErrors({})
@@ -297,25 +308,53 @@ function NewItemEntry() {
 
         {/* Stock & pricing */}
         <Section title="Opening stock & rates" hint="Purchase Rate is your cost — it is never shown to buyers.">
+          {/* Made to Order — no stock is held; you source/make it after a booking. */}
+          <div className="flex items-center justify-between rounded-lg bg-paper-2 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium">Made to Order (no stock limit)</p>
+              <p className="text-xs text-muted">
+                Always shown on the shopfront. Buyers can order any quantity — you set the cost when you approve.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setForm((f) => ({ ...f, made_to_order: !f.made_to_order }))}
+              className={`relative h-6 w-11 shrink-0 rounded-full transition ${form.made_to_order ? 'bg-peacock' : 'bg-line'}`}
+              aria-pressed={form.made_to_order}
+            >
+              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-card transition ${form.made_to_order ? 'left-[1.375rem]' : 'left-0.5'}`} />
+            </button>
+          </div>
+
           <div className="grid gap-4 sm:grid-cols-3">
-            <Field label="Quantity coming in" type="number" min="0" inputMode="decimal"
-                   value={form.quantity} onChange={set('quantity')} error={errors.quantity} />
-            <Field label="Low stock threshold" type="number" min="0" inputMode="decimal"
-                   value={form.low_stock_threshold} onChange={set('low_stock_threshold')}
-                   hint="Flag as Low below this" />
+            {!form.made_to_order && (
+              <>
+                <Field label="Quantity coming in" type="number" min="0" inputMode="decimal"
+                       value={form.quantity} onChange={set('quantity')} error={errors.quantity} />
+                <Field label="Low stock threshold" type="number" min="0" inputMode="decimal"
+                       value={form.low_stock_threshold} onChange={set('low_stock_threshold')}
+                       hint="Flag as Low below this" />
+              </>
+            )}
             <Field label="Min order qty (MOQ)" type="number" min="1" inputMode="decimal"
                    value={form.moq} onChange={set('moq')} error={errors.moq}
                    hint="Least a customer can order" />
           </div>
           <div className="grid gap-4 sm:grid-cols-3">
-            <Field label="Purchase Rate" prefix="₹" type="number" min="0" step="0.01" inputMode="decimal"
-                   value={form.purchase_rate} onChange={set('purchase_rate')} error={errors.purchase_rate} />
+            {!form.made_to_order && (
+              <Field label="Purchase Rate" prefix="₹" type="number" min="0" step="0.01" inputMode="decimal"
+                     value={form.purchase_rate} onChange={set('purchase_rate')} error={errors.purchase_rate} />
+            )}
             <Field label="Dealer Rate" prefix="₹" type="number" min="0" step="0.01" inputMode="decimal"
                    value={form.dealer_rate} onChange={set('dealer_rate')} error={errors.dealer_rate} />
             <Field label="Rate (retail)" prefix="₹" type="number" min="0" step="0.01" inputMode="decimal"
                    value={form.rate} onChange={set('rate')} error={errors.rate} />
           </div>
-          {liveCost != null && (
+          {form.made_to_order ? (
+            <p className="rounded-lg bg-peacock/5 px-4 py-2.5 text-sm text-muted">
+              No opening stock is recorded. You’ll enter the real cost on each order when you approve it.
+            </p>
+          ) : liveCost != null && (
             <p className="rounded-lg bg-paper-2 px-4 py-2.5 text-sm">
               Total purchase cost:{' '}
               <span className="fig font-bold text-dues">{money(liveCost)}</span>
@@ -446,14 +485,23 @@ function Success({ done, onAnother }) {
       <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-full bg-profit/10 text-profit">
         <IconCircleCheck size={34} />
       </div>
-      <h2 className="font-[var(--font-display)] text-2xl font-bold">Stock added</h2>
+      <h2 className="font-[var(--font-display)] text-2xl font-bold">
+        {done.made_to_order ? 'Item listed' : 'Stock added'}
+      </h2>
       <p className="mt-1 text-muted">
         <span className="fig font-semibold text-ink">{done.item_no}</span> — {done.name}
       </p>
-      <div className="mt-5 grid grid-cols-2 gap-3 text-left">
-        <Box label="Stocked in" value={`${done.quantity}`} />
-        <Box label="Added to supplier due" value={money(done.total_cost)} tone="dues" />
-      </div>
+      {done.made_to_order ? (
+        <p className="mt-5 rounded-lg bg-peacock/5 px-4 py-3 text-left text-sm text-muted">
+          This is a <span className="font-medium text-ink">Made to Order</span> item. It’s live on the shopfront now —
+          buyers can order any quantity, and you’ll set the cost when you approve each order.
+        </p>
+      ) : (
+        <div className="mt-5 grid grid-cols-2 gap-3 text-left">
+          <Box label="Stocked in" value={`${done.quantity}`} />
+          <Box label="Added to supplier due" value={money(done.total_cost)} tone="dues" />
+        </div>
+      )}
       <div className="mt-6 flex justify-center gap-3">
         <Button onClick={onAnother}>
           <IconPlus size={18} /> Add another

@@ -30,7 +30,7 @@ export default function Shopfront() {
     let active = true
     supabase
       .from('shopfront_items')
-      .select('id, name, quantity, rate, dealer_rate, low_stock_threshold, photo_url, category_id, tags, description, moq')
+      .select('id, name, quantity, rate, dealer_rate, low_stock_threshold, photo_url, category_id, tags, description, moq, made_to_order')
       .order('name')
       .then(({ data, error }) => {
         if (!active) return

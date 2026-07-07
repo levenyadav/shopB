@@ -69,7 +69,7 @@ export function amountInWords(amount, currencyWord = 'INR') {
 // Normalise raw data into a render-ready model. `lines[].rate` is the inclusive
 // per-unit price (rate_charged); `gstRate` is the shop's single rate (0 = none).
 // ---------------------------------------------------------------------------
-export function buildInvoiceModel({ shop, buyer, consignee, invoice, lines, gstRate }) {
+export function buildInvoiceModel({ shop, buyer, consignee, invoice, lines, bill, gstRate }) {
   const rate = Number(gstRate || 0)
   const hasGst = rate > 0 && !!shop?.gstin
   // Per-line: inclusive line total, then the taxable portion backed out of it.
@@ -91,8 +91,27 @@ export function buildInvoiceModel({ shop, buyer, consignee, invoice, lines, gstR
     }
   })
 
-  const grandTotal = round2(rows.reduce((s, r) => s + r.amount, 0))
-  const gst = hasGst ? gstBreakup(grandTotal, rate) : null
+  // Product subtotal (gross rate × qty). GST is inclusive and is backed out of
+  // THIS subtotal only — bill adjustments below are pass-through, no tax on top.
+  const itemsTotal = round2(rows.reduce((s, r) => s + r.amount, 0))
+  const gst = hasGst ? gstBreakup(itemsTotal, rate) : null
+
+  // Bill adjustments (023): the discount is a real margin loss shown as its own
+  // negative line; shipping / packing / other are pass-through additions. Each is
+  // optional and only printed when non-zero. The grand total is the subtotal less
+  // discount plus charges — exactly the buyer's payable held in order_bills.
+  const b = bill || {}
+  const adjustments = []
+  if (Number(b.discount_amount) > 0)
+    adjustments.push({ label: 'Less : Discount', amount: -round2(b.discount_amount) })
+  if (Number(b.shipping_fee) > 0)
+    adjustments.push({ label: 'Add : Shipping', amount: round2(b.shipping_fee) })
+  if (Number(b.packing_fee) > 0)
+    adjustments.push({ label: 'Add : Packing', amount: round2(b.packing_fee) })
+  if (Number(b.other_charge) > 0)
+    adjustments.push({ label: 'Add : Other charges', amount: round2(b.other_charge) })
+  const adjTotal = round2(adjustments.reduce((s, a) => s + a.amount, 0))
+  const grandTotal = round2(itemsTotal + adjTotal)
 
   // HSN-wise tax summary — only rows that carry an HSN/SAC code (optional).
   let hsnSummary = null
@@ -134,6 +153,8 @@ export function buildInvoiceModel({ shop, buyer, consignee, invoice, lines, gstR
     anyHsn,
     gst,
     hsnSummary,
+    adjustments,
+    itemsTotal,
     grandTotal,
     notes: invoice?.notes,
     words: amountInWords(grandTotal),
@@ -218,6 +239,15 @@ function itemRows(m) {
       <td class="r">${fmt(m.gst.sgst, c)}</td>
     </tr>` : ''
 
+  // Bill-level adjustments (discount / shipping / packing / other), each on its
+  // own line. A discount is negative and printed in parentheses, Tally-style.
+  const adjBlock = (m.adjustments || []).map((a) => `
+    <tr class="tax">
+      <td></td><td class="desc r">${esc(a.label)}</td>
+      ${m.anyHsn ? '<td></td>' : ''}<td></td><td></td><td></td>${m.gst ? '<td></td>' : ''}
+      <td class="r">${a.amount < 0 ? `(${fmt(-a.amount, c)})` : fmt(a.amount, c)}</td>
+    </tr>`).join('')
+
   const totalQty = m.rows.reduce((s, r) => s + r.qty, 0)
   return `
     <table class="items">
@@ -233,6 +263,7 @@ function itemRows(m) {
       <tbody>
         ${body}
         ${taxBlock}
+        ${adjBlock}
         <tr class="spacer"><td colspan="${cols}"></td></tr>
       </tbody>
       <tfoot>

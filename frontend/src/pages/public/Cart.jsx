@@ -93,7 +93,7 @@ export default function Cart() {
                         <IconMinus size={16} />
                       </button>
                       <input
-                        type="number" min={l.moq} max={l.available} value={l.qty}
+                        type="number" min={l.moq} max={l.made_to_order ? undefined : l.available} value={l.qty}
                         onChange={(e) => setQty(l.id, Number(e.target.value))}
                         className="fig w-12 border-x border-line py-1.5 text-center text-sm outline-none"
                       />
@@ -102,7 +102,9 @@ export default function Cart() {
                         <IconPlus size={16} />
                       </button>
                     </div>
-                    <span className="text-xs text-muted"><span className="fig">{l.available}</span> in stock</span>
+                    {l.made_to_order
+                      ? <span className="text-xs text-muted">Made to order</span>
+                      : <span className="text-xs text-muted"><span className="fig">{l.available}</span> in stock</span>}
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-2">

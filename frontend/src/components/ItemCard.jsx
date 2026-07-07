@@ -17,9 +17,13 @@ export default function ItemCard({ item, categoryName }) {
   const { add } = useCart()
   const [added, setAdded] = useState(false)
   const price = rateForBuyer(item, role)
-  const low = Number(item.quantity) < Number(item.low_stock_threshold)
-  // Owner/staff preview the shopfront but don't order; out-of-stock can't be added.
-  const canAdd = role !== 'owner' && role !== 'staff' && Number(item.quantity) > 0
+  const mto = !!item.made_to_order
+  // Made-to-order items are always orderable regardless of stock; a normal item
+  // is "low" only when its real stock dips below the threshold.
+  const low = !mto && Number(item.quantity) < Number(item.low_stock_threshold)
+  // Owner/staff preview the shopfront but don't order; out-of-stock can't be
+  // added — unless the item is made-to-order, which is produced on demand.
+  const canAdd = role !== 'owner' && role !== 'staff' && (mto || Number(item.quantity) > 0)
 
   function onAdd(e) {
     e.preventDefault()  // the tile is a Link — don't navigate
@@ -46,7 +50,11 @@ export default function ItemCard({ item, categoryName }) {
             <IconPhoto size={40} stroke={1.3} />
           </div>
         )}
-        {low && (
+        {mto ? (
+          <span className="absolute left-2 top-2">
+            <Badge tone="peacock">Made to Order</Badge>
+          </span>
+        ) : low && (
           <span className="absolute left-2 top-2">
             <Badge tone="saffron">Limited Stock</Badge>
           </span>

@@ -1,9 +1,18 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { RecaptchaVerifier, signInWithPhoneNumber } from 'firebase/auth'
 import { supabase } from '../../lib/supabase'
 import { toE164India } from '../../lib/helpers'
+import { firebaseEnabled, getFirebaseAuth } from '../../lib/firebase'
 import Credit from '../../components/Credit'
 
+// PROD PATH — when VITE_FIREBASE_API_KEY is set, real SMS goes through Firebase
+// Phone Auth: sendCode triggers the SMS (invisible reCAPTCHA + signInWithPhone-
+// Number), verifyCode confirms the 6-digit code to get a Firebase ID token, then
+// the `firebase-otp-login` Edge Function trades that token for a real Supabase
+// session (see lib/firebase.js). The DEV/native path below is the fallback used
+// only while Firebase is unconfigured.
+//
 // TESTING ONLY — no SMS provider is wired yet. Set VITE_DEV_OTP in .env to the
 // fixed code you registered under Supabase Auth → Phone → "Test OTP" for your
 // test number(s). When set, the login screen shows that code on-screen so you
@@ -30,6 +39,20 @@ export default function Login() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const navigate = useNavigate()
+  const confirmationRef = useRef(null)   // Firebase confirmationResult (send → verify)
+  const recaptchaRef = useRef(null)      // reused invisible reCAPTCHA verifier
+
+  // Lazily build one invisible reCAPTCHA verifier and reuse it across retries.
+  function getRecaptcha() {
+    if (!recaptchaRef.current) {
+      recaptchaRef.current = new RecaptchaVerifier(
+        getFirebaseAuth(),
+        'recaptcha-container',
+        { size: 'invisible' },
+      )
+    }
+    return recaptchaRef.current
+  }
 
   async function sendCode(e) {
     e.preventDefault()
@@ -38,10 +61,14 @@ export default function Login() {
     if (!phoneE164) { setError('Enter a valid 10-digit mobile number.'); return }
     setBusy(true)
     try {
-      // DEV MOCK: no SMS provider — skip Supabase's OTP send (it fails with
-      // phone_provider_disabled) and just reveal the fixed code. The real
-      // session is minted at verify time via the password grant below.
-      if (!DEV_OTP) {
+      if (firebaseEnabled) {
+        // PROD: real SMS via Firebase. Sends the code; nothing is created on the
+        // Supabase side until the verified token is exchanged at verify time.
+        confirmationRef.current = await signInWithPhoneNumber(
+          getFirebaseAuth(), phoneE164, getRecaptcha(),
+        )
+      } else if (!DEV_OTP) {
+        // DEV/native fallback: Supabase's own OTP (needs an SMS provider wired).
         const { error } = await supabase.auth.signInWithOtp({
           phone: phoneE164,
           // Sign-in must never silently create an account for a wrong number.
@@ -50,9 +77,10 @@ export default function Login() {
         })
         if (error) throw error
       }
+      // else DEV MOCK: no SMS at all — just reveal the fixed on-screen code.
       setE164(phoneE164)
       setStep('otp')
-      setNotice(DEV_OTP
+      setNotice((!firebaseEnabled && DEV_OTP)
         ? `Testing mode — SMS not connected. Use code ${DEV_OTP}.`
         : `We sent a 6-digit code to ${phoneE164}.`)
     } catch (err) {
@@ -68,7 +96,24 @@ export default function Login() {
     if (!/^\d{4,8}$/.test(code.trim())) { setError('Enter the code from the SMS.'); return }
     setBusy(true)
     try {
-      if (DEV_OTP) {
+      if (firebaseEnabled) {
+        // PROD: confirm the code with Firebase → get a signed ID token proving
+        // phone ownership, then trade it for a real Supabase session via the
+        // Edge Function. verifyOtp sets the session; AuthContext loads the profile.
+        if (!confirmationRef.current) throw new Error('Request a new code.')
+        const cred = await confirmationRef.current.confirm(code.trim())
+        const idToken = await cred.user.getIdToken()
+        const { data, error: fnErr } = await supabase.functions.invoke(
+          'firebase-otp-login', { body: { idToken } },
+        )
+        if (fnErr) throw new Error(await readFnError(fnErr))
+        if (!data?.token_hash) throw new Error(data?.error || 'Login failed. Please try again.')
+        const { error } = await supabase.auth.verifyOtp({
+          token_hash: data.token_hash,
+          type: 'email',
+        })
+        if (error) throw error
+      } else if (DEV_OTP) {
         // DEV MOCK: accept the fixed on-screen code, then get a REAL RLS
         // session via a password grant. Phone logins are disabled when no SMS
         // provider is wired, so we sign in by a deterministic EMAIL derived
@@ -168,7 +213,7 @@ export default function Login() {
               </button>
               <button
                 type="button"
-                onClick={() => { setStep('phone'); setCode(''); setError(''); setNotice('') }}
+                onClick={() => { setStep('phone'); setCode(''); setError(''); setNotice(''); confirmationRef.current = null }}
                 className="w-full text-sm text-muted hover:text-ink"
               >
                 ← Change number
@@ -179,10 +224,23 @@ export default function Login() {
           <div className="mt-8 text-center">
             <Credit />
           </div>
+
+          {/* Firebase invisible reCAPTCHA mounts here; empty otherwise. */}
+          <div id="recaptcha-container" />
         </div>
       </main>
     </div>
   )
+}
+
+// The Edge Function returns { error } with a non-2xx status; supabase-js wraps
+// that in a FunctionsHttpError whose real message is on the Response body.
+async function readFnError(fnErr) {
+  try {
+    const body = await fnErr?.context?.json?.()
+    if (body?.error) return body.error
+  } catch { /* fall through */ }
+  return fnErr?.message || 'Login failed. Please try again.'
 }
 
 const btnClass =
@@ -212,8 +270,10 @@ function Alert({ tone, children }) {
 function humanError(msg) {
   if (!msg) return 'Something went wrong. Please try again.'
   if (/invalid login credentials|email not confirmed/i.test(msg)) return 'That code is wrong, or dev login isn’t set up for this number yet.'
-  if (/token has expired|expired|invalid.*(otp|token|code)/i.test(msg)) return 'That code is wrong or expired. Request a new one.'
-  if (/signups? not allowed|user not found/i.test(msg)) return 'No account for this number yet. Ask the shop to add you.'
+  if (/invalid-verification-code|invalid.*code|token has expired|expired|invalid.*(otp|token)/i.test(msg)) return 'That code is wrong or expired. Request a new one.'
+  if (/no account|signups? not allowed|user not found/i.test(msg)) return 'No account for this number yet. Ask the shop to add you.'
+  if (/too-many-requests|rate limit|too many/i.test(msg)) return 'Too many attempts. Wait a minute and try again.'
+  if (/captcha|recaptcha|app-not-authorized|invalid-app-credential/i.test(msg)) return 'Sign-in check failed. Refresh the page and try again.'
   if (/sms|phone provider|not configured|unsupported phone/i.test(msg)) return 'SMS login isn’t available right now. Please try again later.'
   if (/rate limit|too many/i.test(msg)) return 'Too many attempts. Wait a minute and try again.'
   return msg

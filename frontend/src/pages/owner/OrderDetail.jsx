@@ -45,7 +45,7 @@ export default function OrderDetail() {
       .from('orders')
       .select(
         'id, shop_id, quantity, rate_at_order, amount, status, notes, rejection_reason, buyer_type, ' +
-          'created_at, item:items(id, name, photo_url, location, purchase_rate, category_id, quantity), ' +
+          'created_at, item:items(id, name, photo_url, location, purchase_rate, category_id, quantity, made_to_order), ' +
           'buyer:profiles!orders_buyer_id_fkey(id, full_name, phone, balance_due)',
       )
       .eq('id', id)
@@ -71,6 +71,7 @@ export default function OrderDetail() {
   if (!order) return <div className="grid place-items-center py-20 text-muted"><Spinner /></div>
 
   const item = order.item
+  const madeToOrder = item?.made_to_order === true
   const profit = lineProfit(order.rate_at_order, item?.purchase_rate ?? 0, order.quantity)
   const available = Number(item?.quantity ?? 0)
   const shortBy = order.quantity - available
@@ -114,17 +115,24 @@ export default function OrderDetail() {
           {order.notes && <Row label="Buyer note" value={order.notes} full />}
         </dl>
 
-        {/* Owner-only economics */}
+        {/* Owner-only economics. Made-to-order cost is unknown until approval, so
+            don't show a placeholder cost/profit for a still-pending such order. */}
         <div className="mt-4 flex flex-wrap items-center gap-4 rounded-lg bg-paper-2 px-4 py-3 text-sm">
-          <span className="text-muted">Cost <span className="fig text-ink">{money(round2((item?.purchase_rate ?? 0) * order.quantity)).replace('₹', currency)}</span></span>
-          <span className="text-muted">Profit <span className="fig font-semibold text-profit">{money(profit).replace('₹', currency)}</span></span>
+          {madeToOrder && isPending ? (
+            <span className="text-muted">Cost &amp; profit <span className="text-ink">set at approval</span></span>
+          ) : (
+            <>
+              <span className="text-muted">Cost <span className="fig text-ink">{money(round2((item?.purchase_rate ?? 0) * order.quantity)).replace('₹', currency)}</span></span>
+              <span className="text-muted">Profit <span className="fig font-semibold text-profit">{money(profit).replace('₹', currency)}</span></span>
+            </>
+          )}
           <span className="text-muted">Buyer udhaar now <span className="fig text-dues">{money(order.buyer?.balance_due).replace('₹', currency)}</span></span>
         </div>
       </div>
 
       {/* Actions */}
       {isPending ? (
-        available < order.quantity ? (
+        (!madeToOrder && available < order.quantity) ? (
           <div className="rounded-lg border border-dues/30 bg-dues/10 p-5">
             <div className="flex items-center gap-2 text-dues">
               <IconAlertTriangle size={20} />
@@ -144,7 +152,7 @@ export default function OrderDetail() {
         ) : (
           <ApprovePanel
             order={order} item={item} profit={profit} ownerId={profile.id}
-            currency={currency}
+            currency={currency} madeToOrder={madeToOrder}
             onApproved={() => { setJustApproved(true); load() }}
             onRejected={load}
           />
@@ -216,29 +224,103 @@ function ApprovedTracker({ order }) {
   )
 }
 
-function ApprovePanel({ order, item, profit, ownerId, currency, onApproved, onRejected }) {
+// Evaluate one charge rule against this order; returns the fee (>=0) or null if
+// the rule doesn't apply. Mirrors the intent baked into charge_rules (migration
+// 023): buyer-type gate + a value/quantity condition; % fees are of order value.
+function evalRule(rule, { buyerType, orderValue, quantity }) {
+  if (rule.is_active === false) return null
+  if (rule.applies_to !== 'all' && rule.applies_to !== buyerType) return null
+  const val = rule.basis === 'quantity' ? Number(quantity) : Number(orderValue)
+  const t = Number(rule.threshold)
+  const hi = rule.threshold_hi == null ? null : Number(rule.threshold_hi)
+  let ok = false
+  if (rule.operator === 'lt') ok = val < t
+  else if (rule.operator === 'lte') ok = val <= t
+  else if (rule.operator === 'gte') ok = val >= t
+  else if (rule.operator === 'gt') ok = val > t
+  else if (rule.operator === 'between') ok = hi != null && val >= t && val <= hi
+  if (!ok) return null
+  return rule.is_percent ? round2((Number(orderValue) * Number(rule.fee)) / 100) : Number(rule.fee)
+}
+
+// Highest applicable fee for a charge type (a free-shipping rule sets fee 0, so a
+// qualifying free-shipping rule still wins only if it's the highest — see Settings).
+function suggestFee(rules, type, ctx) {
+  let best = null
+  for (const r of rules) {
+    if (r.charge_type !== type) continue
+    const f = evalRule(r, ctx)
+    if (f != null && (best == null || f > best)) best = f
+  }
+  return best
+}
+
+// Parse a money input box to a non-negative number (blank -> 0).
+const num = (v) => Math.max(0, Number(v || 0))
+
+function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onApproved, onRejected }) {
   const [pay, setPay] = useState('cash')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [rejecting, setRejecting] = useState(false)
+  // Made-to-order: cost is unknown until the owner sources/makes the item, so it
+  // is entered here at approval (items.purchase_rate is only a placeholder). For
+  // normal stock items the cost is already known, so keep the item's rate.
+  const [cost, setCost] = useState('')
+
+  // Finalize-bill charges (migration 023). Per-line price is NEVER edited here
+  // (Golden Rule #5) — these sit on TOP of the product subtotal the buyer saw.
+  const [discount, setDiscount] = useState('')
+  const [shipping, setShipping] = useState('')
+  const [packing, setPacking] = useState('')
+  const [other, setOther] = useState('')
+  const [notes, setNotes] = useState('')
+  const [suggested, setSuggested] = useState(false)
+
+  const cf = (n) => money(n).replace('₹', currency)
+  const costNum = madeToOrder ? num(cost) : Number(item.purchase_rate ?? 0)
+  const listProfit = madeToOrder ? lineProfit(order.rate_at_order, costNum, order.quantity) : profit
+  const costMissing = madeToOrder && !(costNum > 0)
+
+  const subtotal = Number(order.amount)
+  const discountNum = Math.min(num(discount), subtotal)
+  const netCharges = round2(num(shipping) + num(packing) + num(other) - discountNum)
+  const grandTotal = round2(subtotal + netCharges)
+  const effProfit = round2(listProfit - discountNum)   // discount is a real margin loss
+
+  // Auto-suggest shipping / packing from the owner's charge_rules (Settings).
+  useEffect(() => {
+    let alive = true
+    async function loadRules() {
+      const { data } = await supabase
+        .from('charge_rules')
+        .select('charge_type, applies_to, basis, operator, threshold, threshold_hi, fee, is_percent, is_active')
+        .eq('shop_id', order.shop_id)
+      if (!alive || !data?.length) return
+      const ctx = { buyerType: order.buyer_type, orderValue: subtotal, quantity: order.quantity }
+      const sShip = suggestFee(data, 'shipping', ctx)
+      const sPack = suggestFee(data, 'packing', ctx)
+      if (sShip != null) setShipping(String(sShip))
+      if (sPack != null) setPacking(String(sPack))
+      if (sShip != null || sPack != null) setSuggested(true)
+    }
+    loadRules()
+    return () => { alive = false }
+  }, [order.shop_id, order.buyer_type, order.quantity, subtotal])
 
   async function approve() {
     setBusy(true); setErr('')
-    // Insert the sale; the trigger does stock/ledger/fulfilment/order-status.
-    const { error } = await supabase.from('sales').insert({
-      shop_id: order.shop_id,
-      order_id: order.id,
-      item_id: item.id,
-      category_id: item.category_id,
-      buyer_id: order.buyer.id,
-      buyer_type: order.buyer_type,
-      quantity: order.quantity,
-      rate_charged: order.rate_at_order,
-      amount: order.amount,
-      purchase_rate: item.purchase_rate,
-      profit,
-      payment_type: pay,
-      approved_by: ownerId,
+    // One RPC (migration 023) books the sale GROSS + the net charges/discount
+    // atomically: stock, udhaar, ledger, fulfilment, order-status and the bill.
+    const { error } = await supabase.rpc('approve_order', {
+      p_order_id: order.id,
+      p_payment_type: pay,
+      p_cost: madeToOrder ? round2(costNum) : null,
+      p_discount: discountNum,
+      p_shipping: num(shipping),
+      p_packing: num(packing),
+      p_other: num(other),
+      p_notes: notes.trim() || null,
     })
     setBusy(false)
     if (error) { setErr(error.message); return }
@@ -249,7 +331,65 @@ function ApprovePanel({ order, item, profit, ownerId, currency, onApproved, onRe
 
   return (
     <div className="space-y-4 rounded-lg border border-line bg-card p-5">
-      <p className="font-semibold">Approve this order</p>
+      <p className="font-semibold">Finalize bill &amp; approve</p>
+
+      {madeToOrder && (
+        <div>
+          <label className="mb-1.5 block text-sm font-medium">
+            Cost to source / make (each)
+            <span className="ml-1.5 rounded bg-peacock/10 px-1.5 py-0.5 text-[11px] font-semibold text-peacock">Made to order</span>
+          </label>
+          <input
+            type="number" min="0" step="0.01" inputMode="decimal"
+            value={cost} onChange={(e) => setCost(e.target.value)}
+            placeholder="Enter your true cost per piece"
+            className="w-full rounded-lg border border-line bg-card px-3 py-2.5 text-sm outline-none focus:border-peacock"
+          />
+          <p className="mt-1 text-xs text-muted">
+            You source or make this item only now — enter the real cost per piece so profit is accurate.
+          </p>
+        </div>
+      )}
+
+      {/* Charges — added on top of the price the buyer already saw. */}
+      <div className="space-y-3 rounded-lg border border-line bg-paper-2 p-4">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-semibold">Charges &amp; discount</p>
+          {suggested && (
+            <span className="rounded-full bg-peacock/10 px-2 py-0.5 text-[11px] font-semibold text-peacock">
+              Auto-filled from rules
+            </span>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <ChargeInput label="Discount" value={discount} onChange={setDiscount} currency={currency} tone="dues" />
+          <ChargeInput label="Shipping" value={shipping} onChange={setShipping} currency={currency} />
+          <ChargeInput label="Packing" value={packing} onChange={setPacking} currency={currency} />
+          <ChargeInput label="Other charge" value={other} onChange={setOther} currency={currency} />
+        </div>
+        <input
+          value={notes} onChange={(e) => setNotes(e.target.value)}
+          placeholder="Bill note (optional — prints on the invoice)"
+          className="w-full rounded-lg border border-line bg-card px-3 py-2 text-sm outline-none focus:border-peacock"
+        />
+        <p className="text-[11px] text-muted">
+          Prices already include GST (tax-inclusive) — nothing is added for tax. Shipping, packing &amp; other are
+          pass-through (no profit); a discount reduces your profit.
+        </p>
+      </div>
+
+      {/* Live bill breakdown */}
+      <dl className="space-y-1.5 rounded-lg bg-paper-2 px-4 py-3 text-sm">
+        <BillRow label="Subtotal" value={cf(subtotal)} />
+        {discountNum > 0 && <BillRow label="Discount" value={'− ' + cf(discountNum)} tone="dues" />}
+        {num(shipping) > 0 && <BillRow label="Shipping" value={'+ ' + cf(num(shipping))} />}
+        {num(packing) > 0 && <BillRow label="Packing" value={'+ ' + cf(num(packing))} />}
+        {num(other) > 0 && <BillRow label="Other" value={'+ ' + cf(num(other))} />}
+        <div className="flex items-center justify-between border-t border-line pt-1.5 font-semibold">
+          <span>Grand total</span>
+          <span className="fig">{cf(grandTotal)}</span>
+        </div>
+      </dl>
 
       <div>
         <p className="mb-1.5 text-sm font-medium">How is the buyer paying?</p>
@@ -267,26 +407,54 @@ function ApprovePanel({ order, item, profit, ownerId, currency, onApproved, onRe
         </div>
         {pay === 'udhaar' && (
           <p className="mt-2 text-xs text-saffron">
-            Udhaar adds {money(order.amount).replace('₹', currency)} to the buyer’s running balance. Clear it later via Payment In.
+            Udhaar adds {cf(grandTotal)} to the buyer’s running balance. Clear it later via Payment In.
           </p>
         )}
       </div>
 
       <div className="flex items-center justify-between border-t border-line pt-3 text-sm">
         <span className="text-muted">Profit on this sale</span>
-        <span className="fig font-semibold text-profit">{money(profit).replace('₹', currency)}</span>
+        <span className="fig font-semibold text-profit">
+          {costMissing ? '—' : cf(effProfit)}
+        </span>
       </div>
 
       {err && <p className="rounded-lg bg-dues/10 px-3 py-2 text-sm text-dues">{err}</p>}
 
       <div className="flex gap-3">
-        <Button onClick={approve} disabled={busy} className="flex-1">
+        <Button onClick={approve} disabled={busy || costMissing} className="flex-1">
           {busy ? <><Spinner /> Approving…</> : <><IconCircleCheck size={18} /> Approve &amp; record sale</>}
         </Button>
         <Button variant="danger" onClick={() => setRejecting(true)} disabled={busy}>
           <IconCircleX size={18} /> Reject
         </Button>
       </div>
+    </div>
+  )
+}
+
+function ChargeInput({ label, value, onChange, currency, tone }) {
+  return (
+    <label className="block">
+      <span className={`mb-1 block text-xs font-medium ${tone === 'dues' ? 'text-dues' : 'text-muted'}`}>{label}</span>
+      <div className="flex items-center rounded-lg border border-line bg-card focus-within:border-peacock">
+        <span className="pl-2.5 text-xs text-muted">{currency}</span>
+        <input
+          type="number" min="0" step="0.01" inputMode="decimal"
+          value={value} onChange={(e) => onChange(e.target.value)}
+          placeholder="0"
+          className="w-full bg-transparent px-2 py-2 text-sm outline-none"
+        />
+      </div>
+    </label>
+  )
+}
+
+function BillRow({ label, value, tone }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-muted">{label}</span>
+      <span className={`fig ${tone === 'dues' ? 'text-dues' : 'text-ink'}`}>{value}</span>
     </div>
   )
 }

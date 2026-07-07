@@ -30,7 +30,7 @@ export default function ItemDetail() {
     let active = true
     supabase
       .from('shopfront_items')
-      .select('id, name, quantity, rate, dealer_rate, low_stock_threshold, photo_url, category_id, moq, description, tags, images')
+      .select('id, name, quantity, rate, dealer_rate, low_stock_threshold, photo_url, category_id, moq, description, tags, images, made_to_order')
       .eq('id', id)
       .maybeSingle()
       .then(({ data, error }) => {
@@ -87,9 +87,11 @@ export default function ItemDetail() {
               {money(price).replace('₹', currency)}
             </span>
             {role === 'dealer' && <Badge tone="peacock">Dealer rate</Badge>}
-            {available < Number(item.low_stock_threshold)
-              ? <Badge tone="saffron">Limited Stock</Badge>
-              : <Badge tone="profit">In stock</Badge>}
+            {item.made_to_order
+              ? <Badge tone="peacock">Made to Order</Badge>
+              : available < Number(item.low_stock_threshold)
+                ? <Badge tone="saffron">Limited Stock</Badge>
+                : <Badge tone="profit">In stock</Badge>}
           </div>
 
           {item.description && (
@@ -101,7 +103,7 @@ export default function ItemDetail() {
               You’re signed in as {role}. Ordering is for customers and dealers — this is how your shopfront looks to them.
             </p>
           ) : (
-            <OrderBox item={item} price={price} available={available} currency={currency} />
+            <OrderBox item={item} price={price} available={available} currency={currency} mto={!!item.made_to_order} />
           )}
         </div>
       </div>
@@ -109,15 +111,17 @@ export default function ItemDetail() {
   )
 }
 
-function OrderBox({ item, price, available, currency }) {
+function OrderBox({ item, price, available, currency, mto }) {
   const { add } = useCart()
   const moq = Math.max(1, Number(item.moq) || 1)
-  const belowMoq = available < moq // not enough stock to meet the minimum order
+  // Made-to-order items are produced on demand — no stock ceiling, and the MOQ
+  // can always be met regardless of the placeholder on-hand quantity.
+  const belowMoq = !mto && available < moq // not enough stock to meet the minimum order
   const [n, setN] = useState(moq)
   const [note, setNote] = useState('')
   const [added, setAdded] = useState(false)
 
-  const clamp = (v) => Math.max(moq, Math.min(available, v))
+  const clamp = (v) => Math.max(moq, mto ? v : Math.min(available, v))
   const amount = round2(price * n)
 
   function addToCart() {
@@ -167,7 +171,7 @@ function OrderBox({ item, price, available, currency }) {
               <IconMinus size={18} />
             </button>
             <input
-              type="number" min={moq} max={available} value={n}
+              type="number" min={moq} max={mto ? undefined : available} value={n}
               onChange={(e) => setN(clamp(Number(e.target.value) || moq))}
               disabled={belowMoq}
               className="fig w-14 border-x border-line py-2 text-center outline-none"
@@ -178,7 +182,9 @@ function OrderBox({ item, price, available, currency }) {
               <IconPlus size={18} />
             </button>
           </div>
-          <span className="text-sm text-muted"><span className="fig">{available}</span> available</span>
+          {mto
+            ? <span className="text-sm text-muted">Made to order</span>
+            : <span className="text-sm text-muted"><span className="fig">{available}</span> available</span>}
         </div>
         {moq > 1 && (
           <p className="mt-1.5 text-xs text-muted">Minimum order: <span className="fig">{moq}</span> pcs</p>

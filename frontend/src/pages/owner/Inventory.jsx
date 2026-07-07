@@ -12,8 +12,9 @@ import { printBarcodeLabels, barcodeValue, DEFAULT_LABEL_OPTS } from '../../lib/
 import { Button, Field, Select, Textarea, StockBadge, Badge, Spinner, TagsInput, ImagesInput } from '../../components/ui'
 
 // SPEC §6.2 — Inventory master list. Owner sees all items, searches/filters,
-// and edits any field EXCEPT quantity (stock changes only via Purchase Entry,
-// Golden Rule #1). Total stock value (owner only) sits at the top.
+// and edits any field including quantity (direct stock correction; new stock-in
+// with supplier billing still goes via Purchase Entry). Total stock value
+// (owner only) sits at the top.
 export default function Inventory() {
   const { categories, suppliers, currency, shop } = useShop()
   const [items, setItems] = useState(null)
@@ -35,7 +36,7 @@ export default function Inventory() {
       .from('items')
       .select(
         'id, item_no, name, location, quantity, purchase_rate, dealer_rate, rate, ' +
-          'low_stock_threshold, moq, barcode, hsn_sac, photo_url, is_active, discontinued, discontinued_at, supplier_id, category_id, ' +
+          'low_stock_threshold, moq, barcode, hsn_sac, photo_url, is_active, discontinued, discontinued_at, made_to_order, supplier_id, category_id, ' +
           'description, tags, images, ' +
           'supplier:suppliers(name), category:categories(name)',
       )
@@ -179,10 +180,14 @@ export default function Inventory() {
                     </td>
                     <td className="px-4 py-3 text-muted">{i.category?.name || '—'}</td>
                     <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <span className="fig">{qty(i.quantity)}</span>
-                        <StockBadge quantity={i.quantity} threshold={i.low_stock_threshold} />
-                      </div>
+                      {i.made_to_order ? (
+                        <Badge tone="peacock">Made to Order</Badge>
+                      ) : (
+                        <div className="flex items-center justify-end gap-2">
+                          <span className="fig">{qty(i.quantity)}</span>
+                          <StockBadge quantity={i.quantity} threshold={i.low_stock_threshold} />
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right fig">{money(i.rate)}</td>
                     <td className="px-4 py-3 text-right fig text-muted">{money(stockValue(i))}</td>
@@ -555,6 +560,7 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
     supplier_id: item.supplier_id,
     category_id: item.category_id,
     location: item.location || '',
+    quantity: String(item.quantity),
     purchase_rate: String(item.purchase_rate),
     dealer_rate: String(item.dealer_rate),
     rate: String(item.rate),
@@ -566,6 +572,7 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
     tags: item.tags || [],
     images: item.images || [],
     is_active: item.is_active,
+    made_to_order: !!item.made_to_order,
   })
   // Photo: either upload a file (-> Storage) or paste an image URL. A picked
   // file wins over the URL field. photoUrl doubles as the current/preview src.
@@ -621,6 +628,7 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
           supplier_id: f.supplier_id,
           category_id: f.category_id,
           location: f.location.trim() || null,
+          quantity: round2(f.quantity || 0),
           purchase_rate: round2(f.purchase_rate),
           dealer_rate: round2(f.dealer_rate),
           rate: round2(f.rate),
@@ -633,6 +641,7 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
           tags: f.tags,
           images: f.images,
           is_active: f.is_active,
+          made_to_order: f.made_to_order,
         })
         .eq('id', item.id)
       if (error) throw new Error(error.message)
@@ -716,6 +725,10 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
           <Field label="Low stock threshold" type="number" min="0" value={f.low_stock_threshold} onChange={set('low_stock_threshold')} />
           <Field label="Min order qty (MOQ)" type="number" min="1" value={f.moq} onChange={set('moq')} hint="Least a customer can order" />
         </div>
+        {!f.made_to_order && (
+          <Field label="Stock quantity" type="number" min="0" step="0.01" value={f.quantity} onChange={set('quantity')}
+                 hint="Current stock on hand — edit to correct it directly." />
+        )}
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="Purchase Rate" prefix="₹" type="number" min="0" step="0.01" value={f.purchase_rate} onChange={set('purchase_rate')} />
           <Field label="Dealer Rate" prefix="₹" type="number" min="0" step="0.01" value={f.dealer_rate} onChange={set('dealer_rate')} />
@@ -758,9 +771,24 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
           </button>
         </div>
 
+        <div className="flex items-center justify-between rounded-lg bg-paper-2 px-4 py-3">
+          <div>
+            <p className="text-sm font-medium">Made to Order (no stock limit)</p>
+            <p className="text-xs text-muted">Always shown on the shopfront; buyers order any quantity. Cost is set when you approve.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setF((s) => ({ ...s, made_to_order: !s.made_to_order }))}
+            className={`relative h-6 w-11 shrink-0 rounded-full transition ${f.made_to_order ? 'bg-peacock' : 'bg-line'}`}
+            aria-pressed={f.made_to_order}
+          >
+            <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-card transition ${f.made_to_order ? 'left-[1.375rem]' : 'left-0.5'}`} />
+          </button>
+        </div>
+
         <p className="flex items-center gap-1.5 text-xs text-muted">
           <IconCircleCheck size={14} className="text-profit" />
-          Stock quantity changes only through Purchase Entry — not editable here.
+          For new stock-in with supplier billing, use Purchase Entry. Editing the quantity here corrects stock directly.
         </p>
 
         <div className="flex justify-end gap-3 pt-1">
