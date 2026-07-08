@@ -50,7 +50,7 @@ export default function PurchaseEntry() {
 }
 
 const BLANK = {
-  name: '', supplier_id: '', category_id: '', location: '',
+  name: '', company_no: '', supplier_id: '', category_id: '', location: '',
   quantity: '', purchase_rate: '', dealer_rate: '', rate: '',
   low_stock_threshold: '10', moq: '1', barcode: '', notes: '',
   description: '', tags: [], images: [], made_to_order: false,
@@ -73,10 +73,38 @@ function NewItemEntry() {
   const [showScanner, setShowScanner] = useState(false)
   const [scanBusy, setScanBusy] = useState(false)
   const [scanInfo, setScanInfo] = useState(null) // { tone, item?, name? }
+  const [nameInfo, setNameInfo] = useState(null) // existing item with the same name
+  const [nameChecking, setNameChecking] = useState(false)
 
   const set = (k) => (e) => {
     setForm((f) => ({ ...f, [k]: e.target.value }))
     setErrors((er) => ({ ...er, [k]: undefined }))
+    if (k === 'name') setNameInfo(null) // re-check once they finish editing
+  }
+
+  // Guard against duplicate items: when the name field loses focus, look for an
+  // item that already carries this exact name in the shop (case-insensitive, so
+  // "Royal Red" and "royal red" collide). Same intent as the barcode "found"
+  // panel — nudge the owner to restock the existing item rather than create a
+  // second catalogue row with the same name.
+  async function checkName() {
+    const name = form.name.trim()
+    if (!name) { setNameInfo(null); return }
+    setNameChecking(true)
+    try {
+      const { data: existing } = await supabase
+        .from('items')
+        .select('id, item_no, name, quantity, low_stock_threshold')
+        .eq('shop_id', shopId)
+        .ilike('name', name)
+        .limit(1)
+        .maybeSingle()
+      setNameInfo(existing || null)
+    } catch {
+      setNameInfo(null)
+    } finally {
+      setNameChecking(false)
+    }
   }
 
   function onPhoto(e) {
@@ -192,6 +220,7 @@ function NewItemEntry() {
         .insert({
           shop_id: shopId,
           name: form.name.trim(),
+          company_no: form.company_no.trim() || null,
           supplier_id: form.supplier_id,
           category_id: form.category_id,
           location: form.location.trim() || null,
@@ -270,10 +299,35 @@ function NewItemEntry() {
 
         {/* Identity */}
         <Section title="Item details" hint="Item No is assigned automatically on save (SHOP-0001…).">
-          <Field
-            label="Item name" placeholder="e.g. Wedding Card – Royal Red"
-            value={form.name} onChange={set('name')} error={errors.name} autoFocus
-          />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              label="Item name" placeholder="e.g. Wedding Card – Royal Red"
+              value={form.name} onChange={set('name')} onBlur={checkName} error={errors.name} autoFocus
+            />
+            <Field
+              label="Company No." placeholder="e.g. 1420 (design / article no.)"
+              value={form.company_no} onChange={set('company_no')}
+              hint="The company's own design/article number — used to re-order"
+            />
+          </div>
+
+          {nameInfo && (
+            <div className="rounded-lg border border-peacock/30 bg-peacock/5 px-4 py-3 text-sm">
+              <p className="font-semibold text-ink">An item with this name is already in your shop.</p>
+              <p className="mt-0.5 text-muted">
+                <span className="fig">{nameInfo.item_no}</span> — {nameInfo.name} ·{' '}
+                in stock <span className="fig font-semibold text-ink">{qty(nameInfo.quantity)}</span>
+              </p>
+              <p className="mt-1 text-muted">Add new stock to it instead of creating a duplicate:</p>
+              <button
+                type="button"
+                onClick={() => navigate(`/owner/purchase?item=${nameInfo.id}`)}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-peacock px-3 py-2 text-sm font-semibold text-white hover:bg-peacock-700"
+              >
+                <IconCircleArrowRight size={17} /> Restock this item
+              </button>
+            </div>
+          )}
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <Select label="Company / Supplier" value={form.supplier_id}

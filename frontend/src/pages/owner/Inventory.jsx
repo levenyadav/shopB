@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import {
   IconSearch, IconPlus, IconPencil, IconPhoto, IconX, IconCircleCheck, IconCamera,
   IconDotsVertical, IconBarcode, IconPrinter, IconArchive, IconArchiveOff, IconAlertTriangle,
+  IconTrash,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
@@ -28,6 +29,7 @@ export default function Inventory() {
   const [editing, setEditing] = useState(null)
   const [printing, setPrinting] = useState(null) // item whose barcode label we're printing
   const [retiring, setRetiring] = useState(null) // item pending discontinue / reactivate confirm
+  const [deleting, setDeleting] = useState(null) // discontinued item pending hard-delete confirm
   const [zoom, setZoom] = useState(null) // photo_url shown full-size in a lightbox
 
   async function load() {
@@ -35,7 +37,7 @@ export default function Inventory() {
     const { data, error } = await supabase
       .from('items')
       .select(
-        'id, item_no, name, location, quantity, purchase_rate, dealer_rate, rate, ' +
+        'id, item_no, name, company_no, location, quantity, purchase_rate, dealer_rate, rate, ' +
           'low_stock_threshold, moq, barcode, hsn_sac, photo_url, is_active, discontinued, discontinued_at, made_to_order, supplier_id, category_id, ' +
           'description, tags, images, ' +
           'supplier:suppliers(name), category:categories(name)',
@@ -70,7 +72,7 @@ export default function Inventory() {
       if (tag && !(i.tags || []).includes(tag)) return false
       if (lowOnly && !(Number(i.quantity) < Number(i.low_stock_threshold))) return false
       if (needle) {
-        const hay = `${i.item_no} ${i.name} ${i.barcode || ''} ${i.supplier?.name || ''} ${i.category?.name || ''} ${(i.tags || []).join(' ')} ${i.description || ''}`.toLowerCase()
+        const hay = `${i.item_no} ${i.name} ${i.company_no || ''} ${i.barcode || ''} ${i.supplier?.name || ''} ${i.category?.name || ''} ${(i.tags || []).join(' ')} ${i.description || ''}`.toLowerCase()
         if (!hay.includes(needle)) return false
       }
       return true
@@ -154,6 +156,7 @@ export default function Inventory() {
               <thead className="bg-paper-2 text-muted">
                 <tr>
                   <th className="px-4 py-3 font-medium">Item</th>
+                  <th className="px-4 py-3 font-medium">Company No.</th>
                   <th className="px-4 py-3 font-medium">Category</th>
                   <th className="px-4 py-3 font-medium text-right">Qty</th>
                   <th className="px-4 py-3 font-medium text-right">Rate</th>
@@ -180,6 +183,7 @@ export default function Inventory() {
                         </div>
                       </div>
                     </td>
+                    <td className="px-4 py-3 fig text-muted">{i.company_no || '—'}</td>
                     <td className="px-4 py-3 text-muted">{i.category?.name || '—'}</td>
                     <td className="px-4 py-3 text-right">
                       {i.made_to_order ? (
@@ -199,13 +203,14 @@ export default function Inventory() {
                         onEdit={() => setEditing(i)}
                         onPrint={() => setPrinting(i)}
                         onDiscontinue={() => setRetiring(i)}
+                        onDelete={() => setDeleting(i)}
                       />
                     </td>
                   </tr>
                 ))}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-12 text-center text-muted">
+                    <td colSpan={7} className="px-4 py-12 text-center text-muted">
                       No items match. Adjust the filters, or{' '}
                       <Link to="/owner/purchase" className="font-medium text-peacock hover:underline">
                         add a new item
@@ -249,13 +254,23 @@ export default function Inventory() {
         />
       )}
 
+      {deleting && (
+        <DeleteModal
+          item={deleting}
+          onClose={() => setDeleting(null)}
+          onDone={() => { setDeleting(null); load() }}
+        />
+      )}
+
       {zoom && <Lightbox url={zoom} onClose={() => setZoom(null)} />}
     </div>
   )
 }
 
 // Per-row "action dot" menu: a three-dot button that opens Edit + Print barcode.
-function RowActions({ discontinued, onEdit, onPrint, onDiscontinue }) {
+// Delete is offered ONLY for already-discontinued lines — a retired product is
+// the only place a permanent removal makes sense.
+function RowActions({ discontinued, onEdit, onPrint, onDiscontinue, onDelete }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -313,6 +328,16 @@ function RowActions({ discontinued, onEdit, onPrint, onDiscontinue }) {
               ? <><IconArchiveOff size={15} /> Reactivate</>
               : <><IconArchive size={15} /> Discontinue</>}
           </button>
+          {discontinued && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => { setOpen(false); onDelete() }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-dues hover:bg-paper-2"
+            >
+              <IconTrash size={15} /> Delete permanently
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -396,6 +421,79 @@ function DiscontinueModal({ item, onClose, onDone }) {
           >
             {busy ? <><Spinner /> Saving…</> : reactivating ? 'Reactivate' : 'Discontinue'}
           </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Permanently deletes a discontinued item — a true hard DELETE, no soft flag.
+// The books are protected by the database, not this button: items.id is
+// referenced (NO ACTION / restrict) by purchases, orders and sales, so Postgres
+// rejects the delete with FK error 23503 the moment the line has ANY history
+// (Golden Rules #1, #9). We surface that as a plain-language message instead of
+// a raw error — the owner's only real path for a line with history stays
+// "discontinued". Deletes succeed only for lines that were never transacted.
+function DeleteModal({ item, onClose, onDone }) {
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [blocked, setBlocked] = useState(false) // FK-referenced: delete impossible
+
+  async function confirm() {
+    setBusy(true); setErr(''); setBlocked(false)
+    const { error } = await supabase.from('items').delete().eq('id', item.id)
+    if (error) {
+      // 23503 = foreign_key_violation: the row is still referenced by history.
+      if (error.code === '23503') setBlocked(true)
+      else setErr(error.message)
+      setBusy(false)
+      return
+    }
+    onDone()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 p-4" onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm space-y-4 rounded-lg border border-line bg-card p-6"
+      >
+        <div className="flex items-center gap-3">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-dues/10 text-dues">
+            <IconTrash size={22} />
+          </div>
+          <div>
+            <h3 className="font-[var(--font-display)] text-xl font-bold">Delete permanently?</h3>
+            <p className="fig text-xs text-muted">{item.name} · {item.item_no}</p>
+          </div>
+        </div>
+
+        {err && <p className="rounded-lg bg-dues/10 px-3 py-2 text-sm text-dues">{err}</p>}
+
+        {blocked ? (
+          <p className="flex items-start gap-2 rounded-lg bg-saffron/10 px-3 py-2.5 text-sm text-saffron">
+            <IconAlertTriangle size={18} className="mt-0.5 shrink-0" />
+            <span>
+              <span className="font-medium">Can't delete this item.</span> It's referenced by past
+              sales or purchases, so removing it would break your records. It stays discontinued —
+              hidden from customers, history intact.
+            </span>
+          </p>
+        ) : (
+          <p className="text-sm text-muted">
+            This <span className="font-medium text-ink">permanently removes</span>{' '}
+            <span className="font-medium text-ink">{item.name}</span> from your inventory. This can't
+            be undone. It only works if the item was never sold or purchased.
+          </p>
+        )}
+
+        <div className="flex justify-end gap-3 pt-1">
+          <Button variant="ghost" onClick={onClose}>{blocked ? 'Close' : 'Cancel'}</Button>
+          {!blocked && (
+            <Button variant="danger" onClick={confirm} disabled={busy}>
+              {busy ? <><Spinner /> Deleting…</> : <><IconTrash size={18} /> Delete</>}
+            </Button>
+          )}
         </div>
       </div>
     </div>
@@ -559,6 +657,7 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
   const { shopId } = useShop()
   const [f, setF] = useState({
     name: item.name,
+    company_no: item.company_no || '',
     supplier_id: item.supplier_id,
     category_id: item.category_id,
     location: item.location || '',
@@ -627,6 +726,7 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
         .from('items')
         .update({
           name: f.name.trim(),
+          company_no: f.company_no.trim() || null,
           supplier_id: f.supplier_id,
           category_id: f.category_id,
           location: f.location.trim() || null,
@@ -713,7 +813,11 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
           </div>
         </div>
 
-        <Field label="Item name" value={f.name} onChange={set('name')} />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Item name" value={f.name} onChange={set('name')} />
+          <Field label="Company No." value={f.company_no} onChange={set('company_no')}
+                 hint="Company's design/article no." />
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <Select label="Company / Supplier" value={f.supplier_id} onChange={set('supplier_id')}>
             {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}

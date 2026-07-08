@@ -18,12 +18,12 @@ import { Button, Badge, Spinner } from '../../components/ui'
 // supplier balance and the ledger (Golden Rules #1, #10). Unknown suppliers /
 // categories are created on the fly (the owner chose auto-create).
 const COLUMNS = [
-  'name', 'supplier', 'category', 'location', 'quantity',
+  'name', 'company_no', 'supplier', 'category', 'location', 'quantity',
   'purchase_rate', 'dealer_rate', 'rate', 'low_stock_threshold', 'barcode', 'notes',
 ]
 
 const TEMPLATE_ROW = {
-  name: 'Wedding Card – Royal Red', supplier: 'Sharma Cards', category: 'Greeting Cards',
+  name: 'Wedding Card – Royal Red', company_no: '1420', supplier: 'Sharma Cards', category: 'Greeting Cards',
   location: 'R1-A', quantity: '100', purchase_rate: '12', dealer_rate: '18', rate: '25',
   low_stock_threshold: '10', barcode: '', notes: 'Bill #4521',
 }
@@ -50,7 +50,7 @@ export default function BulkPurchase() {
     reader.onload = () => {
       try {
         const { headers, rows: raw } = parseCsv(String(reader.result))
-        const missing = COLUMNS.filter((c) => c !== 'barcode' && c !== 'notes' && c !== 'location' && c !== 'low_stock_threshold')
+        const missing = COLUMNS.filter((c) => c !== 'barcode' && c !== 'notes' && c !== 'location' && c !== 'low_stock_threshold' && c !== 'company_no')
           .filter((c) => !headers.includes(c))
         if (missing.length) {
           setParseErr(`CSV is missing required column(s): ${missing.join(', ')}. Use the template.`)
@@ -107,7 +107,7 @@ export default function BulkPurchase() {
         const category_id = catMap.get(r.category.toLowerCase())
         try {
           const { data: item, error: itemErr } = await supabase.from('items').insert({
-            shop_id: shopId, name: r.name, supplier_id, category_id,
+            shop_id: shopId, name: r.name, company_no: r.company_no || null, supplier_id, category_id,
             location: r.location || null, quantity: 0,
             purchase_rate: r.purchase_rate, dealer_rate: r.dealer_rate, rate: r.rate,
             low_stock_threshold: r.low_stock_threshold, barcode: r.barcode || null,
@@ -192,7 +192,7 @@ export default function BulkPurchase() {
             <table className="w-full text-left text-sm">
               <thead className="bg-paper-2 text-xs uppercase tracking-wider text-muted">
                 <tr>
-                  <Th>#</Th><Th>Item</Th><Th>Supplier</Th><Th>Category</Th>
+                  <Th>#</Th><Th>Item</Th><Th>Company No.</Th><Th>Supplier</Th><Th>Category</Th>
                   <Th right>Qty</Th><Th right>Cost</Th><Th right>Dealer</Th><Th right>Retail</Th><Th>Status</Th>
                 </tr>
               </thead>
@@ -201,6 +201,7 @@ export default function BulkPurchase() {
                   <tr key={i} className={r.errors.length ? 'bg-dues/5' : ''}>
                     <Td className="text-muted">{i + 2}</Td>
                     <Td className="font-medium">{r.name || <span className="text-dues">—</span>}</Td>
+                    <Td className="fig text-muted">{r.company_no || '—'}</Td>
                     <Td><NameCell name={r.supplier} isNew={r.supplier && !supplierByName[r.supplier.toLowerCase()]} /></Td>
                     <Td><NameCell name={r.category} isNew={r.category && !categoryByName[r.category.toLowerCase()]} /></Td>
                     <Td right className="fig">{r.raw.quantity}</Td>
@@ -277,6 +278,7 @@ function validateRow(raw, supplierByName, categoryByName) {
 
   return {
     raw, name, supplier, category,
+    company_no: (raw.company_no || '').trim(),
     location: (raw.location || '').trim(),
     barcode: (raw.barcode || '').trim(),
     notes: (raw.notes || '').trim(),
