@@ -5,7 +5,10 @@
 // trigger deliberately refuses self-assigned 'owner'/'staff' roles — so staff
 // can only be created by a privileged server path that:
 //   1. verifies the caller is an owner (using THEIR jwt, not the service key),
-//   2. creates the auth user with the service key,
+//   2. creates the auth user with the service key (a shadow <digits>@dev.local
+//      email — staff have NO password; they sign in by phone OTP, exactly like
+//      parties, so profiles.id must == auth.users.id or phone-otp-login's
+//      getUserById(profile.id) fails with "Login for this account is not set up"),
 //   3. promotes the freshly-created profile to role = 'staff' in the owner's shop.
 //
 // Deploy:  supabase functions deploy create-staff
@@ -54,46 +57,71 @@ Deno.serve(async (req) => {
   if (!caller.shop_id) return json({ error: 'Your account is not linked to a shop.' }, 400)
 
   // --- 2. Validate input. ---
-  let body: { full_name?: string; phone?: string; email?: string; password?: string }
+  let body: { full_name?: string; phone?: string }
   try {
     body = await req.json()
   } catch {
     return json({ error: 'Invalid request body.' }, 400)
   }
   const full_name = (body.full_name ?? '').trim()
+  // Frontend sends E.164 (+91XXXXXXXXXX). Keep only digits for the shadow email
+  // so it matches phone-otp-login's `phone.replace(/\D/g,'')@dev.local`.
   const phone = (body.phone ?? '').trim()
-  const email = (body.email ?? '').trim().toLowerCase()
-  const password = body.password ?? ''
+  const digits = phone.replace(/\D/g, '')
 
   if (!full_name) return json({ error: 'Enter the staff member’s name.' }, 400)
-  if (!email) return json({ error: 'Enter an email for the staff login.' }, 400)
-  if (password.length < 6) return json({ error: 'Use a password of at least 6 characters.' }, 400)
+  if (!/^\+\d{10,15}$/.test(phone) || digits.length < 10) {
+    return json({ error: 'Enter a valid mobile number.' }, 400)
+  }
 
-  // --- 3. Create the login + promote to staff, with the service-role key. ---
   const admin = createClient(url, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
 
+  // --- 3. Refuse duplicates; clean up a legacy login-less profile if present. ---
+  // A staff/party signs in by phone OTP, which looks the profile up by phone with
+  // .maybeSingle() — so a duplicate phone would break login, and we can't reuse an
+  // old random id. If a stale login-less row has no history we replace it.
+  const { data: existing, error: existErr } = await admin
+    .from('profiles')
+    .select('id')
+    .eq('phone', phone)
+    .maybeSingle()
+  if (existErr) return json({ error: existErr.message }, 400)
+  if (existing) {
+    const { data: stale } = await admin.auth.admin.getUserById(existing.id)
+    if (stale?.user) return json({ error: 'This number already has an account.' }, 409)
+    const { error: delErr } = await admin.from('profiles').delete().eq('id', existing.id)
+    if (delErr) {
+      return json({
+        error: 'This number was added before logins were set up and now has ' +
+          'history. It needs a manual migration — contact support.',
+      }, 409)
+    }
+  }
+
+  // --- 4. Create the login (phone-only, no password) + promote to staff. ---
+  const shadowEmail = `${digits}@dev.local`
   const { data: created, error: createErr } = await admin.auth.admin.createUser({
-    email,
-    password,
+    email: shadowEmail,
     email_confirm: true, // owner vouches for them — skip the confirmation email.
-    user_metadata: { full_name, phone },
+    user_metadata: { full_name, phone, role: 'staff' },
   })
   if (createErr) {
     const msg = /already.*registered|already.*exists/i.test(createErr.message)
-      ? 'This email already has an account.'
+      ? 'This number already has an account.'
       : createErr.message
-    return json({ error: msg }, 400)
+    return json({ error: msg }, 409)
   }
 
   const newId = created.user!.id
 
   // The handle_new_user trigger has already inserted a 'customer' profile row.
-  // Promote it to staff and bind it to THIS owner's shop.
+  // Promote it to staff and bind it to THIS owner's shop. Clear the shadow email
+  // off the CONTACT field (email on profiles is optional info, not the login).
   const { error: promoteErr } = await admin
     .from('profiles')
-    .update({ role: 'staff', full_name, phone: phone || null, shop_id: caller.shop_id, is_active: true })
+    .update({ role: 'staff', full_name, phone, email: null, shop_id: caller.shop_id, is_active: true })
     .eq('id', newId)
   if (promoteErr) {
     // Roll back the orphaned login so a half-made account can't linger.
@@ -101,5 +129,5 @@ Deno.serve(async (req) => {
     return json({ error: promoteErr.message }, 400)
   }
 
-  return json({ ok: true, id: newId, full_name, email })
+  return json({ ok: true, id: newId, full_name, phone })
 })

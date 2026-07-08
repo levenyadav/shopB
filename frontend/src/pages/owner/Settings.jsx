@@ -9,7 +9,7 @@ import {
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
-import { round2 } from '../../lib/helpers'
+import { round2, toE164India } from '../../lib/helpers'
 import { Button, Field, Select, Textarea, Badge, Spinner } from '../../components/ui'
 
 // SPEC §6.11 — Settings (owner only): shop info, categories, staff. Kept to the
@@ -841,7 +841,7 @@ function Categories() {
 // Creating a login needs the service-role key, so the actual account creation
 // happens server-side; the owner just fills the form here.
 // ---------------------------------------------------------------------------
-const EMPTY_STAFF = { full_name: '', phone: '', email: '', password: '' }
+const EMPTY_STAFF = { full_name: '', phone: '' }
 
 function Staff() {
   const [staff, setStaff] = useState(null)
@@ -868,14 +868,14 @@ function Staff() {
 
   async function add(e) {
     e.preventDefault()
+    const name = form.full_name.trim()
+    // Staff sign in by phone OTP, so a valid mobile is required. Normalise to
+    // E.164 (+91XXXXXXXXXX) — the same shape create-staff/phone-otp expect.
+    const phone = toE164India(form.phone)
+    if (!phone) { setAddErr('Enter a valid 10-digit mobile number.'); return }
     setAdding(true); setAddErr(''); setAddMsg('')
     const { data, error } = await supabase.functions.invoke('create-staff', {
-      body: {
-        full_name: form.full_name.trim(),
-        phone: form.phone.trim(),
-        email: form.email.trim(),
-        password: form.password,
-      },
+      body: { full_name: name, phone },
     })
     setAdding(false)
     // Edge Function returns a non-2xx with { error } on failure; supabase-js
@@ -884,7 +884,7 @@ function Staff() {
       ? (await error.context?.json?.().then((b) => b?.error).catch(() => null)) || error.message
       : data?.error
     if (fnError) { setAddErr(fnError); return }
-    setAddMsg(`${form.full_name.trim()} can now sign in with ${form.email.trim()}.`)
+    setAddMsg(`${name} can now sign in with ${phone}.`)
     setForm(EMPTY_STAFF)
     load()
   }
@@ -903,14 +903,9 @@ function Staff() {
         <p className="text-xs font-medium text-ink">Add a staff member</p>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Full name" value={form.full_name} onChange={set('full_name')} required />
-          <Field label="Phone" value={form.phone} onChange={set('phone')} inputMode="tel" />
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Login email" type="email" value={form.email} onChange={set('email')}
-                 autoComplete="off" required />
-          <Field label="Temporary password" type="password" value={form.password} onChange={set('password')}
-                 autoComplete="new-password" minLength={6} required
-                 hint="At least 6 characters. Share it with the staff member to sign in." />
+          <Field label="Mobile number" value={form.phone} onChange={set('phone')}
+                 type="tel" inputMode="numeric" required
+                 hint="They sign in with this number and a one-time code." />
         </div>
         {addMsg && <Ok>{addMsg}</Ok>}
         {addErr && <ErrLine>{addErr}</ErrLine>}
@@ -948,9 +943,9 @@ function Staff() {
       <div className="mt-4 flex items-start gap-2">
         <IconInfoCircle size={16} className="mt-0.5 shrink-0 text-muted" />
         <p className="text-xs text-muted">
-          Staff sign in with the email and password you set here. Disabling a
-          member blocks their access without deleting their history. To reset a
-          password, remove and re-add the member, or change it in Supabase Auth.
+          Staff sign in with their mobile number and a one-time code sent by SMS —
+          no password to set or share. Disabling a member blocks their access
+          without deleting their history.
         </p>
       </div>
     </Card>
