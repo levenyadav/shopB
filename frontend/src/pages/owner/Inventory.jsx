@@ -25,6 +25,7 @@ export default function Inventory() {
   const [tag, setTag] = useState('')
   const [show, setShow] = useState('active') // active | inactive | all
   const [lowOnly, setLowOnly] = useState(false)
+  const [mtoOnly, setMtoOnly] = useState(false) // show only Made to Order items
   const [editing, setEditing] = useState(null)
   const [printing, setPrinting] = useState(null) // item whose barcode label we're printing
   const [retiring, setRetiring] = useState(null) // item pending discontinue / reactivate confirm
@@ -68,13 +69,14 @@ export default function Inventory() {
       if (sup && i.supplier_id !== sup) return false
       if (tag && !(i.tags || []).includes(tag)) return false
       if (lowOnly && !(Number(i.quantity) < Number(i.low_stock_threshold))) return false
+      if (mtoOnly && !i.made_to_order) return false
       if (needle) {
         const hay = `${i.item_no} ${i.name} ${i.barcode || ''} ${i.supplier?.name || ''} ${i.category?.name || ''} ${(i.tags || []).join(' ')} ${i.description || ''}`.toLowerCase()
         if (!hay.includes(needle)) return false
       }
       return true
     })
-  }, [items, q, cat, sup, tag, show, lowOnly])
+  }, [items, q, cat, sup, tag, show, lowOnly, mtoOnly])
 
   const totalValue = useMemo(
     () => (items ? items.reduce((s, i) => s + stockValue(i), 0) : 0),
@@ -137,6 +139,15 @@ export default function Inventory() {
             }`}
           >
             Low only
+          </button>
+          <button
+            type="button"
+            onClick={() => setMtoOnly((v) => !v)}
+            className={`whitespace-nowrap rounded-lg border px-3 py-2.5 text-sm font-medium transition ${
+              mtoOnly ? 'border-peacock bg-peacock/15 text-peacock' : 'border-line bg-card text-muted hover:text-ink'
+            }`}
+          >
+            Made to Order
           </button>
         </div>
       </div>

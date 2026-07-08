@@ -134,7 +134,7 @@
 - **Database:** Supabase (PostgreSQL underneath)
 - **Authentication:** Supabase Auth — **mobile number + SMS one-time code (phone
   OTP)** for buyers; email is an optional contact field on the profile, not a
-  login handle. Requires an SMS provider (Twilio/MSG91) enabled in Supabase Auth.
+  login handle. The OTP SMS is sent by Fast2SMS via the `phone-otp` Edge Function.
 - **File Storage:** Supabase Storage (item photos)
 - **Real-time:** Supabase Realtime (live order notifications)
 - **Server Logic:** Supabase Edge Functions (PDF generation, QR codes, notifications)

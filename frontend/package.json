@@ -14,7 +14,6 @@
     "@tabler/icons-react": "^3.44.0",
     "@zxing/browser": "^0.2.0",
     "@zxing/library": "^0.22.0",
-    "firebase": "^11.10.0",
     "jsbarcode": "^3.12.3",
     "jspdf": "^4.2.1",
     "react": "^19.2.7",

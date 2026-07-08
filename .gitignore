@@ -41,3 +41,6 @@ pnpm-debug.log*
 # Misc
 coverage/
 .cache/
+
+# Local scratch scripts (may contain live API keys — never commit)
+scripts/test-fast2sms.js

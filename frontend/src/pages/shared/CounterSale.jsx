@@ -343,6 +343,9 @@ function BuyerPanel({ buyer, setBuyer, shopId }) {
   async function quickAdd() {
     setErr('')
     if (!form.full_name.trim()) return setErr('Enter the buyer’s name.')
+    const phone = form.phone.trim()
+    if (!phone) return setErr('Enter the buyer’s phone number.')
+    if (phone.replace(/\D/g, '').length < 10) return setErr('Enter a valid phone number.')
     setBusy(true)
     const { data, error } = await supabase
       .from('profiles')
@@ -381,7 +384,7 @@ function BuyerPanel({ buyer, setBuyer, shopId }) {
         <div className="space-y-2">
           <Field placeholder="Buyer name" value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
           <div className="flex gap-2">
-            <Field placeholder="Phone (optional)" inputMode="tel" className="flex-1" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+            <Field placeholder="Phone number" inputMode="tel" className="flex-1" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
             <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="ring-focus rounded-md border border-line bg-card px-2 text-sm">
               <option value="customer">Customer</option>
               <option value="dealer">Dealer</option>

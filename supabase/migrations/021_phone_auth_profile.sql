@@ -8,10 +8,9 @@
 --  * handle_new_user() already copied new.phone and honoured role/full_name; here
 --    we also carry the optional email through from the signup metadata.
 --
--- NOTE (manual, outside this migration): phone OTP only works once an SMS
--- provider (Twilio / MSG91 / etc.) is enabled under Supabase Auth → Providers →
--- Phone, with the shop's credentials. Until then verifyOtp has nothing to send.
--- For local/dev, Supabase Auth lets you register fixed test OTPs per number.
+-- NOTE (manual, outside this migration): phone OTP is sent by Fast2SMS through
+-- the `phone-otp` Edge Function (see migration 024 for the phone_otps table).
+-- Set the sender key with:  supabase secrets set FAST2SMS_API_KEY=...
 
 alter table public.profiles
   add column if not exists email text;
