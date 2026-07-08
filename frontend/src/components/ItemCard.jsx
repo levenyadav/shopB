@@ -52,7 +52,7 @@ export default function ItemCard({ item, categoryName }) {
         )}
         {mto ? (
           <span className="absolute left-2 top-2">
-            <Badge tone="peacock">Made to Order</Badge>
+            <Badge tone="peacock">Make to Order</Badge>
           </span>
         ) : low && (
           <span className="absolute left-2 top-2">

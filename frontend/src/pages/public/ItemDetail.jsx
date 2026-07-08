@@ -88,7 +88,7 @@ export default function ItemDetail() {
             </span>
             {role === 'dealer' && <Badge tone="peacock">Dealer rate</Badge>}
             {item.made_to_order
-              ? <Badge tone="peacock">Made to Order</Badge>
+              ? <Badge tone="peacock">Make to Order</Badge>
               : available < Number(item.low_stock_threshold)
                 ? <Badge tone="saffron">Limited Stock</Badge>
                 : <Badge tone="profit">In stock</Badge>}

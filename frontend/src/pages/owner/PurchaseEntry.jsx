@@ -308,10 +308,10 @@ function NewItemEntry() {
 
         {/* Stock & pricing */}
         <Section title="Opening stock & rates" hint="Purchase Rate is your cost — it is never shown to buyers.">
-          {/* Made to Order — no stock is held; you source/make it after a booking. */}
+          {/* Make to Order — no stock is held; you source/make it after a booking. */}
           <div className="flex items-center justify-between rounded-lg bg-paper-2 px-4 py-3">
             <div>
-              <p className="text-sm font-medium">Made to Order (no stock limit)</p>
+              <p className="text-sm font-medium">Make to Order (no stock limit)</p>
               <p className="text-xs text-muted">
                 Always shown on the shopfront. Buyers can order any quantity — you set the cost when you approve.
               </p>
@@ -493,7 +493,7 @@ function Success({ done, onAnother }) {
       </p>
       {done.made_to_order ? (
         <p className="mt-5 rounded-lg bg-peacock/5 px-4 py-3 text-left text-sm text-muted">
-          This is a <span className="font-medium text-ink">Made to Order</span> item. It’s live on the shopfront now —
+          This is a <span className="font-medium text-ink">Make to Order</span> item. It’s live on the shopfront now —
           buyers can order any quantity, and you’ll set the cost when you approve each order.
         </p>
       ) : (
