@@ -1,12 +1,22 @@
 import JsBarcode from 'jsbarcode'
 
 // Barcode label printing (SPEC §6.2 — Inventory). Renders real Code128 barcodes
-// and prints them as 3cm × 2cm labels, laid out 3-per-row for a terminal/thermal
-// label printer. Prints via a hidden iframe so no popup-blocker gets in the way.
-
-const LABEL_W = '30mm' // 3 cm
-const LABEL_H = '20mm' // 2 cm
-const SHEET_W = '90mm' // 3 × LABEL_W — forces exactly 3 labels across each row
+// and prints them as 38mm × 25mm labels, laid out 3-per-row for a thermal label
+// printer. Prints via a hidden iframe so no popup-blocker gets in the way.
+//
+// Geometry MUST match the physical die-cut roll and the TSC TTP-244 Pro driver
+// (media = Gap sensor, left/top margin 0). Roll spec:
+//   Label 38mm × 25mm · Horizontal gap 2mm · Vertical gap 2.5mm · 3 columns
+//   Total media width = 38 + 2 + 38 + 2 + 38 = 118mm
+// If the cell size / gaps here don't match the roll, content drifts across the
+// row and down the columns (each label creeps off its sticker) — do not change
+// these numbers unless the physical stock changes.
+const LABEL_W = '38mm'   // physical label width
+const LABEL_H = '25mm'   // physical label height
+const COL_GAP = '2mm'    // horizontal gap, column → column
+const ROW_GAP = '2.5mm'  // vertical gap, row → row
+const COLS = 3           // labels across the roll
+const SHEET_W = '118mm'  // 38·3 + 2·2 — the full media width
 
 // What we encode: the item's barcode if set, else its Item No as a fallback so
 // every item is printable. Code128 handles alphanumeric Item Nos fine.
@@ -20,7 +30,7 @@ function barcodeSvg(value) {
   JsBarcode(svg, value, {
     format: 'CODE128',
     width: 1.5, // bar thickness; svg scales to the label anyway
-    height: 40,
+    height: 50,
     displayValue: false, // we print our own, smaller code text below
     margin: 0,
   })
@@ -87,15 +97,25 @@ export function printBarcodeLabels(items, { currency = '₹', shopName = '', lab
     <meta charset="utf-8" />
     <title>Barcode labels</title>
     <style>
-      @page { size: auto; margin: 3mm; }
+      /* Zero page margin — the roll's own left/top margin is 0; any page margin
+         here would shove every label off its sticker. */
+      @page { size: ${SHEET_W} auto; margin: 0; }
       * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       html, body { margin: 0; padding: 0; }
       body { font-family: Arial, Helvetica, sans-serif; color: #000; }
-      .sheet { display: flex; flex-wrap: wrap; width: ${SHEET_W}; }
+      /* Grid (not flex-wrap) so the 3 fixed columns never collapse on rounding.
+         column-gap = horizontal die gap, row-gap = vertical die gap. */
+      .sheet {
+        display: grid;
+        grid-template-columns: repeat(${COLS}, ${LABEL_W});
+        column-gap: ${COL_GAP};
+        row-gap: ${ROW_GAP};
+        width: ${SHEET_W};
+      }
       .label {
-        width: ${LABEL_W}; height: ${LABEL_H}; padding: 1mm;
+        width: ${LABEL_W}; height: ${LABEL_H}; padding: 1.5mm;
         display: flex; flex-direction: column; align-items: center; justify-content: space-between;
-        overflow: hidden; page-break-inside: avoid;
+        overflow: hidden; page-break-inside: avoid; break-inside: avoid;
       }
       .shop {
         width: 100%; text-align: center; font-size: 6pt; font-weight: 700; line-height: 1.05;
