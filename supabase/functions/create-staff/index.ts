@@ -5,10 +5,12 @@
 // trigger deliberately refuses self-assigned 'owner'/'staff' roles — so staff
 // can only be created by a privileged server path that:
 //   1. verifies the caller is an owner (using THEIR jwt, not the service key),
-//   2. creates the auth user with the service key (a shadow <digits>@dev.local
-//      email — staff have NO password; they sign in by phone OTP, exactly like
-//      parties, so profiles.id must == auth.users.id or phone-otp-login's
-//      getUserById(profile.id) fails with "Login for this account is not set up"),
+//   2. creates the auth user with the service key from the PHONE only — staff
+//      have NO email and NO password; they sign in by phone OTP, so profiles.id
+//      must == auth.users.id or phone-otp-login's getUserById(profile.id) fails
+//      with "Login for this account is not set up". (The email bridge handle the
+//      OTP flow needs is added lazily at first login by phone-otp, not here — so
+//      a staff record carries no email address.)
 //   3. promotes the freshly-created profile to role = 'staff' in the owner's shop.
 //
 // Deploy:  supabase functions deploy create-staff
@@ -64,8 +66,8 @@ Deno.serve(async (req) => {
     return json({ error: 'Invalid request body.' }, 400)
   }
   const full_name = (body.full_name ?? '').trim()
-  // Frontend sends E.164 (+91XXXXXXXXXX). Keep only digits for the shadow email
-  // so it matches phone-otp-login's `phone.replace(/\D/g,'')@dev.local`.
+  // Frontend sends E.164 (+91XXXXXXXXXX). That's the only identity a staff has —
+  // no email, no password; they sign in by phone OTP.
   const phone = (body.phone ?? '').trim()
   const digits = phone.replace(/\D/g, '')
 
@@ -100,11 +102,13 @@ Deno.serve(async (req) => {
     }
   }
 
-  // --- 4. Create the login (phone-only, no password) + promote to staff. ---
-  const shadowEmail = `${digits}@dev.local`
+  // --- 4. Create the login (phone-only, no email, no password) + promote to staff. ---
+  // Owner vouches for them (phone_confirm) so no OTP is sent here — the admin API
+  // bypasses the "signups disabled" gate, so this works whether or not Supabase's
+  // own phone provider is enabled (real OTPs are sent by Fast2SMS via phone-otp).
   const { data: created, error: createErr } = await admin.auth.admin.createUser({
-    email: shadowEmail,
-    email_confirm: true, // owner vouches for them — skip the confirmation email.
+    phone,
+    phone_confirm: true,
     user_metadata: { full_name, phone, role: 'staff' },
   })
   if (createErr) {
@@ -117,8 +121,8 @@ Deno.serve(async (req) => {
   const newId = created.user!.id
 
   // The handle_new_user trigger has already inserted a 'customer' profile row.
-  // Promote it to staff and bind it to THIS owner's shop. Clear the shadow email
-  // off the CONTACT field (email on profiles is optional info, not the login).
+  // Promote it to staff and bind it to THIS owner's shop. Force email = null so a
+  // staff record never carries an email address (it's phone-only).
   const { error: promoteErr } = await admin
     .from('profiles')
     .update({ role: 'staff', full_name, phone, email: null, shop_id: caller.shop_id, is_active: true })
