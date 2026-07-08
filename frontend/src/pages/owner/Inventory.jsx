@@ -25,7 +25,6 @@ export default function Inventory() {
   const [tag, setTag] = useState('')
   const [show, setShow] = useState('active') // active | inactive | all
   const [lowOnly, setLowOnly] = useState(false)
-  const [ptype, setPtype] = useState('') // product type: '' all | 'stocked' | 'mto' (Make to Order)
   const [editing, setEditing] = useState(null)
   const [printing, setPrinting] = useState(null) // item whose barcode label we're printing
   const [retiring, setRetiring] = useState(null) // item pending discontinue / reactivate confirm
@@ -65,19 +64,18 @@ export default function Inventory() {
       if (show === 'active' && (!i.is_active || i.discontinued)) return false
       if (show === 'inactive' && (i.is_active || i.discontinued)) return false
       if (show === 'discontinued' && !i.discontinued) return false
+      if (show === 'mto' && !i.made_to_order) return false
       if (cat && i.category_id !== cat) return false
       if (sup && i.supplier_id !== sup) return false
       if (tag && !(i.tags || []).includes(tag)) return false
       if (lowOnly && !(Number(i.quantity) < Number(i.low_stock_threshold))) return false
-      if (ptype === 'mto' && !i.made_to_order) return false
-      if (ptype === 'stocked' && i.made_to_order) return false
       if (needle) {
         const hay = `${i.item_no} ${i.name} ${i.barcode || ''} ${i.supplier?.name || ''} ${i.category?.name || ''} ${(i.tags || []).join(' ')} ${i.description || ''}`.toLowerCase()
         if (!hay.includes(needle)) return false
       }
       return true
     })
-  }, [items, q, cat, sup, tag, show, lowOnly, ptype])
+  }, [items, q, cat, sup, tag, show, lowOnly])
 
   const totalValue = useMemo(
     () => (items ? items.reduce((s, i) => s + stockValue(i), 0) : 0),
@@ -125,17 +123,13 @@ export default function Inventory() {
             {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
           </Select>
         )}
-        <Select value={ptype} onChange={(e) => setPtype(e.target.value)}>
-          <option value="">All product types</option>
-          <option value="stocked">Stocked</option>
-          <option value="mto">Make to Order</option>
-        </Select>
         <div className="flex items-center gap-2">
           <Select value={show} onChange={(e) => setShow(e.target.value)} className="flex-1">
+            <option value="all">All</option>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
             <option value="discontinued">Discontinued</option>
-            <option value="all">All</option>
+            <option value="mto">Make to Order</option>
           </Select>
           <button
             type="button"
