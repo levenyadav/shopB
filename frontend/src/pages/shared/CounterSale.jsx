@@ -8,7 +8,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { money, qty } from '../../lib/format'
-import { rateForBuyer, lineProfit, round2 } from '../../lib/helpers'
+import { rateForBuyer, lineProfit, round2, toE164India } from '../../lib/helpers'
 import { Button, Field, Spinner, Badge, PhotoThumb } from '../../components/ui'
 import BarcodeScanner from '../../components/BarcodeScanner'
 import CounterReceipt from '../../components/CounterReceipt'
@@ -342,14 +342,45 @@ function BuyerPanel({ buyer, setBuyer, shopId }) {
 
   async function quickAdd() {
     setErr('')
-    if (!form.full_name.trim()) return setErr('Enter the buyer’s name.')
+    const name = form.full_name.trim()
+    if (!name) return setErr('Enter the buyer’s name.')
     const phone = form.phone.trim()
     if (!phone) return setErr('Enter the buyer’s phone number.')
     if (phone.replace(/\D/g, '').length < 10) return setErr('Enter a valid phone number.')
     setBusy(true)
+
+    // Dealers are B2B partners who sign in themselves later, so they need a REAL
+    // auth login (profiles.id == auth.users.id). Provision through create-party —
+    // the SAME Edge Function the Parties page uses — instead of a login-less
+    // direct insert, or their phone-OTP login fails with
+    // "Login for this account is not set up." (See create-party/index.ts.)
+    if (form.role === 'dealer') {
+      const phoneE164 = toE164India(phone)
+      if (!phoneE164) { setBusy(false); return setErr('Enter a valid 10-digit mobile number for a dealer login.') }
+      const { data, error } = await supabase.functions.invoke('create-party', {
+        body: { full_name: name, phone: phoneE164, type: 'dealer' },
+      })
+      setBusy(false)
+      if (error) {
+        // functions.invoke surfaces non-2xx as a FunctionsHttpError whose real
+        // message lives in the JSON body — dig it out for a useful error.
+        let msg = error.message
+        try { msg = (await error.context?.json())?.error || msg } catch { /* keep */ }
+        return setErr(msg)
+      }
+      if (data?.error) return setErr(data.error)
+      // create-party returns { id, full_name, phone, role }; a brand-new party
+      // has no ledger/invoice fields yet, so fill the buyer shape with defaults.
+      setBuyer({ ...data.party, balance_due: 0, gstin: null, address: null, state_name: null, state_code: null })
+      setAdding(false); setForm({ full_name: '', phone: '', role: 'customer' })
+      return
+    }
+
+    // Walk-in CUSTOMER — fast login-less path (SPEC §6.5a / migration 014): they
+    // may never sign in, so we don't force an auth user or a strict mobile format.
     const { data, error } = await supabase
       .from('profiles')
-      .insert({ shop_id: shopId, full_name: form.full_name.trim(), phone: form.phone.trim() || null, role: form.role })
+      .insert({ shop_id: shopId, full_name: name, phone: phone || null, role: form.role })
       .select('id, full_name, phone, role, balance_due, gstin, address, state_name, state_code').single()
     setBusy(false)
     if (error) { setErr(error.message); return }

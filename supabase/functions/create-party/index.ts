@@ -143,7 +143,12 @@ Deno.serve(async (req) => {
     .select('id, full_name, phone, role')
     .single()
   if (shapeErr) {
-    // Roll back the orphaned login so a half-made account can't linger.
+    // Roll back so a half-made account can't linger. NOTE: migration 014 dropped
+    // the profiles→auth.users FK (login-less counter buyers), so deleting the
+    // auth user NO LONGER cascade-removes the trigger-made profile. Delete the
+    // profile explicitly FIRST, or it lingers as an un-loginable orphan
+    // (has_auth_user=false) that later breaks phone-OTP login.
+    await admin.from('profiles').delete().eq('id', newId)
     await admin.auth.admin.deleteUser(newId)
     return json({ error: shapeErr.message }, 400)
   }
