@@ -39,6 +39,7 @@ export default function Sales() {
       .from('sales')
       .select(
         'id, quantity, rate_charged, amount, profit, payment_type, buyer_type, category_id, created_at, ' +
+          'item_no, item_name, ' +
           'item:items(name, photo_url), ' +
           'buyer:profiles!sales_buyer_id_fkey(full_name, phone), ' +
           'category:categories(name)',
@@ -65,7 +66,7 @@ export default function Sales() {
         if (toTs && t > toTs) return false
       }
       if (needle) {
-        const hay = `${s.item?.name || ''} ${s.buyer?.full_name || ''} ${s.buyer?.phone || ''}`.toLowerCase()
+        const hay = `${s.item?.name || s.item_name || ''} ${s.buyer?.full_name || ''} ${s.buyer?.phone || ''}`.toLowerCase()
         if (!hay.includes(needle)) return false
       }
       return true
@@ -157,7 +158,7 @@ export default function Sales() {
                 >
                   <PhotoThumb url={s.item?.photo_url} />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-ink">{s.item?.name || 'Item'}</p>
+                    <p className="truncate font-medium text-ink">{s.item?.name || s.item_name || 'Item'}</p>
                     <p className="truncate text-xs text-muted">
                       {s.buyer?.full_name || 'Buyer'}
                       <Badge tone={s.buyer_type === 'dealer' ? 'peacock' : 'muted'} className="ml-1.5">

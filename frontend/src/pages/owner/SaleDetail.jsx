@@ -63,6 +63,7 @@ export default function SaleDetail() {
       .from('sales')
       .select(
         'id, order_id, bill_id, quantity, rate_charged, amount, purchase_rate, profit, payment_type, buyer_type, created_at, ' +
+          'item_no, item_name, ' +
           'item:items(name, item_no, photo_url, location, hsn_sac), ' +
           'buyer:profiles!sales_buyer_id_fkey(full_name, phone, balance_due, gstin, address, state_name, state_code), ' +
           'category:categories(name), ' +
@@ -92,8 +93,8 @@ export default function SaleDetail() {
     buyer_name: sale.buyer?.full_name,
     buyer_type: sale.buyer_type,
     buyer_phone: sale.buyer?.phone,
-    item_name: item?.name,
-    item_no: item?.item_no,
+    item_name: item?.name || sale.item_name,
+    item_no: item?.item_no || sale.item_no,
     location: item?.location,
     quantity: sale.quantity,
     rate_at_order: sale.rate_charged,
@@ -116,7 +117,7 @@ export default function SaleDetail() {
     shop,
     buyer: billTo,
     invoice: { invoice_no: invoice?.invoice_no, date: sale.created_at, notes: invoice?.notes },
-    lines: [{ name: item?.name, item_no: item?.item_no, hsn: item?.hsn_sac, qty: sale.quantity, rate: sale.rate_charged }],
+    lines: [{ name: item?.name || sale.item_name, item_no: item?.item_no || sale.item_no, hsn: item?.hsn_sac, qty: sale.quantity, rate: sale.rate_charged }],
     bill,
     gstRate: shop?.gst_rate,
   })
@@ -161,7 +162,7 @@ export default function SaleDetail() {
         <div className="flex items-center gap-4">
           <Thumb url={item?.photo_url} />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-lg font-semibold">{item?.name || 'Item'}</p>
+            <p className="truncate text-lg font-semibold">{item?.name || sale.item_name || 'Item'}</p>
             <p className="text-xs text-muted">
               Sold {dateTime(sale.created_at)}
               {invoice?.invoice_no && <> · <span className="fig">{invoice.invoice_no}</span></>}
@@ -176,7 +177,7 @@ export default function SaleDetail() {
             </>} />
           <Row label="Phone" value={<span className="fig">{sale.buyer?.phone || '—'}</span>} />
           <Row label="Category" value={sale.category?.name || '—'} />
-          <Row label="Item No" value={<span className="fig">{item?.item_no || '—'}</span>} />
+          <Row label="Item No" value={<span className="fig">{item?.item_no || sale.item_no || '—'}</span>} />
           <Row label="Rack / Location" value={<span className="inline-flex items-center gap-1">{item?.location ? <><IconMapPin size={15} /> {item.location}</> : '—'}</span>} />
           <Row label="Payment" value={<Badge tone={pay.tone}>{pay.label}</Badge>} />
           <Row label="Quantity" value={<span className="fig">{qty(sale.quantity)} pcs</span>} />

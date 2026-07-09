@@ -45,7 +45,7 @@ export default function OrderDetail() {
       .from('orders')
       .select(
         'id, shop_id, quantity, rate_at_order, amount, status, notes, rejection_reason, buyer_type, ' +
-          'created_at, item:items(id, name, photo_url, location, purchase_rate, category_id, quantity, made_to_order), ' +
+          'created_at, item_no, item_name, item:items(id, name, photo_url, location, purchase_rate, category_id, quantity, made_to_order), ' +
           'buyer:profiles!orders_buyer_id_fkey(id, full_name, phone, balance_due)',
       )
       .eq('id', id)
@@ -93,7 +93,7 @@ export default function OrderDetail() {
         <div className="flex items-center gap-4">
           <Thumb url={item?.photo_url} />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-lg font-semibold">{item?.name || 'Item'}</p>
+            <p className="truncate text-lg font-semibold">{item?.name || order.item_name || 'Item'}</p>
             <p className="text-xs text-muted">Order placed {dateTime(order.created_at)}</p>
           </div>
           <div className="flex flex-col items-end gap-1">

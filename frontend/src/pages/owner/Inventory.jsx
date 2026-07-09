@@ -428,12 +428,13 @@ function DiscontinueModal({ item, onClose, onDone }) {
 }
 
 // Permanently deletes a discontinued item — a true hard DELETE, no soft flag.
-// The books are protected by the database, not this button: items.id is
-// referenced (NO ACTION / restrict) by purchases, orders and sales, so Postgres
-// rejects the delete with FK error 23503 the moment the line has ANY history
-// (Golden Rules #1, #9). We surface that as a plain-language message instead of
-// a raw error — the owner's only real path for a line with history stays
-// "discontinued". Deletes succeed only for lines that were never transacted.
+// The books stay intact WITHOUT the item row: purchases/orders/sales snapshot the
+// item_no + name at write time and their item_id FK is ON DELETE SET NULL (see
+// migration 028), so deleting an item just nulls the pointer while reports,
+// invoices and ledger keep the product's label. The delete therefore succeeds
+// even for a line with history (Golden Rules #1, #9 preserved by the snapshots).
+// The 23503 branch below is a defensive fallback in case any legacy NO-ACTION
+// reference still exists.
 function DeleteModal({ item, onClose, onDone }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -474,16 +475,16 @@ function DeleteModal({ item, onClose, onDone }) {
           <p className="flex items-start gap-2 rounded-lg bg-saffron/10 px-3 py-2.5 text-sm text-saffron">
             <IconAlertTriangle size={18} className="mt-0.5 shrink-0" />
             <span>
-              <span className="font-medium">Can't delete this item.</span> It's referenced by past
-              sales or purchases, so removing it would break your records. It stays discontinued —
-              hidden from customers, history intact.
+              <span className="font-medium">Can't delete this item.</span> It's still referenced by
+              other records, so removing it would break them. It stays discontinued — hidden from
+              customers, history intact.
             </span>
           </p>
         ) : (
           <p className="text-sm text-muted">
             This <span className="font-medium text-ink">permanently removes</span>{' '}
             <span className="font-medium text-ink">{item.name}</span> from your inventory. This can't
-            be undone. It only works if the item was never sold or purchased.
+            be undone. Past sales and purchases keep the product name for your records.
           </p>
         )}
 

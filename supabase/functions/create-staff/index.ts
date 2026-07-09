@@ -102,13 +102,17 @@ Deno.serve(async (req) => {
     }
   }
 
-  // --- 4. Create the login (phone-only, no email, no password) + promote to staff. ---
-  // Owner vouches for them (phone_confirm) so no OTP is sent here — the admin API
-  // bypasses the "signups disabled" gate, so this works whether or not Supabase's
-  // own phone provider is enabled (real OTPs are sent by Fast2SMS via phone-otp).
+  // --- 4. Create the login + promote to staff. ---
+  // Exactly like create-party: mint the auth user with a shadow <digits>@dev.local
+  // email (email_confirm, no password — the owner vouches for them). We do NOT
+  // create a phone-only user, because that requires Supabase's own phone provider
+  // to be enabled — and it isn't here (login OTPs go through Fast2SMS via
+  // phone-otp, which looks the account up by profile.phone and reuses this same
+  // shadow email to mint the session). Staff still sign in by phone OTP only.
+  const shadowEmail = `${digits}@dev.local`
   const { data: created, error: createErr } = await admin.auth.admin.createUser({
-    phone,
-    phone_confirm: true,
+    email: shadowEmail,
+    email_confirm: true,
     user_metadata: { full_name, phone, role: 'staff' },
   })
   if (createErr) {

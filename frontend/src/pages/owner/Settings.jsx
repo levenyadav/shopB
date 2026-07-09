@@ -396,6 +396,8 @@ function ImagePicker({ label, hint, square, file, url, onFile, onUrl, onClear })
   )
 }
 
+const DEFAULT_THEME = '#0F6E64' // --color-peacock
+
 function Branding() {
   const { shop, shopId, refreshShop } = useShop()
   const [logoFile, setLogoFile] = useState(null)
@@ -403,6 +405,7 @@ function Branding() {
   const [iconFile, setIconFile] = useState(null)
   const [iconUrl, setIconUrl] = useState('')
   const [brandText, setBrandText] = useState('')
+  const [themeColor, setThemeColor] = useState(DEFAULT_THEME)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState('')
@@ -411,6 +414,7 @@ function Branding() {
     if (!shop) return
     setLogoUrl(shop.logo_url || ''); setIconUrl(shop.icon_url || '')
     setBrandText(shop.brand_text || ''); setLogoFile(null); setIconFile(null)
+    setThemeColor(/^#[0-9a-f]{6}$/i.test(shop.theme_color) ? shop.theme_color : DEFAULT_THEME)
   }, [shop])
 
   async function upload(file) {
@@ -431,6 +435,7 @@ function Branding() {
       const icon_url = iconFile ? await upload(iconFile) : (iconUrl.trim() || null)
       const { error } = await supabase.from('shops').update({
         logo_url, icon_url, brand_text: brandText.trim() || null,
+        theme_color: /^#[0-9a-f]{6}$/i.test(themeColor) ? themeColor.toLowerCase() : null,
       }).eq('id', shop.id)
       if (error) throw error
       setMsg('Branding saved.')
@@ -468,6 +473,47 @@ function Branding() {
           <Field label="Text logo" value={brandText} onChange={(e) => setBrandText(e.target.value)}
                  placeholder={shop.name}
                  hint="Shown as the wordmark when no logo image is set. Leave blank to use the shop name." />
+
+          {/* Brand colour — drives the primary accent across the app and the
+              installed app / mobile browser bar. */}
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-ink">Brand colour</p>
+            <p className="text-xs text-muted">
+              The main accent for buttons and highlights. Also colours the installed app and the
+              phone's browser bar.
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <input
+                type="color"
+                value={/^#[0-9a-f]{6}$/i.test(themeColor) ? themeColor : DEFAULT_THEME}
+                onChange={(e) => setThemeColor(e.target.value)}
+                className="h-11 w-14 cursor-pointer rounded-md border border-line bg-card p-1"
+                aria-label="Pick brand colour"
+              />
+              <div className="w-36">
+                <Field value={themeColor} onChange={(e) => setThemeColor(e.target.value)}
+                       placeholder={DEFAULT_THEME} maxLength={7} className="fig" />
+              </div>
+              <button type="button" onClick={() => setThemeColor(DEFAULT_THEME)}
+                      className="text-xs text-muted hover:text-ink hover:underline">
+                Reset to default
+              </button>
+              <span className="inline-flex items-center gap-2 rounded-md border border-line px-3 py-2 text-xs text-muted">
+                Preview
+                <span className="h-5 w-10 rounded"
+                      style={{ background: /^#[0-9a-f]{6}$/i.test(themeColor) ? themeColor : DEFAULT_THEME }} />
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-2 rounded-lg bg-peacock/5 px-3 py-2">
+            <IconInfoCircle size={16} className="mt-0.5 shrink-0 text-peacock" />
+            <p className="text-xs text-muted">
+              The app icon, name and brand colour here also make the shop installable as an app —
+              customers on a phone see an <b>Install app</b> button on the shopfront.
+            </p>
+          </div>
+
           {msg && <Ok>{msg}</Ok>}
           {err && <ErrLine>{err}</ErrLine>}
           <Button type="submit" disabled={saving}>

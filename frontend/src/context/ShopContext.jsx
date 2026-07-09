@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
+import { applyBranding } from '../lib/pwa'
 import { useAuth } from './AuthContext'
 
 // Shop-wide reference data. The shop record and its categories are readable by
@@ -36,7 +37,7 @@ export function ShopProvider({ children }) {
   const loadShop = useCallback(async () => {
     const { data } = await supabase
       .from('shops')
-      .select('id, name, address, phone, currency_symbol, gstin, gst_rate, logo_url, icon_url, brand_text, ' +
+      .select('id, name, address, phone, currency_symbol, gstin, gst_rate, logo_url, icon_url, brand_text, theme_color, ' +
         'legal_name, email, pan, state_name, state_code, bank_details, invoice_prefix, ' +
         'banners, whatsapp, instagram, facebook, youtube, map_url, ' +
         'about_us, privacy_policy, terms, contact_info')
@@ -60,18 +61,12 @@ export function ShopProvider({ children }) {
     // re-run when the signed-in profile (and thus shop/role) settles
   }, [session, profile?.id, loadShop, loadCategories, loadSuppliers])
 
-  // Drive the browser favicon + tab title from the shop's icon/name.
+  // Reflect the shop's identity into the document + installable PWA: tab title,
+  // favicon / apple-touch-icon, the brand accent colour (drives --color-peacock
+  // and the mobile browser bar) and the dynamic Web App Manifest.
   useEffect(() => {
-    if (shop?.name) document.title = shop.name
-    if (!shop?.icon_url) return
-    let link = document.querySelector("link[rel='icon']")
-    if (!link) {
-      link = document.createElement('link')
-      link.rel = 'icon'
-      document.head.appendChild(link)
-    }
-    link.href = shop.icon_url
-  }, [shop?.icon_url, shop?.name])
+    if (shop) applyBranding(shop)
+  }, [shop?.icon_url, shop?.name, shop?.brand_text, shop?.theme_color])
 
   const value = {
     shop,

@@ -83,6 +83,7 @@ export default function FulfilmentDetail({ listPath }) {
         {(job.packed_at || job.completed_at) && (
           <div className="mt-4 flex flex-wrap gap-x-6 gap-y-1 rounded-lg bg-paper-2 px-4 py-3 text-xs text-muted">
             {job.packed_at && <span>Packed {dateTime(job.packed_at)}</span>}
+            {job.packed_by_name && <span>Packed by {job.packed_by_name}</span>}
             {job.completed_at && <span>Completed {dateTime(job.completed_at)}</span>}
             {job.delivery_note && <span>Note: {job.delivery_note}</span>}
           </div>

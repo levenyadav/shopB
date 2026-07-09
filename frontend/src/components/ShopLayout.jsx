@@ -10,6 +10,7 @@ import { useCart } from '../context/CartContext'
 import { money } from '../lib/format'
 import Credit from './Credit'
 import Brand from './Brand'
+import InstallButton from './InstallButton'
 
 // Social icons shown in the footer — only those the owner filled in (Settings).
 // WhatsApp may be a bare number; normalise it to a wa.me link.
@@ -52,6 +53,8 @@ export default function ShopLayout() {
           </Link>
 
           <nav className="flex items-center gap-1 sm:gap-2">
+            <InstallButton className="mr-1" />
+
             {role === 'owner' && (
               <HeaderLink to="/owner" icon={IconLayoutDashboard} label="Owner console" />
             )}

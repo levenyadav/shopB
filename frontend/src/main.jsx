@@ -6,6 +6,10 @@ import { ShopProvider } from './context/ShopContext'
 import { CartProvider } from './context/CartContext'
 import './index.css'
 import App from './App.jsx'
+import { registerServiceWorker } from './lib/pwa'
+
+// Register the PWA service worker so the app can be installed and opened offline.
+registerServiceWorker()
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

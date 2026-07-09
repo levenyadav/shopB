@@ -24,11 +24,21 @@ import Parties from './pages/owner/Parties'
 import PartyDetail from './pages/owner/PartyDetail'
 import Fulfilment from './pages/shared/Fulfilment'
 import FulfilmentDetail from './pages/shared/FulfilmentDetail'
+import StaffInventory from './pages/shared/StaffInventory'
+import StaffStockInquiry from './pages/shared/StaffStockInquiry'
 import Reports from './pages/owner/Reports'
 import Settings from './pages/owner/Settings'
 import Sales from './pages/owner/Sales'
 import SaleDetail from './pages/owner/SaleDetail'
 import CounterSale from './pages/shared/CounterSale'
+
+// Where each role belongs after login. Owner/staff get their consoles; buyers
+// (customer/dealer) and anyone else land on the public shopfront.
+function roleHome(role) {
+  if (role === 'owner') return '/owner'
+  if (role === 'staff') return '/staff'
+  return '/'
+}
 
 // Guards buyer-only routes (My Orders / Account). Browsing is public; these
 // require a customer/dealer login. Owner is sent to the console, others home.
@@ -60,12 +70,19 @@ function StaffOnly({ children }) {
 }
 
 export default function App() {
-  const { session, loading } = useAuth()
+  const { session, role, loading } = useAuth()
   return (
     <Routes>
       <Route
         path="/login"
-        element={loading ? null : session ? <Navigate to="/" replace /> : <Login />}
+        element={
+          loading ? null
+            : !session ? <Login />
+            // Session is up but the profile (hence role) may still be loading —
+            // wait rather than bounce to '/', so owner/staff land on their console.
+            : !role ? null
+            : <Navigate to={roleHome(role)} replace />
+        }
       />
 
       {/* Public shopfront + buyer area (SPEC §10.1–§10.2) — no login to browse */}
@@ -126,6 +143,8 @@ export default function App() {
       >
         <Route index element={<Fulfilment detailBase="/staff/fulfil" />} />
         <Route path="counter-sale" element={<CounterSale />} />
+        <Route path="inventory" element={<StaffInventory />} />
+        <Route path="stock" element={<StaffStockInquiry />} />
         <Route path="fulfil/:id" element={<FulfilmentDetail listPath="/staff" />} />
       </Route>
 

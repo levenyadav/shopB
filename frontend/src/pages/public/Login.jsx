@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { toE164India } from '../../lib/helpers'
 import Credit from '../../components/Credit'
@@ -20,7 +19,6 @@ export default function Login() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const navigate = useNavigate()
 
   async function sendCode(e) {
     e.preventDefault()
@@ -62,7 +60,8 @@ export default function Login() {
         type: 'email',
       })
       if (error) throw error
-      navigate('/', { replace: true })
+      // Session is now set; AuthContext loads the profile and the /login route
+      // redirects to the right home for this role (owner/staff console or shop).
     } catch (err) {
       setError(humanError(err?.message))
     } finally {

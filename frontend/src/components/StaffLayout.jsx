@@ -1,6 +1,7 @@
 import { Outlet, Link, NavLink, useLocation } from 'react-router-dom'
 import {
   IconBuildingStore, IconLogout, IconClipboardCheck, IconCashRegister,
+  IconBoxSeam, IconClipboardList,
 } from '@tabler/icons-react'
 import { useAuth } from '../context/AuthContext'
 import { useShop } from '../context/ShopContext'
@@ -10,6 +11,8 @@ import { useShop } from '../context/ShopContext'
 const TABS = [
   { to: '/staff', end: true, label: 'Fulfilment', icon: IconClipboardCheck },
   { to: '/staff/counter-sale', label: 'New Sale', icon: IconCashRegister },
+  { to: '/staff/inventory', label: 'Inventory', icon: IconBoxSeam },
+  { to: '/staff/stock', label: 'Stock', icon: IconClipboardList },
 ]
 
 export default function StaffLayout() {

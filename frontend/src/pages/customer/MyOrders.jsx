@@ -23,7 +23,7 @@ export default function MyOrders() {
       // now out of stock / inactive aren't in the view → neutral fallback below.
       const { data: rows, error } = await supabase
         .from('orders')
-        .select('id, item_id, quantity, amount, status, notes, created_at, order_group_id')
+        .select('id, item_id, item_name, quantity, amount, status, notes, created_at, order_group_id')
         .order('created_at', { ascending: false })
       if (!active) return
       if (error) { setErr(error.message); return }
@@ -92,7 +92,7 @@ export default function MyOrders() {
 // Buyer-facing label for a grouped order: the first item's name, plus "+N more"
 // when the cart had several items.
 function groupTitle(g) {
-  const first = g.lines[0]?.item?.name || 'Item'
+  const first = g.lines[0]?.item?.name || g.lines[0]?.item_name || 'Item'
   return g.lines.length > 1 ? `${first} +${g.lines.length - 1} more` : first
 }
 

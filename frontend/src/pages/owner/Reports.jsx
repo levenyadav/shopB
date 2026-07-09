@@ -28,7 +28,7 @@ export default function Reports() {
     async function load() {
       const [sRes, iRes] = await Promise.all([
         supabase.from('sales')
-          .select('amount, profit, quantity, buyer_type, created_at, item:items(name), category:categories(name)')
+          .select('amount, profit, quantity, buyer_type, created_at, item_name, item:items(name), category:categories(name)')
           .order('created_at', { ascending: false }),
         supabase.from('items')
           .select('id, item_no, name, quantity, purchase_rate, low_stock_threshold, is_active')
@@ -244,7 +244,7 @@ function groupBy(rows, keyFn) {
 }
 
 function topItems(rows, sortKey) {
-  return groupBy(rows, (r) => r.item?.name || 'Unknown item')
+  return groupBy(rows, (r) => r.item?.name || r.item_name || 'Unknown item')
     .sort((a, b) => b[sortKey] - a[sortKey])
     .slice(0, 10)
 }

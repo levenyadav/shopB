@@ -47,7 +47,7 @@ export default function MyOrderDetail() {
         .from('orders')
         .select(
           'id, item_id, quantity, rate_at_order, amount, status, notes, ' +
-            'rejection_reason, created_at, updated_at, order_group_id',
+            'rejection_reason, created_at, updated_at, order_group_id, packed_by_name',
         )
         .eq('id', id)
         .maybeSingle()
@@ -61,7 +61,7 @@ export default function MyOrderDetail() {
       if (data.order_group_id) {
         const { data: sibs } = await supabase
           .from('orders')
-          .select('id, item_id, quantity, rate_at_order, amount, status, notes, rejection_reason, created_at, order_group_id')
+          .select('id, item_id, item_name, quantity, rate_at_order, amount, status, notes, rejection_reason, created_at, order_group_id, packed_by_name')
           .eq('order_group_id', data.order_group_id)
           .order('created_at')
         if (sibs?.length) rows = sibs
@@ -131,7 +131,7 @@ export default function MyOrderDetail() {
       <div className="rounded-lg border border-line bg-card p-5">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-lg font-semibold">{isGroup ? `Order · ${lines.length} items` : (lines[0].item?.name || 'Item')}</p>
+            <p className="text-lg font-semibold">{isGroup ? `Order · ${lines.length} items` : (lines[0].item?.name || lines[0].item_name || 'Item')}</p>
             <p className="text-xs text-muted">Placed {dateTime(order.created_at)}</p>
           </div>
           <OrderStatusBadge status={groupStatus} audience="buyer" />
@@ -156,7 +156,7 @@ export default function MyOrderDetail() {
               <li key={l.id} className="flex items-start gap-3 py-3 first:pt-0">
                 <Thumb url={l.item?.photo_url} />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium text-ink">{l.item?.name || 'Item'}</p>
+                  <p className="truncate font-medium text-ink">{l.item?.name || l.item_name || 'Item'}</p>
                   <p className="text-xs text-muted">
                     <span className="fig">{qty(l.quantity)}</span> × <span className="fig">{money(l.rate_at_order).replace('₹', currency)}</span>
                     {isGroup && <span className="ml-2"><OrderStatusBadge status={l.status} audience="buyer" /></span>}
@@ -206,6 +206,11 @@ export default function MyOrderDetail() {
         <div className="rounded-lg border border-line bg-card p-5">
           <p className="text-sm font-semibold">Progress</p>
           <p className="mb-4 mt-0.5 text-sm text-muted">{STATUS_NOTE[order.status] || ''}</p>
+          {lines.find((l) => l.packed_by_name) && (
+            <p className="-mt-3 mb-4 text-xs text-muted">
+              Packed by <span className="font-medium text-ink">{lines.find((l) => l.packed_by_name).packed_by_name}</span>
+            </p>
+          )}
           <ol className="space-y-3">
             {STEPS.map((step, i) => {
               const done = i <= currentStep        // reached or passed this step

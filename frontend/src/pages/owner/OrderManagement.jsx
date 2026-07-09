@@ -28,6 +28,7 @@ export default function OrderManagement() {
       .from('orders')
       .select(
         'id, quantity, amount, status, buyer_type, created_at, ' +
+          'item_no, item_name, ' +
           'item:items(name, photo_url), buyer:profiles!orders_buyer_id_fkey(full_name, phone)',
       )
       .eq('source', 'shopfront') // counter (POS) sales are complete on creation — not order-queue work
@@ -62,7 +63,7 @@ export default function OrderManagement() {
         : status && o.status !== status) return false
       if (buyerType && o.buyer_type !== buyerType) return false
       if (needle) {
-        const hay = `${o.item?.name || ''} ${o.buyer?.full_name || ''} ${o.buyer?.phone || ''}`.toLowerCase()
+        const hay = `${o.item?.name || o.item_name || ''} ${o.buyer?.full_name || ''} ${o.buyer?.phone || ''}`.toLowerCase()
         if (!hay.includes(needle)) return false
       }
       return true
@@ -129,7 +130,7 @@ export default function OrderManagement() {
               >
                 <PhotoThumb url={o.item?.photo_url} />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium text-ink">{o.item?.name || 'Item'}</p>
+                  <p className="truncate font-medium text-ink">{o.item?.name || o.item_name || 'Item'}</p>
                   <p className="truncate text-xs text-muted">
                     {o.buyer?.full_name || 'Buyer'}
                     <Badge tone={o.buyer_type === 'dealer' ? 'peacock' : 'muted'} className="ml-1.5">
