@@ -53,7 +53,7 @@ const BLANK = {
   name: '', company_no: '', supplier_id: '', category_id: '', location: '',
   quantity: '', purchase_rate: '', dealer_rate: '', rate: '',
   low_stock_threshold: '10', moq: '1', barcode: '', notes: '',
-  description: '', tags: [], images: [], made_to_order: false,
+  description: '', tags: [], images: [], made_to_order: false, is_active: true,
 }
 
 function NewItemEntry() {
@@ -236,6 +236,7 @@ function NewItemEntry() {
           tags: form.tags,
           images: form.images,
           made_to_order: mto,
+          is_active: form.is_active,
         })
         .select('id, item_no, name')
         .single()
@@ -377,6 +378,24 @@ function NewItemEntry() {
               aria-pressed={form.made_to_order}
             >
               <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-card transition ${form.made_to_order ? 'left-[1.375rem]' : 'left-0.5'}`} />
+            </button>
+          </div>
+
+          {/* Active on storefront — hide/show this item on the public shopfront. */}
+          <div className="flex items-center justify-between rounded-lg bg-paper-2 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium">Active on storefront</p>
+              <p className="text-xs text-muted">
+                Show this product on your public shopfront. Turn off to keep it in your catalogue but hidden from buyers.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setForm((f) => ({ ...f, is_active: !f.is_active }))}
+              className={`relative h-6 w-11 shrink-0 rounded-full transition ${form.is_active ? 'bg-peacock' : 'bg-line'}`}
+              aria-pressed={form.is_active}
+            >
+              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-card transition ${form.is_active ? 'left-[1.375rem]' : 'left-0.5'}`} />
             </button>
           </div>
 
