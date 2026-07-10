@@ -242,7 +242,15 @@ function NewItemEntry() {
         })
         .select('id, item_no, name')
         .single()
-      if (itemErr) throw new Error(itemErr.message)
+      if (itemErr) {
+        // Company No. is unique per shop (migration 031). Point the owner at the
+        // exact field instead of surfacing a raw Postgres constraint message.
+        if (itemErr.code === '23505' && /company_no/.test(itemErr.message || '')) {
+          setErrors((er) => ({ ...er, company_no: 'This Company No. is already used by another item in this shop.' }))
+          throw new Error('This Company No. is already used by another item. Use a different number or leave it blank.')
+        }
+        throw new Error(itemErr.message)
+      }
 
       // 2) record the opening purchase -> trigger raises stock + supplier + ledger.
       //    Made-to-order items hold no stock, so there is no opening purchase.
@@ -309,7 +317,7 @@ function NewItemEntry() {
             />
             <Field
               label="Company No." placeholder="e.g. 1420 (design / article no.)"
-              value={form.company_no} onChange={set('company_no')}
+              value={form.company_no} onChange={set('company_no')} error={errors.company_no}
               hint="The company's own design/article number — used to re-order"
             />
           </div>

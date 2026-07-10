@@ -747,7 +747,13 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
           made_to_order: f.made_to_order,
         })
         .eq('id', item.id)
-      if (error) throw new Error(error.message)
+      if (error) {
+        // Company No. is unique per shop (migration 031) — friendly, field-specific.
+        if (error.code === '23505' && /company_no/.test(error.message || '')) {
+          throw new Error('This Company No. is already used by another item in this shop. Use a different number or leave it blank.')
+        }
+        throw new Error(error.message)
+      }
       onSaved()
     } catch (e2) {
       setErr(e2.message)

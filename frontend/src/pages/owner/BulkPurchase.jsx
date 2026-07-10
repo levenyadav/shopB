@@ -57,7 +57,21 @@ export default function BulkPurchase() {
           setRows(null); return
         }
         if (!raw.length) { setParseErr('No data rows found in the file.'); setRows(null); return }
-        setRows(raw.map((r) => validateRow(r, supplierByName, categoryByName)))
+        const validated = raw.map((r) => validateRow(r, supplierByName, categoryByName))
+        // Company No. must be unique per shop (migration 031). Catch duplicates that
+        // repeat WITHIN this file up front, so the owner fixes them before importing
+        // rather than seeing half the batch fail at insert time.
+        const seen = new Map()
+        for (const row of validated) {
+          const key = row.company_no.toLowerCase()
+          if (!key) continue
+          seen.set(key, (seen.get(key) || 0) + 1)
+        }
+        for (const row of validated) {
+          const key = row.company_no.toLowerCase()
+          if (key && seen.get(key) > 1) row.errors.push(`duplicate company_no "${row.company_no}" in file`)
+        }
+        setRows(validated)
       } catch (err) {
         setParseErr('Could not read that file: ' + (err.message || 'unknown error'))
         setRows(null)
@@ -112,7 +126,12 @@ export default function BulkPurchase() {
             purchase_rate: r.purchase_rate, dealer_rate: r.dealer_rate, rate: r.rate,
             low_stock_threshold: r.low_stock_threshold, barcode: r.barcode || null,
           }).select('id, item_no').single()
-          if (itemErr) throw new Error(itemErr.message)
+          if (itemErr) {
+            if (itemErr.code === '23505' && /company_no/.test(itemErr.message || '')) {
+              throw new Error(`Company No. "${r.company_no}" is already used by another item in this shop.`)
+            }
+            throw new Error(itemErr.message)
+          }
 
           const total_cost = round2(r.quantity * r.purchase_rate)
           const { error: pErr } = await supabase.from('purchases').insert({
