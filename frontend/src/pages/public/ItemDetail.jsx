@@ -229,7 +229,9 @@ function Gallery({ item }) {
       <div className="overflow-hidden rounded-lg border border-line bg-paper-2">
         <div className="aspect-square">
           {main ? (
-            <img src={main} alt={item.name} className="h-full w-full object-cover" />
+            // object-contain so the full product photo is visible (landscape and
+            // portrait alike) rather than cropped to a square.
+            <img src={main} alt={item.name} className="h-full w-full object-contain" />
           ) : (
             <div className="grid h-full w-full place-items-center text-muted">
               <IconPhoto size={56} stroke={1.2} />

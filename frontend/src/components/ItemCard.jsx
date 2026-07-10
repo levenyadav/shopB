@@ -45,7 +45,10 @@ export default function ItemCard({ item, categoryName }) {
           <img
             src={item.photo_url}
             alt={item.name}
-            className="h-full w-full object-cover transition group-hover:scale-105"
+            // object-contain (not cover) so landscape/portrait photos show in full
+            // inside the square tile instead of being cropped; the paper-2 bg fills
+            // the letterbox area.
+            className="h-full w-full object-contain transition group-hover:scale-105"
           />
         ) : (
           <div className="grid h-full w-full place-items-center text-muted">
