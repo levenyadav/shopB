@@ -176,13 +176,14 @@ function NewItemEntry() {
     if (!form.name.trim()) e.name = 'Item name is required.'
     if (!form.supplier_id) e.supplier_id = 'Choose a company / supplier.'
     if (!form.category_id) e.category_id = 'Choose a category.'
-    // Made-to-order items carry no opening stock and no cost yet (cost is set by
-    // the owner at approval), so quantity/purchase rate are not required for them.
+    // Made-to-order items carry no opening stock, so quantity is not required for
+    // them — but the cost (purchase rate) now IS: it is the cost used when the
+    // owner approves each order, instead of being typed at approval time.
     if (!form.made_to_order) {
       const q = Number(form.quantity)
       if (!form.quantity || q <= 0) e.quantity = 'Enter how many came in.'
-      if (form.purchase_rate === '' || Number(form.purchase_rate) < 0) e.purchase_rate = 'Enter the cost rate.'
     }
+    if (form.purchase_rate === '' || Number(form.purchase_rate) < 0) e.purchase_rate = 'Enter the cost rate.'
     if (form.dealer_rate === '' || Number(form.dealer_rate) < 0) e.dealer_rate = 'Enter the dealer rate.'
     if (form.rate === '' || Number(form.rate) < 0) e.rate = 'Enter the retail rate.'
     if (form.moq !== '' && Number(form.moq) < 1) e.moq = 'MOQ must be at least 1.'
@@ -210,9 +211,10 @@ function NewItemEntry() {
       const photo_url = (await uploadPhoto()) || scannedPhotoUrl || null
       const mto = form.made_to_order
       const quantity = mto ? 0 : round2(form.quantity)
-      // Made-to-order carries no cost yet — the owner enters it at approval; use 0
-      // as the placeholder on the catalogue row (never shown to buyers anyway).
-      const purchase_rate = mto ? 0 : round2(form.purchase_rate)
+      // Both stock and made-to-order items carry a real cost. For made-to-order it
+      // is used as the cost when the owner approves an order (no cost prompt then);
+      // it is never shown to buyers (Golden Rule #4).
+      const purchase_rate = round2(form.purchase_rate)
 
       // 1) create the catalogue item with NO opening stock
       const { data: item, error: itemErr } = await supabase
@@ -414,10 +416,9 @@ function NewItemEntry() {
                    hint="Least a customer can order" />
           </div>
           <div className="grid gap-4 sm:grid-cols-3">
-            {!form.made_to_order && (
-              <Field label="Purchase Rate" prefix="₹" type="number" min="0" step="0.01" inputMode="decimal"
-                     value={form.purchase_rate} onChange={set('purchase_rate')} error={errors.purchase_rate} />
-            )}
+            <Field label="Purchase Rate" prefix="₹" type="number" min="0" step="0.01" inputMode="decimal"
+                   value={form.purchase_rate} onChange={set('purchase_rate')} error={errors.purchase_rate}
+                   hint={form.made_to_order ? 'Cost per piece — used when you approve orders' : undefined} />
             <Field label="Dealer Rate" prefix="₹" type="number" min="0" step="0.01" inputMode="decimal"
                    value={form.dealer_rate} onChange={set('dealer_rate')} error={errors.dealer_rate} />
             <Field label="Rate (retail)" prefix="₹" type="number" min="0" step="0.01" inputMode="decimal"
@@ -425,7 +426,8 @@ function NewItemEntry() {
           </div>
           {form.made_to_order ? (
             <p className="rounded-lg bg-peacock/5 px-4 py-2.5 text-sm text-muted">
-              No opening stock is recorded. You’ll enter the real cost on each order when you approve it.
+              No opening stock is recorded. The Purchase Rate above is the cost used
+              to work out profit when you approve each order for this item.
             </p>
           ) : liveCost != null && (
             <p className="rounded-lg bg-paper-2 px-4 py-2.5 text-sm">

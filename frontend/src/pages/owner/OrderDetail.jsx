@@ -115,17 +115,11 @@ export default function OrderDetail() {
           {order.notes && <Row label="Buyer note" value={order.notes} full />}
         </dl>
 
-        {/* Owner-only economics. Made-to-order cost is unknown until approval, so
-            don't show a placeholder cost/profit for a still-pending such order. */}
+        {/* Owner-only economics. Cost comes from the item's purchase rate for both
+            stock and made-to-order items (entered in Purchase Entry). */}
         <div className="mt-4 flex flex-wrap items-center gap-4 rounded-lg bg-paper-2 px-4 py-3 text-sm">
-          {madeToOrder && isPending ? (
-            <span className="text-muted">Cost &amp; profit <span className="text-ink">set at approval</span></span>
-          ) : (
-            <>
-              <span className="text-muted">Cost <span className="fig text-ink">{money(round2((item?.purchase_rate ?? 0) * order.quantity)).replace('₹', currency)}</span></span>
-              <span className="text-muted">Profit <span className="fig font-semibold text-profit">{money(profit).replace('₹', currency)}</span></span>
-            </>
-          )}
+          <span className="text-muted">Cost <span className="fig text-ink">{money(round2((item?.purchase_rate ?? 0) * order.quantity)).replace('₹', currency)}</span></span>
+          <span className="text-muted">Profit <span className="fig font-semibold text-profit">{money(profit).replace('₹', currency)}</span></span>
           <span className="text-muted">Buyer udhaar now <span className="fig text-dues">{money(order.buyer?.balance_due).replace('₹', currency)}</span></span>
         </div>
       </div>
@@ -263,10 +257,6 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [rejecting, setRejecting] = useState(false)
-  // Made-to-order: cost is unknown until the owner sources/makes the item, so it
-  // is entered here at approval (items.purchase_rate is only a placeholder). For
-  // normal stock items the cost is already known, so keep the item's rate.
-  const [cost, setCost] = useState('')
 
   // Finalize-bill charges (migration 023). Per-line price is NEVER edited here
   // (Golden Rule #5) — these sit on TOP of the product subtotal the buyer saw.
@@ -278,8 +268,11 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
   const [suggested, setSuggested] = useState(false)
 
   const cf = (n) => money(n).replace('₹', currency)
-  const costNum = madeToOrder ? num(cost) : Number(item.purchase_rate ?? 0)
-  const listProfit = madeToOrder ? lineProfit(order.rate_at_order, costNum, order.quantity) : profit
+  // Cost is the item's known purchase rate for both stock and made-to-order items
+  // (set in Purchase Entry / Inventory). A made-to-order item with no cost set is
+  // the only blocker — the RPC rejects it, so guard the button here too.
+  const costNum = Number(item.purchase_rate ?? 0)
+  const listProfit = profit
   const costMissing = madeToOrder && !(costNum > 0)
 
   const subtotal = Number(order.amount)
@@ -315,7 +308,6 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
     const { error } = await supabase.rpc('approve_order', {
       p_order_id: order.id,
       p_payment_type: pay,
-      p_cost: madeToOrder ? round2(costNum) : null,
       p_discount: discountNum,
       p_shipping: num(shipping),
       p_packing: num(packing),
@@ -334,20 +326,17 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
       <p className="font-semibold">Finalize bill &amp; approve</p>
 
       {madeToOrder && (
-        <div>
-          <label className="mb-1.5 block text-sm font-medium">
-            Cost to source / make (each)
-            <span className="ml-1.5 rounded bg-peacock/10 px-1.5 py-0.5 text-[11px] font-semibold text-peacock">Made to order</span>
-          </label>
-          <input
-            type="number" min="0" step="0.01" inputMode="decimal"
-            value={cost} onChange={(e) => setCost(e.target.value)}
-            placeholder="Enter your true cost per piece"
-            className="w-full rounded-lg border border-line bg-card px-3 py-2.5 text-sm outline-none focus:border-peacock"
-          />
-          <p className="mt-1 text-xs text-muted">
-            You source or make this item only now — enter the real cost per piece so profit is accurate.
-          </p>
+        <div className="flex items-start gap-2 rounded-lg bg-peacock/5 px-4 py-2.5 text-sm">
+          <span className="mt-0.5 shrink-0 rounded bg-peacock/10 px-1.5 py-0.5 text-[11px] font-semibold text-peacock">Made to order</span>
+          {costMissing ? (
+            <span className="text-dues">
+              No purchase rate is set for this item. Set its cost in Inventory before approving so profit is accurate.
+            </span>
+          ) : (
+            <span className="text-muted">
+              Cost <span className="fig text-ink">{cf(costNum)}</span> each — taken from the item’s purchase rate.
+            </span>
+          )}
         </div>
       )}
 

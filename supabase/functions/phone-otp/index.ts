@@ -141,17 +141,23 @@ async function handleVerify(admin: any, phone: string, code: string) {
   const { data: userRes, error: getErr } = await admin.auth.admin.getUserById(profile.id)
   if (getErr || !userRes?.user) return json({ error: 'Login for this account is not set up.' }, 400)
 
-  const shadowEmail = `${phone.replace(/\D/g, '')}@dev.local`
-  if (!userRes.user.email) {
+  // The shadow email is a PURELY INTERNAL GoTrue detail — generateLink is email-
+  // only, so we need one handle to mint the session. It is never shown to anyone
+  // and never written to profiles; the phone is the only identity users, the UI,
+  // and RLS ever see. Key it off the auth user's UUID (globally unique) so it can
+  // never collide with a stale/orphaned login the way a phone-derived email could.
+  // Reuse any email the user already has (e.g. create-party's <digits>@dev.local).
+  const existingEmail = (userRes.user.email ?? '').trim()
+  const shadowEmail = existingEmail || `${profile.id}@dev.local`
+  if (userRes.user.email !== shadowEmail) {
     const { error: updErr } = await admin.auth.admin.updateUserById(profile.id, {
       email: shadowEmail, email_confirm: true,
     })
     if (updErr) return json({ error: updErr.message }, 400)
   }
-  const email = userRes.user.email ?? shadowEmail
 
   const { data: link, error: linkErr } = await admin.auth.admin.generateLink({
-    type: 'magiclink', email,
+    type: 'magiclink', email: shadowEmail,
   })
   if (linkErr || !link?.properties?.hashed_token) {
     return json({ error: linkErr?.message ?? 'Could not create a session.' }, 400)

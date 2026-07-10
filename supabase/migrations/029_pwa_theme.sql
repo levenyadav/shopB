@@ -12,8 +12,4 @@
 -- without a login) and shops_update (owner only). Buyer-safe: meant to be public.
 -- =============================================================================
 
-alter table public.shops
-  add column if not exists theme_color text;
 
-comment on column public.shops.theme_color is
-  'Hex brand colour (#rrggbb) driving the primary UI accent, the PWA manifest theme_color and the mobile browser bar. NULL = default peacock #0F6E64.';
