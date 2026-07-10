@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   IconArrowLeft, IconPhoto, IconCircleCheck, IconCircleX, IconCircle, IconAlertTriangle,
+  IconBrandWhatsapp, IconCopy, IconCheck, IconMessage2Question,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
-import { lineProfit, round2 } from '../../lib/helpers'
+import { lineProfit, round2, toE164India } from '../../lib/helpers'
 import {
   Button, Textarea, OrderStatusBadge, InProcessBadge, IN_PROCESS_STATUSES, Badge, Spinner,
 } from '../../components/ui'
@@ -33,7 +34,7 @@ const PAYMENTS = [
 export default function OrderDetail() {
   const { id } = useParams()
   const { profile } = useAuth()
-  const { currency } = useShop()
+  const { currency, shop } = useShop()
   const [order, setOrder] = useState(null)
   const [err, setErr] = useState('')
   const [missing, setMissing] = useState(false)
@@ -45,7 +46,8 @@ export default function OrderDetail() {
       .from('orders')
       .select(
         'id, shop_id, quantity, rate_at_order, amount, status, notes, rejection_reason, buyer_type, ' +
-          'created_at, item_no, item_name, item:items(id, name, photo_url, location, purchase_rate, category_id, quantity, made_to_order), ' +
+          'created_at, item_no, item_name, item:items(id, name, photo_url, location, purchase_rate, category_id, quantity, made_to_order, ' +
+          'supplier:suppliers(id, name, contact_person, phone)), ' +
           'buyer:profiles!orders_buyer_id_fkey(id, full_name, phone, balance_due)',
       )
       .eq('id', id)
@@ -123,6 +125,12 @@ export default function OrderDetail() {
           <span className="text-muted">Buyer udhaar now <span className="fig text-dues">{money(order.buyer?.balance_due).replace('₹', currency)}</span></span>
         </div>
       </div>
+
+      {/* Ask the supplier about this product (availability / lead time / rate)
+          before approving — especially for made-to-order or short-stock items. */}
+      {item?.supplier && (
+        <SupplierInquiry item={item} order={order} shopName={shop?.name} />
+      )}
 
       {/* Actions */}
       {isPending ? (
@@ -490,6 +498,114 @@ function RejectButtonInline({ order, onDone }) {
   if (open) return <RejectPanel order={order} onCancel={() => setOpen(false)} onDone={onDone} />
   return (
     <Button variant="ghost" onClick={() => setOpen(true)}>Reject instead</Button>
+  )
+}
+
+// Build the default inquiry message the owner sends the supplier. Editable
+// before sharing, so this is only a starting point (plain text, WhatsApp-safe).
+function defaultInquiry({ item, order, supplier, shopName }) {
+  const who = supplier?.contact_person || supplier?.name
+  const hello = who ? `Hello ${who},` : 'Hello,'
+  const from = shopName ? ` This is ${shopName}.` : ''
+  const need = item?.made_to_order
+    ? 'We have a customer order for a made-to-order product and want to confirm you can supply it:'
+    : 'We would like to inquire about this product:'
+  return [
+    `${hello}${from}`,
+    '',
+    need,
+    '',
+    `• Product: ${item?.name || order.item_name || '—'}`,
+    order.item_no ? `• Item No: ${order.item_no}` : null,
+    `• Quantity needed: ${qty(order.quantity)} pcs`,
+    '',
+    'Please let us know availability, rate and how many days it will take. Thank you.',
+  ].filter((l) => l !== null).join('\n')
+}
+
+// Owner-only helper on the approve screen: draft an inquiry and fire it to the
+// item's supplier over WhatsApp. Reuses the wa.me deep-link pattern (Parties) and
+// toE164India for the number. The message is editable so the owner can refine it.
+function SupplierInquiry({ item, order, shopName }) {
+  const supplier = item.supplier
+  const e164 = toE164India(supplier?.phone)
+  const [open, setOpen] = useState(false)
+  const [msg, setMsg] = useState(() => defaultInquiry({ item, order, supplier, shopName }))
+  const [copied, setCopied] = useState('')
+
+  const waUrl = e164 ? `https://wa.me/${e164.replace('+', '')}?text=${encodeURIComponent(msg)}` : null
+
+  async function copy(text, which) {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(which)
+      setTimeout(() => setCopied(''), 1600)
+    } catch { /* clipboard unavailable — the WhatsApp button still works */ }
+  }
+
+  return (
+    <div className="rounded-lg border border-line bg-card">
+      <button
+        type="button" onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-3 px-5 py-4 text-left"
+      >
+        <IconMessage2Question size={22} className="shrink-0 text-peacock" />
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold text-ink">Ask supplier about this product</p>
+          <p className="truncate text-xs text-muted">
+            {supplier?.name || 'Supplier'}
+            {supplier?.phone && <span className="fig"> · {supplier.phone}</span>}
+          </p>
+        </div>
+        <span className="shrink-0 text-xs font-medium text-peacock">{open ? 'Hide' : 'Draft message'}</span>
+      </button>
+
+      {open && (
+        <div className="space-y-3 border-t border-line px-5 py-4">
+          <Textarea
+            label="Inquiry message (edit before sending)"
+            rows={8} value={msg} onChange={(e) => setMsg(e.target.value)}
+          />
+
+          {!e164 && (
+            <p className="flex items-center gap-1.5 rounded-lg bg-saffron/10 px-3 py-2 text-xs text-saffron">
+              <IconAlertTriangle size={15} className="shrink-0" />
+              No valid WhatsApp number saved for this supplier. Copy the message and send it manually, or add a number in Parties.
+            </p>
+          )}
+
+          <div className="flex flex-wrap gap-2">
+            <a
+              href={waUrl || undefined}
+              target="_blank" rel="noopener noreferrer"
+              aria-disabled={!waUrl}
+              onClick={(e) => { if (!waUrl) e.preventDefault() }}
+              className={`inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
+                waUrl
+                  ? 'bg-[#25D366] text-white hover:brightness-95'
+                  : 'cursor-not-allowed bg-line/40 text-muted'
+              }`}
+            >
+              <IconBrandWhatsapp size={18} /> Share on WhatsApp
+            </a>
+            {waUrl && (
+              <button
+                type="button" onClick={() => copy(waUrl, 'link')}
+                className="inline-flex items-center gap-2 rounded-lg border border-line px-4 py-2.5 text-sm font-medium text-ink transition hover:border-ink/20"
+              >
+                {copied === 'link' ? <><IconCheck size={16} className="text-profit" /> Link copied</> : <><IconCopy size={16} /> Copy WhatsApp link</>}
+              </button>
+            )}
+            <button
+              type="button" onClick={() => copy(msg, 'text')}
+              className="inline-flex items-center gap-2 rounded-lg border border-line px-4 py-2.5 text-sm font-medium text-ink transition hover:border-ink/20"
+            >
+              {copied === 'text' ? <><IconCheck size={16} className="text-profit" /> Copied</> : <><IconCopy size={16} /> Copy message</>}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
