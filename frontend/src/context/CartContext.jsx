@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react'
+import { snapToMoq } from '../lib/helpers'
 
 // Buyer's shopping cart (SPEC §6.3 — shopfront). A cart is purely client-side
 // until checkout: nothing touches the books here. On checkout the Cart page
@@ -45,7 +46,8 @@ export function CartProvider({ children }) {
       const note = notes?.trim() || null
       const i = prev.findIndex((l) => l.id === item.id)
       if (i === -1) {
-        const want = Math.min(Math.max(moq, n), cap)
+        // Quantity is always a whole multiple of MOQ (MOQ 50 → 50, 100, 150…).
+        const want = snapToMoq(n, moq, cap)
         return [...prev, {
           id: item.id,
           name: item.name,
@@ -60,7 +62,8 @@ export function CartProvider({ children }) {
         }]
       }
       const next = [...prev]
-      const merged = Math.min(next[i].qty + n, cap)
+      // Adding more keeps the total a whole multiple of MOQ.
+      const merged = snapToMoq(next[i].qty + n, moq, cap)
       // refresh stock/price/moq snapshot in case it changed since last add
       next[i] = {
         ...next[i], qty: merged, available, moq, made_to_order: mto,
@@ -74,10 +77,10 @@ export function CartProvider({ children }) {
   const setQty = useCallback((id, qty) => {
     setLines((prev) => prev.map((l) => {
       if (l.id !== id) return l
-      // Made-to-order lines have no stock ceiling.
+      // Made-to-order lines have no stock ceiling. Quantity always snaps to a
+      // whole multiple of the line's MOQ (MOQ 50 → 50, 100, 150…).
       const cap = l.made_to_order ? Infinity : l.available
-      const clamped = Math.max(l.moq, Math.min(cap, Number(qty) || l.moq))
-      return { ...l, qty: clamped }
+      return { ...l, qty: snapToMoq(qty, l.moq, cap) }
     }))
   }, [])
 

@@ -84,21 +84,21 @@ export default function Cart() {
                   <Link to={`/item/${l.id}`} className="truncate font-medium text-ink hover:text-peacock">{l.name}</Link>
                   <p className="text-xs text-muted">
                     <span className="fig">{money(priceOf(l)).replace('₹', currency)}</span> each
-                    {l.moq > 1 && <> · min <span className="fig">{l.moq}</span></>}
+                    {l.moq > 1 && <> · in packs of <span className="fig">{l.moq}</span></>}
                   </p>
                   <div className="mt-2 flex items-center gap-3">
                     <div className="inline-flex items-center rounded-lg border border-line">
-                      <button type="button" onClick={() => setQty(l.id, l.qty - 1)}
-                              className="grid h-8 w-8 place-items-center text-muted hover:text-ink" aria-label="Less">
+                      <button type="button" onClick={() => setQty(l.id, l.qty - l.moq)}
+                              className="grid h-8 w-8 place-items-center text-muted hover:text-ink" aria-label={`Less ${l.moq}`}>
                         <IconMinus size={16} />
                       </button>
                       <input
-                        type="number" min={l.moq} max={l.made_to_order ? undefined : l.available} value={l.qty}
+                        type="number" min={l.moq} step={l.moq} max={l.made_to_order ? undefined : l.available} value={l.qty}
                         onChange={(e) => setQty(l.id, Number(e.target.value))}
                         className="fig w-12 border-x border-line py-1.5 text-center text-sm outline-none"
                       />
-                      <button type="button" onClick={() => setQty(l.id, l.qty + 1)}
-                              className="grid h-8 w-8 place-items-center text-muted hover:text-ink" aria-label="More">
+                      <button type="button" onClick={() => setQty(l.id, l.qty + l.moq)}
+                              className="grid h-8 w-8 place-items-center text-muted hover:text-ink" aria-label={`More ${l.moq}`}>
                         <IconPlus size={16} />
                       </button>
                     </div>

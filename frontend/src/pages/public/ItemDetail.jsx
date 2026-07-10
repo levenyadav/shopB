@@ -8,7 +8,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { useCart } from '../../context/CartContext'
 import { money } from '../../lib/format'
-import { rateForBuyer, round2 } from '../../lib/helpers'
+import { rateForBuyer, round2, snapToMoq } from '../../lib/helpers'
 import { Button, Textarea, Badge, Spinner } from '../../components/ui'
 
 // SPEC §6.3 — item detail + add to cart. Buyers see the price for their tier
@@ -121,7 +121,10 @@ function OrderBox({ item, price, available, currency, mto }) {
   const [note, setNote] = useState('')
   const [added, setAdded] = useState(false)
 
-  const clamp = (v) => Math.max(moq, mto ? v : Math.min(available, v))
+  // Quantity always snaps to a whole multiple of MOQ (MOQ 50 → 50, 100, 150…),
+  // capped at stock for normal items and uncapped for made-to-order.
+  const cap = mto ? Infinity : available
+  const clamp = (v) => snapToMoq(v, moq, cap)
   const amount = round2(price * n)
 
   function addToCart() {
@@ -165,19 +168,19 @@ function OrderBox({ item, price, available, currency, mto }) {
         <p className="mb-1.5 text-sm font-medium">How many?</p>
         <div className="flex items-center gap-3">
           <div className="inline-flex items-center rounded-lg border border-line">
-            <button type="button" onClick={() => setN((v) => clamp(v - 1))}
-                    className="grid h-10 w-10 place-items-center text-muted hover:text-ink disabled:opacity-40" aria-label="Less"
+            <button type="button" onClick={() => setN((v) => clamp(v - moq))}
+                    className="grid h-10 w-10 place-items-center text-muted hover:text-ink disabled:opacity-40" aria-label={`Less ${moq}`}
                     disabled={belowMoq}>
               <IconMinus size={18} />
             </button>
             <input
-              type="number" min={moq} max={mto ? undefined : available} value={n}
+              type="number" min={moq} step={moq} max={mto ? undefined : available} value={n}
               onChange={(e) => setN(clamp(Number(e.target.value) || moq))}
               disabled={belowMoq}
               className="fig w-14 border-x border-line py-2 text-center outline-none"
             />
-            <button type="button" onClick={() => setN((v) => clamp(v + 1))}
-                    className="grid h-10 w-10 place-items-center text-muted hover:text-ink disabled:opacity-40" aria-label="More"
+            <button type="button" onClick={() => setN((v) => clamp(v + moq))}
+                    className="grid h-10 w-10 place-items-center text-muted hover:text-ink disabled:opacity-40" aria-label={`More ${moq}`}
                     disabled={belowMoq}>
               <IconPlus size={18} />
             </button>
@@ -187,7 +190,9 @@ function OrderBox({ item, price, available, currency, mto }) {
             : <span className="text-sm text-muted"><span className="fig">{available}</span> available</span>}
         </div>
         {moq > 1 && (
-          <p className="mt-1.5 text-xs text-muted">Minimum order: <span className="fig">{moq}</span> pcs</p>
+          <p className="mt-1.5 text-xs text-muted">
+            Sold in packs of <span className="fig">{moq}</span> — order <span className="fig">{moq}</span>, <span className="fig">{moq * 2}</span>, <span className="fig">{moq * 3}</span>…
+          </p>
         )}
       </div>
 

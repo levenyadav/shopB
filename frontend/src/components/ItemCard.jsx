@@ -21,14 +21,16 @@ export default function ItemCard({ item, categoryName }) {
   // Made-to-order items are always orderable regardless of stock; a normal item
   // is "low" only when its real stock dips below the threshold.
   const low = !mto && Number(item.quantity) < Number(item.low_stock_threshold)
-  // Owner/staff preview the shopfront but don't order; out-of-stock can't be
-  // added — unless the item is made-to-order, which is produced on demand.
-  const canAdd = role !== 'owner' && role !== 'staff' && (mto || Number(item.quantity) > 0)
+  const moq = Math.max(1, Number(item.moq) || 1)
+  // Owner/staff preview the shopfront but don't order; a normal item can only be
+  // quick-added when stock covers at least one full MOQ pack (orders go in whole
+  // multiples of MOQ). Made-to-order is produced on demand, so always orderable.
+  const canAdd = role !== 'owner' && role !== 'staff' && (mto || Number(item.quantity) >= moq)
 
   function onAdd(e) {
     e.preventDefault()  // the tile is a Link — don't navigate
     e.stopPropagation()
-    add(item, Math.max(1, Number(item.moq) || 1))
+    add(item, moq)
     setAdded(true)
     setTimeout(() => setAdded(false), 1200)
   }
