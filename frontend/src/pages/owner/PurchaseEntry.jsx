@@ -8,7 +8,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { money, qty } from '../../lib/format'
-import { round2 } from '../../lib/helpers'
+import { round2, isDuplicateCompanyNo } from '../../lib/helpers'
 import { Button, Field, Select, Textarea, Spinner, StockBadge, TagsInput, ImagesInput } from '../../components/ui'
 import BarcodeScanner from '../../components/BarcodeScanner'
 
@@ -245,7 +245,7 @@ function NewItemEntry() {
       if (itemErr) {
         // Company No. is unique per shop (migration 031). Point the owner at the
         // exact field instead of surfacing a raw Postgres constraint message.
-        if (itemErr.code === '23505' && /company_no/.test(itemErr.message || '')) {
+        if (isDuplicateCompanyNo(itemErr)) {
           setErrors((er) => ({ ...er, company_no: 'This Company No. is already used by another item in this shop.' }))
           throw new Error('This Company No. is already used by another item. Use a different number or leave it blank.')
         }

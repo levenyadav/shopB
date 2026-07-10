@@ -6,6 +6,19 @@ export function round2(n) {
   return Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100
 }
 
+// True when a Supabase/Postgres error is the "Company No. already used" unique
+// violation (index items_shop_company_no_uidx, migration 031). Matches on the
+// message/constraint name as well as SQLSTATE 23505, because a rethrown or
+// wrapped error can lose its `.code` while the raw text ("duplicate key value
+// violates unique constraint ...company_no...") always survives — so the owner
+// never sees the raw Postgres string.
+export function isDuplicateCompanyNo(err) {
+  if (!err) return false
+  const msg = String(err.message || err.details || err)
+  const looksDuplicate = err.code === '23505' || /duplicate key value/i.test(msg)
+  return looksDuplicate && /company_no|items_shop_company_no/i.test(msg)
+}
+
 // SPEC §7.5 computed stock status.
 //   quantity < threshold → Low | quantity > 1000 → High | else Normal
 export function stockStatus(quantity, threshold = 10) {

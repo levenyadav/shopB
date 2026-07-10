@@ -8,7 +8,7 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty } from '../../lib/format'
-import { round2, stockValue } from '../../lib/helpers'
+import { round2, stockValue, isDuplicateCompanyNo } from '../../lib/helpers'
 import { printBarcodeLabels, barcodeValue, DEFAULT_LABEL_OPTS } from '../../lib/barcodeLabel'
 import { Button, Field, Select, Textarea, StockBadge, Badge, Spinner, TagsInput, ImagesInput } from '../../components/ui'
 
@@ -749,7 +749,7 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
         .eq('id', item.id)
       if (error) {
         // Company No. is unique per shop (migration 031) — friendly, field-specific.
-        if (error.code === '23505' && /company_no/.test(error.message || '')) {
+        if (isDuplicateCompanyNo(error)) {
           throw new Error('This Company No. is already used by another item in this shop. Use a different number or leave it blank.')
         }
         throw new Error(error.message)

@@ -8,7 +8,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { money } from '../../lib/format'
-import { round2 } from '../../lib/helpers'
+import { round2, isDuplicateCompanyNo } from '../../lib/helpers'
 import { parseCsv, toCsv, downloadText } from '../../lib/csv'
 import { Button, Badge, Spinner } from '../../components/ui'
 
@@ -127,7 +127,7 @@ export default function BulkPurchase() {
             low_stock_threshold: r.low_stock_threshold, barcode: r.barcode || null,
           }).select('id, item_no').single()
           if (itemErr) {
-            if (itemErr.code === '23505' && /company_no/.test(itemErr.message || '')) {
+            if (isDuplicateCompanyNo(itemErr)) {
               throw new Error(`Company No. "${r.company_no}" is already used by another item in this shop.`)
             }
             throw new Error(itemErr.message)
