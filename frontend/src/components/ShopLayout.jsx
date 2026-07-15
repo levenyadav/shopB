@@ -111,7 +111,7 @@ export default function ShopLayout() {
                 to="/login"
                 className="inline-flex items-center gap-1.5 rounded-lg bg-peacock px-4 py-2 text-sm font-semibold text-white hover:bg-peacock-700"
               >
-                <IconLogin2 size={18} /> Sign in
+                <IconLogin2 size={18} /> Sign in / Register
               </Link>
             )}
           </nav>

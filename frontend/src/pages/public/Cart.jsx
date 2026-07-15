@@ -144,7 +144,7 @@ export default function Cart() {
                 to="/login"
                 className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-peacock px-5 py-3 font-semibold text-white hover:bg-peacock-700"
               >
-                <IconLogin2 size={19} /> Sign in to place your order
+                <IconLogin2 size={19} /> Sign in or register to place your order
               </Link>
             )}
           </div>

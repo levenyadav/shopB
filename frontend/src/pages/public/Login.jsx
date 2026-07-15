@@ -5,14 +5,17 @@ import Credit from '../../components/Credit'
 
 // SPEC §4.3/§4.4 — buyers sign in with their MOBILE NUMBER + a one-time SMS code
 // (phone OTP). Email is an optional contact field, never the login handle.
-// Sign-in only: new parties are created by the shop (owner), never self-signup.
 //
-// The `phone-otp` Edge Function owns the whole OTP lifecycle: `send` texts a
-// 6-digit code via Fast2SMS (only to a known, active profile); `verify` checks
-// it and returns a one-time `token_hash` we redeem for a real Supabase session.
-// Two steps: (1) send code to the phone, (2) verify the 6-digit code.
+// Two modes share one screen:
+//   sign in   — existing buyer; `send` texts a code (known, active profile only).
+//   register  — new buyer; `register` texts a code, then `verify` creates an
+//               ACTIVE retail customer (SPEC §4.3/§6.3). Dealers stay owner-made.
+// Both finish the same way: `verify` checks the code and returns a one-time
+// `token_hash` we redeem for a real Supabase session.
 export default function Login() {
-  const [step, setStep] = useState('phone')   // 'phone' → 'otp'
+  const [mode, setMode] = useState('signin')  // 'signin' | 'register'
+  const [step, setStep] = useState('phone')    // 'phone' → 'otp'
+  const [name, setName] = useState('')         // register only
   const [phone, setPhone] = useState('')
   const [code, setCode] = useState('')
   const [e164, setE164] = useState('')        // normalised phone the OTP was sent to
@@ -20,17 +23,34 @@ export default function Login() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
+  const registering = mode === 'register'
+
+  // Flip between sign-in and register, clearing any in-flight step/messages.
+  function switchMode(next, msg = '') {
+    setMode(next)
+    setStep('phone'); setCode(''); setError(''); setNotice(msg)
+  }
+
   async function sendCode(e) {
     e.preventDefault()
     setError(''); setNotice('')
+    const trimmedName = name.trim()
+    if (registering && !trimmedName) { setError('Enter your name.'); return }
     const phoneE164 = toE164India(phone)
     if (!phoneE164) { setError('Enter a valid 10-digit mobile number.'); return }
     setBusy(true)
     try {
-      const { data, error: fnErr } = await supabase.functions.invoke(
-        'phone-otp', { body: { action: 'send', phone: phoneE164 } },
-      )
-      if (fnErr) throw new Error(await readFnError(fnErr))
+      const payload = registering
+        ? { action: 'register', phone: phoneE164, full_name: trimmedName }
+        : { action: 'send', phone: phoneE164 }
+      const { data, error: fnErr } = await supabase.functions.invoke('phone-otp', { body: payload })
+      if (fnErr) {
+        const { message, code: errCode } = await readFnError(fnErr)
+        // Guide the buyer to the right mode instead of a dead end.
+        if (errCode === 'exists') { switchMode('signin', 'You already have an account — sign in below.'); return }
+        if (errCode === 'not_found') { switchMode('register', 'No account yet — create one below.'); return }
+        throw new Error(message)
+      }
       if (!data?.ok) throw new Error(data?.error || 'Could not send the code. Please try again.')
       setE164(phoneE164)
       setStep('otp')
@@ -51,7 +71,7 @@ export default function Login() {
       const { data, error: fnErr } = await supabase.functions.invoke(
         'phone-otp', { body: { action: 'verify', phone: e164, code: code.trim() } },
       )
-      if (fnErr) throw new Error(await readFnError(fnErr))
+      if (fnErr) throw new Error((await readFnError(fnErr)).message)
       if (!data?.token_hash) throw new Error(data?.error || 'Login failed. Please try again.')
       // Redeem the one-time token for a real Supabase session (RLS-protected
       // data loads); AuthContext then loads the profile.
@@ -99,16 +119,24 @@ export default function Login() {
           </div>
 
           <h2 className="font-[var(--font-display)] text-2xl font-bold mb-1">
-            Welcome back
+            {registering ? 'Create your account' : 'Welcome back'}
           </h2>
           <p className="text-muted text-sm mb-6">
             {step === 'otp'
               ? 'Enter the code we sent to your phone.'
-              : 'Sign in with your mobile number.'}
+              : registering
+                ? 'Sign up with your name and mobile number to place orders.'
+                : 'Sign in with your mobile number.'}
           </p>
 
           {step === 'phone' ? (
             <form onSubmit={sendCode} className="space-y-4">
+              {registering && (
+                <Field label="Your name" value={name}
+                       onChange={(e) => setName(e.target.value)}
+                       type="text" autoComplete="name"
+                       placeholder="Full name" required />
+              )}
               <Field label="Mobile number" value={phone}
                      onChange={(e) => setPhone(e.target.value)}
                      type="tel" autoComplete="tel" inputMode="numeric"
@@ -118,11 +146,18 @@ export default function Login() {
               {notice && <Alert tone="peacock">{notice}</Alert>}
 
               <button type="submit" disabled={busy} className={btnClass}>
-                {busy ? 'Sending…' : 'Send code'}
+                {busy ? 'Sending…' : registering ? 'Create account' : 'Send code'}
               </button>
 
               <p className="text-center text-xs text-muted">
-                New here? Ask the shop to add your number.
+                {registering ? 'Already have an account? ' : 'New here? '}
+                <button
+                  type="button"
+                  onClick={() => switchMode(registering ? 'signin' : 'register')}
+                  className="font-semibold text-peacock hover:underline"
+                >
+                  {registering ? 'Sign in' : 'Create an account'}
+                </button>
               </p>
             </form>
           ) : (
@@ -157,14 +192,16 @@ export default function Login() {
   )
 }
 
-// The Edge Function returns { error } with a non-2xx status; supabase-js wraps
-// that in a FunctionsHttpError whose real message is on the Response body.
+// The Edge Function returns { error, code? } with a non-2xx status; supabase-js
+// wraps that in a FunctionsHttpError whose real body is on the Response. Return
+// both the human message and the machine `code` (e.g. 'exists'/'not_found') so
+// the caller can bounce the buyer to the right mode.
 async function readFnError(fnErr) {
   try {
     const body = await fnErr?.context?.json?.()
-    if (body?.error) return body.error
+    if (body?.error) return { message: body.error, code: body.code }
   } catch { /* fall through */ }
-  return fnErr?.message || 'Login failed. Please try again.'
+  return { message: fnErr?.message || 'Login failed. Please try again.', code: undefined }
 }
 
 const btnClass =
@@ -194,7 +231,8 @@ function Alert({ tone, children }) {
 function humanError(msg) {
   if (!msg) return 'Something went wrong. Please try again.'
   if (/token has expired|expired|invalid.*(otp|token)/i.test(msg)) return 'That code is wrong or expired. Request a new one.'
-  if (/no account|signups? not allowed|user not found/i.test(msg)) return 'No account for this number yet. Ask the shop to add you.'
+  if (/already.*(account|registered)/i.test(msg)) return 'This number already has an account. Please sign in.'
+  if (/no account|signups? not allowed|user not found/i.test(msg)) return 'No account for this number yet. Tap “Create an account” to sign up.'
   if (/disabled/i.test(msg)) return 'This account is disabled. Contact the shop.'
   if (/too-many-requests|rate limit|too many/i.test(msg)) return 'Too many attempts. Wait a minute and try again.'
   if (/could not send|sms|not configured/i.test(msg)) return 'Could not send the code right now. Please try again.'
