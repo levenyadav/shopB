@@ -101,6 +101,10 @@ function ShopInfo() {
       return
     }
 
+    // Don't send the dealer prefix to a database that hasn't got the column yet
+    // (035) — the whole save would fail, taking the other fields with it.
+    const dealerSeriesLive = shop && 'dealer_invoice_prefix' in shop
+
     const { error } = await supabase.from('shops').update({
       name: form.name.trim(),
       address: form.address.trim() || null,
@@ -115,7 +119,7 @@ function ShopInfo() {
       state_code: form.state_code.trim() || null,
       bank_details: form.bank_details.trim() || null,
       invoice_prefix: cust,
-      dealer_invoice_prefix: deal,
+      ...(dealerSeriesLive ? { dealer_invoice_prefix: deal } : {}),
     }).eq('id', shop.id)
     setSaving(false)
     if (error) setErr(error.message)
@@ -168,7 +172,10 @@ function ShopInfo() {
                      hint="Retail bills are numbered automatically, e.g. INV-0001." />
               <Field label="Dealer invoice prefix" value={form.dealer_invoice_prefix} onChange={set('dealer_invoice_prefix')}
                      placeholder="DLR"
-                     hint="Dealer bills run on their own series, e.g. DLR-0001. Must differ from the customer prefix." />
+                     disabled={shop && !('dealer_invoice_prefix' in shop)}
+                     hint={shop && !('dealer_invoice_prefix' in shop)
+                       ? 'Not available yet — run migration 035_dealer_invoice_series.sql in the Supabase SQL editor, then reload this page.'
+                       : 'Dealer bills run on their own series, e.g. DLR-0001. Must differ from the customer prefix.'} />
             </div>
             <p className="text-xs text-muted">
               Changing a prefix only affects new invoices — numbers already issued never change.

@@ -10,6 +10,16 @@ import { useAuth } from './AuthContext'
 // after inline creates (e.g. a new supplier from Purchase Entry).
 const ShopContext = createContext(null)
 
+// Columns every deployed database is known to have.
+const SHOP_COLUMNS =
+  'id, name, address, phone, currency_symbol, gstin, gst_rate, logo_url, icon_url, ' +
+  'brand_text, theme_color, legal_name, email, pan, state_name, state_code, ' +
+  'bank_details, invoice_prefix, banners, whatsapp, instagram, facebook, youtube, ' +
+  'map_url, about_us, privacy_policy, terms, contact_info'
+
+// Columns from the newest migration, which may not be applied yet (see loadShop).
+const SHOP_COLUMNS_PENDING = 'dealer_invoice_prefix' // 035
+
 export function ShopProvider({ children }) {
   const { session, profile } = useAuth()
   const [shop, setShop] = useState(null)
@@ -35,16 +45,23 @@ export function ShopProvider({ children }) {
   }, [])
 
   const loadShop = useCallback(async () => {
-    const { data } = await supabase
-      .from('shops')
-      .select('id, name, address, phone, currency_symbol, gstin, gst_rate, logo_url, icon_url, brand_text, theme_color, ' +
-        'legal_name, email, pan, state_name, state_code, bank_details, ' +
-        'invoice_prefix, dealer_invoice_prefix, ' +
-        'banners, whatsapp, instagram, facebook, youtube, map_url, ' +
-        'about_us, privacy_policy, terms, contact_info')
-      .order('created_at')
-      .limit(1)
-      .maybeSingle()
+    // The owner applies migrations by hand, so this select can run against a
+    // database that is one migration behind. PostgREST rejects the WHOLE query
+    // for one unknown column — which would blank the shop everywhere: name,
+    // logo, currency, invoice identity, storefront branding. So the newest
+    // columns are asked for separately and dropped if the database hasn't got
+    // them yet. Move a column up into SHOP_COLUMNS once its migration is live.
+    const query = (columns) => supabase
+      .from('shops').select(columns).order('created_at').limit(1).maybeSingle()
+
+    let { data, error } = await query(`${SHOP_COLUMNS}, ${SHOP_COLUMNS_PENDING}`)
+    if (error) {
+      console.warn(
+        `shops select failed (${error.message}) — retrying without columns from ` +
+        'unapplied migrations. Run the pending migration to enable those settings.',
+      )
+      ;({ data } = await query(SHOP_COLUMNS))
+    }
     setShop(data ?? null)
   }, [])
 
