@@ -79,13 +79,13 @@ comment on column public.invoices.series is
 update public.invoices set series = 'customer' where series is null;
 
 -- ---------------------------------------------------------------------------
--- 4. Allocate from the series that matches the buyer. Everything else is 016's
---    function verbatim — the counter-bill early return, SECURITY DEFINER, the
---    locking UPDATE ... RETURNING, the 4-digit zero padding.
+-- 4. Allocate from the series that matches the buyer. Everything 016 relied on
+--    is kept — the counter-bill early return, SECURITY DEFINER, the locking
+--    UPDATE ... RETURNING, the 4-digit zero padding.
 -- ---------------------------------------------------------------------------
 create or replace function public.create_invoice_for_sale()
-returns trigger language plpgsql security definer set search_path = public as $$
-declare v_n int; v_prefix text;
+returns trigger language plpgsql security definer set search_path = public as $fn$
+declare v_is_dealer boolean := (new.buyer_type = 'dealer'); v_no text;
 begin
   -- counter bill already invoiced by an earlier line of the same bill?
   if new.bill_id is not null
@@ -93,28 +93,30 @@ begin
     return new;
   end if;
 
-  if new.buyer_type = 'dealer' then
-    update public.shops
-       set dealer_invoice_counter = dealer_invoice_counter + 1
-     where id = new.shop_id
-     returning dealer_invoice_counter, coalesce(nullif(trim(dealer_invoice_prefix), ''), 'DLR')
-          into v_n, v_prefix;
-  else
-    update public.shops
-       set invoice_counter = invoice_counter + 1
-     where id = new.shop_id
-     returning invoice_counter, coalesce(nullif(trim(invoice_prefix), ''), 'INV')
-          into v_n, v_prefix;
-  end if;
+  -- ONE statement bumps whichever counter the buyer belongs to and hands back
+  -- the finished number: RETURNING reads the row as it now stands, so the two
+  -- series can never drift apart from their counters. Same row lock as 016, so
+  -- two concurrent approvals still cannot take the same number.
+  update public.shops
+     set invoice_counter        = invoice_counter        + (case when v_is_dealer then 0 else 1 end),
+         dealer_invoice_counter = dealer_invoice_counter + (case when v_is_dealer then 1 else 0 end)
+   where id = new.shop_id
+   returning case when v_is_dealer
+                  then coalesce(nullif(trim(dealer_invoice_prefix), ''), 'DLR')
+                       || '-' || lpad(dealer_invoice_counter::text, 4, '0')
+                  else coalesce(nullif(trim(invoice_prefix), ''), 'INV')
+                       || '-' || lpad(invoice_counter::text, 4, '0')
+             end
+        into v_no;
 
   insert into public.invoices (shop_id, invoice_no, sale_id, bill_id, series)
   values (new.shop_id,
-          v_prefix || '-' || lpad(v_n::text, 4, '0'),
+          v_no,
           case when new.bill_id is null then new.id else null end,
           new.bill_id,
-          case when new.buyer_type = 'dealer' then 'dealer' else 'customer' end);
+          case when v_is_dealer then 'dealer' else 'customer' end);
   return new;
-end $$;
+end $fn$;
 
 -- The trigger itself (trg_sale_create_invoice, 016) is unchanged — CREATE OR
 -- REPLACE swaps the body underneath it.
