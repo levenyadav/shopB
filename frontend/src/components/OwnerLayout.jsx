@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
   IconLayoutDashboard, IconShoppingCartPlus, IconBoxSeam, IconClipboardList,
   IconReceipt2, IconCoin, IconCash, IconUsers, IconChartBar, IconSettings,
@@ -160,7 +160,9 @@ function Sidebar({ shop, pending, open, onClose }) {
         }`}
       >
         <div className="flex items-center justify-between px-5 py-4">
-          <Brand shop={shop} maxWords={2} textClassName="text-[10px]" logoClassName="h-9" />
+          <Link to="/owner" onClick={onClose} aria-label="Dashboard">
+            <Brand shop={shop} maxWords={2} textClassName="text-[10px]" logoClassName="h-9" />
+          </Link>
           <button className="rounded-lg p-1 text-muted hover:bg-paper md:hidden" onClick={onClose} aria-label="Close menu">
             <IconX size={20} />
           </button>

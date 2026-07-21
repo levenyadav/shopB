@@ -148,7 +148,9 @@ function MenuDrawer({ open, onClose, shop, profile, role, signOut }) {
         }`}
       >
         <div className="flex items-center justify-between border-b border-line px-4 py-3">
-          <Brand shop={shop} maxWords={3} textClassName="text-[10px]" logoClassName="h-8" />
+          <Link to="/" onClick={onClose} aria-label="Shop home">
+            <Brand shop={shop} maxWords={3} textClassName="text-[10px]" logoClassName="h-8" />
+          </Link>
           <button
             onClick={onClose}
             aria-label="Close menu"
@@ -246,7 +248,9 @@ function Footer({ shop }) {
         <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-start sm:justify-between">
           {/* Shop identity */}
           <div className="text-center sm:text-left">
-            <Brand shop={shop} maxWords={3} textClassName="text-sm" logoClassName="h-9" />
+            <Link to="/" aria-label="Shop home" className="inline-block">
+              <Brand shop={shop} maxWords={3} textClassName="text-sm" logoClassName="h-9" />
+            </Link>
             <p className="mt-2 text-xs text-muted">
               {shop?.address || ''}
               {shop?.phone && <><br />{shop.phone}</>}
