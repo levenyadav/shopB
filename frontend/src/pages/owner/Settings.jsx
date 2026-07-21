@@ -82,12 +82,25 @@ function ShopInfo() {
       legal_name: shop.legal_name || '', email: shop.email || '', pan: shop.pan || '',
       state_name: shop.state_name || '', state_code: shop.state_code || '',
       bank_details: shop.bank_details || '', invoice_prefix: shop.invoice_prefix || 'INV',
+      dealer_invoice_prefix: shop.dealer_invoice_prefix || 'DLR',
     })
   }, [shop])
 
   async function save(e) {
     e.preventDefault()
     setSaving(true); setMsg(''); setErr('')
+
+    // The two series would collide on invoices.unique(shop_id, invoice_no) and
+    // an order approval would fail. The DB rejects it too (035), but say so here
+    // in plain words, with the fix (SPEC §3 — errors say how to put it right).
+    const cust = form.invoice_prefix.trim() || 'INV'
+    const deal = form.dealer_invoice_prefix.trim() || 'DLR'
+    if (cust.toUpperCase() === deal.toUpperCase()) {
+      setSaving(false)
+      setErr(`The dealer prefix cannot be the same as the customer prefix ("${cust}") — two bills could end up with the same number. Try DLR for dealers.`)
+      return
+    }
+
     const { error } = await supabase.from('shops').update({
       name: form.name.trim(),
       address: form.address.trim() || null,
@@ -101,7 +114,8 @@ function ShopInfo() {
       state_name: form.state_name.trim() || null,
       state_code: form.state_code.trim() || null,
       bank_details: form.bank_details.trim() || null,
-      invoice_prefix: form.invoice_prefix.trim() || 'INV',
+      invoice_prefix: cust,
+      dealer_invoice_prefix: deal,
     }).eq('id', shop.id)
     setSaving(false)
     if (error) setErr(error.message)
@@ -146,9 +160,19 @@ function ShopInfo() {
             </div>
             <Textarea label="Bank / UPI details" rows={2} value={form.bank_details} onChange={set('bank_details')}
                       placeholder="Bank name, A/C no, IFSC or UPI ID — printed in the invoice footer." />
-            <Field label="Invoice number prefix" value={form.invoice_prefix} onChange={set('invoice_prefix')}
-                   placeholder="INV"
-                   hint="Invoices are numbered automatically, e.g. INV-0001. Changing the prefix only affects new invoices." />
+            {/* Two independent series (035) — customers and dealers are separate
+                books, each numbered from its own gap-free counter. */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Customer invoice prefix" value={form.invoice_prefix} onChange={set('invoice_prefix')}
+                     placeholder="INV"
+                     hint="Retail bills are numbered automatically, e.g. INV-0001." />
+              <Field label="Dealer invoice prefix" value={form.dealer_invoice_prefix} onChange={set('dealer_invoice_prefix')}
+                     placeholder="DLR"
+                     hint="Dealer bills run on their own series, e.g. DLR-0001. Must differ from the customer prefix." />
+            </div>
+            <p className="text-xs text-muted">
+              Changing a prefix only affects new invoices — numbers already issued never change.
+            </p>
           </div>
 
           {msg && <Ok>{msg}</Ok>}

@@ -19,9 +19,12 @@ const PAYMENT_FILTERS = [
 
 // Column order of the CSV export (see exportCsv below).
 const CSV_COLUMNS = [
-  'Invoice No', 'Date', 'Item No', 'Item', 'Category', 'Buyer', 'Phone', 'Buyer Type', 'Source',
+  'Invoice No', 'Series', 'Date', 'Item No', 'Item', 'Category', 'Buyer', 'Phone', 'Buyer Type', 'Source',
   'Quantity', 'Rate', 'Amount', 'Purchase Rate', 'Profit', 'Payment',
 ]
+
+// Invoice numbering series (035) — customers and dealers run separate books.
+const SERIES_LABEL = { customer: 'Customer', dealer: 'Dealer' }
 
 // Sortable local timestamp for the spreadsheet — `dateTime` is for humans on
 // screen, this is what a spreadsheet can order and filter by.
@@ -73,19 +76,20 @@ export default function Sales() {
     // bill shares its number.
     const { data: invs } = await supabase
       .from('invoices')
-      .select('invoice_no, sale_id, bill_id')
+      .select('invoice_no, sale_id, bill_id, series')
     const bySale = new Map()
     const byBill = new Map()
     for (const inv of invs ?? []) {
-      if (inv.sale_id) bySale.set(inv.sale_id, inv.invoice_no)
-      if (inv.bill_id) byBill.set(inv.bill_id, inv.invoice_no)
+      if (inv.sale_id) bySale.set(inv.sale_id, inv)
+      if (inv.bill_id) byBill.set(inv.bill_id, inv)
     }
     setInvoiceNos({ bySale, byBill })
   }
   useEffect(() => { load() }, [])
 
-  const invoiceNoFor = (s) =>
-    invoiceNos.bySale.get(s.id) || (s.bill_id ? invoiceNos.byBill.get(s.bill_id) : '') || ''
+  const invoiceFor = (s) =>
+    invoiceNos.bySale.get(s.id) || (s.bill_id ? invoiceNos.byBill.get(s.bill_id) : null) || null
+  const invoiceNoFor = (s) => invoiceFor(s)?.invoice_no || ''
 
   const filtered = useMemo(() => {
     if (!sales) return []
@@ -127,6 +131,9 @@ export default function Sales() {
   function exportCsv() {
     const rows = filtered.map((s) => ({
       'Invoice No': invoiceNoFor(s),
+      // Which series the number was drawn from — not the same as Buyer Type. A
+      // dealer sale from before the split legitimately carries a customer number.
+      'Series': SERIES_LABEL[invoiceFor(s)?.series] || '',
       'Date': csvDateTime(s.created_at),
       'Item No': s.item_no || '',
       'Item': s.item?.name || s.item_name || '',
@@ -148,7 +155,10 @@ export default function Sales() {
       'Amount': totals.amount, 'Profit': totals.profit,
     })
     const span = from || to ? `${from || 'start'}_to_${to || toInputDate(new Date())}` : toInputDate(new Date())
-    downloadText(`sales-${span}.csv`, toCsv(CSV_COLUMNS, rows))
+    // Name the file after the buyer filter — a dealer export and a customer
+    // export must never be mistaken for each other once they are off the screen.
+    const book = buyerType ? `${buyerType}-` : ''
+    downloadText(`sales-${book}${span}.csv`, toCsv(CSV_COLUMNS, rows))
   }
 
   return (
