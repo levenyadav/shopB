@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
-  IconPhoto, IconArrowLeft, IconMinus, IconPlus, IconCircleCheck, IconShoppingCartPlus,
+  IconPhoto, IconArrowLeft, IconCircleCheck, IconShoppingCartPlus,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { useCart } from '../../context/CartContext'
 import { money } from '../../lib/format'
-import { rateForBuyer, round2, snapToMoq } from '../../lib/helpers'
+import { rateForBuyer, round2 } from '../../lib/helpers'
 import { Button, Textarea, Badge, Spinner } from '../../components/ui'
+import QtyStepper from '../../components/QtyStepper'
 
 // SPEC §6.3 — item detail + add to cart. Buyers see the price for their tier
 // (dealer → Dealer Rate, else Rate); purchase rate is never exposed. Items go
@@ -124,7 +125,6 @@ function OrderBox({ item, price, available, currency, mto }) {
   // Quantity always snaps to a whole multiple of MOQ (MOQ 50 → 50, 100, 150…),
   // capped at stock for normal items and uncapped for made-to-order.
   const cap = mto ? Infinity : available
-  const clamp = (v) => snapToMoq(v, moq, cap)
   const amount = round2(price * n)
 
   function addToCart() {
@@ -166,28 +166,11 @@ function OrderBox({ item, price, available, currency, mto }) {
       {/* Quantity stepper */}
       <div>
         <p className="mb-1.5 text-sm font-medium">How many?</p>
-        <div className="flex items-center gap-3">
-          <div className="inline-flex items-center rounded-lg border border-line">
-            <button type="button" onClick={() => setN((v) => clamp(v - moq))}
-                    className="grid h-10 w-10 place-items-center text-muted hover:text-ink disabled:opacity-40" aria-label={`Less ${moq}`}
-                    disabled={belowMoq}>
-              <IconMinus size={18} />
-            </button>
-            <input
-              type="number" min={moq} step={moq} max={mto ? undefined : available} value={n}
-              onChange={(e) => setN(clamp(Number(e.target.value) || moq))}
-              disabled={belowMoq}
-              className="fig w-14 border-x border-line py-2 text-center outline-none"
-            />
-            <button type="button" onClick={() => setN((v) => clamp(v + moq))}
-                    className="grid h-10 w-10 place-items-center text-muted hover:text-ink disabled:opacity-40" aria-label={`More ${moq}`}
-                    disabled={belowMoq}>
-              <IconPlus size={18} />
-            </button>
-          </div>
+        <div className="flex items-start gap-3">
+          <QtyStepper value={n} moq={moq} cap={cap} onChange={setN} disabled={belowMoq} />
           {mto
-            ? <span className="text-sm text-muted">Made to order</span>
-            : <span className="text-sm text-muted"><span className="fig">{available}</span> available</span>}
+            ? <span className="mt-2.5 text-sm text-muted">Make to order</span>
+            : <span className="mt-2.5 text-sm text-muted"><span className="fig">{available}</span> available</span>}
         </div>
         {moq > 1 && (
           <p className="mt-1.5 text-xs text-muted">

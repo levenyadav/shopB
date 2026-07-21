@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
-  IconPhoto, IconMinus, IconPlus, IconTrash, IconShoppingCart, IconLogin2, IconArrowLeft,
+  IconPhoto, IconTrash, IconShoppingCart, IconLogin2, IconArrowLeft,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
@@ -10,6 +10,7 @@ import { useCart } from '../../context/CartContext'
 import { money } from '../../lib/format'
 import { rateForBuyer, round2 } from '../../lib/helpers'
 import { Button, Spinner } from '../../components/ui'
+import QtyStepper from '../../components/QtyStepper'
 
 // SPEC §6.3 — the cart. A cart is client-side only (CartContext); nothing touches
 // the books here. On checkout we insert one 'pending' orders row per line, all
@@ -86,25 +87,15 @@ export default function Cart() {
                     <span className="fig">{money(priceOf(l)).replace('₹', currency)}</span> each
                     {l.moq > 1 && <> · in packs of <span className="fig">{l.moq}</span></>}
                   </p>
-                  <div className="mt-2 flex items-center gap-3">
-                    <div className="inline-flex items-center rounded-lg border border-line">
-                      <button type="button" onClick={() => setQty(l.id, l.qty - l.moq)}
-                              className="grid h-8 w-8 place-items-center text-muted hover:text-ink" aria-label={`Less ${l.moq}`}>
-                        <IconMinus size={16} />
-                      </button>
-                      <input
-                        type="number" min={l.moq} step={l.moq} max={l.made_to_order ? undefined : l.available} value={l.qty}
-                        onChange={(e) => setQty(l.id, Number(e.target.value))}
-                        className="fig w-12 border-x border-line py-1.5 text-center text-sm outline-none"
-                      />
-                      <button type="button" onClick={() => setQty(l.id, l.qty + l.moq)}
-                              className="grid h-8 w-8 place-items-center text-muted hover:text-ink" aria-label={`More ${l.moq}`}>
-                        <IconPlus size={16} />
-                      </button>
-                    </div>
+                  <div className="mt-2 flex items-start gap-3">
+                    <QtyStepper
+                      value={l.qty} moq={l.moq} size="sm"
+                      cap={l.made_to_order ? Infinity : l.available}
+                      onChange={(q) => setQty(l.id, q)}
+                    />
                     {l.made_to_order
-                      ? <span className="text-xs text-muted">Made to order</span>
-                      : <span className="text-xs text-muted"><span className="fig">{l.available}</span> in stock</span>}
+                      ? <span className="mt-2 text-xs text-muted">Make to order</span>
+                      : <span className="mt-2 text-xs text-muted"><span className="fig">{l.available}</span> in stock</span>}
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-2">
