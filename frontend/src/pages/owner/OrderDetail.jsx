@@ -46,7 +46,7 @@ export default function OrderDetail() {
       .from('orders')
       .select(
         'id, shop_id, quantity, rate_at_order, amount, status, notes, rejection_reason, buyer_type, ' +
-          'created_at, item_no, item_name, item:items(id, name, photo_url, location, purchase_rate, category_id, quantity, made_to_order, ' +
+          'created_at, item_no, item_name, item:items(id, name, photo_url, location, purchase_rate, category_id, quantity, made_to_order, company_no, ' +
           'supplier:suppliers(id, name, contact_person, phone)), ' +
           'buyer:profiles!orders_buyer_id_fkey(id, full_name, phone, balance_due)',
       )
@@ -506,21 +506,27 @@ function RejectButtonInline({ order, onDone }) {
 function defaultInquiry({ item, order, supplier, shopName }) {
   const who = supplier?.contact_person || supplier?.name
   const hello = who ? `Hello ${who},` : 'Hello,'
-  const from = shopName ? ` This is ${shopName}.` : ''
-  const need = item?.made_to_order
-    ? 'We have a customer order for a made-to-order product and want to confirm you can supply it:'
-    : 'We would like to inquire about this product:'
+  // The company/manufacturer's own design number (items.company_no) — that is
+  // what the supplier can look up. Our internal item_no (SHOP-0001) means
+  // nothing to them, so when no company_no is saved we quote the product name
+  // instead rather than sending a code they cannot match.
+  const code = item?.company_no?.trim()
+  const productLine = code
+    ? `Company Number (Product Code): ${code}`
+    : `Product: ${item?.name || order.item_name || '—'}`
   return [
-    `${hello}${from}`,
+    hello,
     '',
-    need,
+    'We have received a customer order and would like to place the following requirement.',
     '',
-    `• Product: ${item?.name || order.item_name || '—'}`,
-    order.item_no ? `• Item No: ${order.item_no}` : null,
-    `• Quantity needed: ${qty(order.quantity)} pcs`,
+    productLine,
+    `Order Quantity: ${qty(order.quantity)} pcs`,
     '',
-    'Please let us know availability, rate and how many days it will take. Thank you.',
-  ].filter((l) => l !== null).join('\n')
+    'Kindly confirm the availability and expected dispatch date.',
+    '',
+    'Regards,',
+    shopName || 'Khattri Card Pratham',
+  ].join('\n')
 }
 
 // Owner-only helper on the approve screen: draft an inquiry and fire it to the
