@@ -55,7 +55,7 @@ const BLANK_NEW = {
   mode: 'new',
   name: '', company_no: '', category_id: '', location: '',
   quantity: '', purchase_rate: '', dealer_rate: '', rate: '',
-  gst_rate: '',   // '' = use the shop's default GST rate (migration 034)
+  gst_rate: '', hsn_sac: '',   // '' gst_rate = use the shop's default (migration 034)
   low_stock_threshold: '10', moq: '1', barcode: '', notes: '',
   description: '', tags: [], images: [],
   made_to_order: false, is_active: true,
@@ -166,6 +166,7 @@ function BillEntry() {
               rate: round2(line.rate),
               // Blank = no product rate; the shop's default GST rate applies.
               gst_rate: line.gst_rate === '' ? null : round2(line.gst_rate),
+              hsn_sac: line.hsn_sac.trim() || null,
               low_stock_threshold: round2(line.low_stock_threshold || 10),
               moq: round2(line.moq || 1),
               barcode: line.barcode.trim() || null,
@@ -805,9 +806,10 @@ function NewProductFields({ line, set, setVal, errors, shopId, onUseExisting }) 
                value={line.rate} onChange={set('rate')} error={errors.rate} />
       </div>
 
-      {/* GST slab for THIS product (034). Settings holds one default rate, but
+      {/* Tax details for THIS product. Settings holds one default GST rate, but
           cards, boxes and gift items don't all sit in the same slab — set it here
-          and this product's invoices are taxed at its own rate. */}
+          and this product's invoices are taxed at its own rate. The HSN/SAC code
+          travels with the slab and prints on the tax invoice beside it. */}
       <div className="grid gap-4 sm:grid-cols-2">
         <Select label="GST rate" value={line.gst_rate} onChange={set('gst_rate')}
                 hint={`Leave on the shop default (${shopGstRate}%) unless this product is taxed differently`}>
@@ -816,6 +818,9 @@ function NewProductFields({ line, set, setVal, errors, shopId, onUseExisting }) 
             <option key={g} value={String(g)}>{g}% {g === 0 ? '(exempt / nil-rated)' : ''}</option>
           ))}
         </Select>
+        <Field label="HSN / SAC code" placeholder="e.g. 4817"
+               value={line.hsn_sac} onChange={set('hsn_sac')}
+               hint="Optional. Printed on the tax invoice and its HSN-wise tax summary." />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
