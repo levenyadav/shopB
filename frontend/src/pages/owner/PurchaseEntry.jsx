@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   IconCamera, IconPlus, IconBarcode, IconCircleCheck, IconX, IconFileSpreadsheet,
-  IconScan, IconTrash, IconPencil, IconSearch, IconPackage,
+  IconScan, IconTrash, IconPencil, IconSearch, IconPackage, IconCircleArrowRight,
   IconSparkles, IconChevronDown, IconChevronUp,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
@@ -55,7 +55,7 @@ const BLANK_NEW = {
   mode: 'new',
   name: '', company_no: '', category_id: '', location: '',
   quantity: '', purchase_rate: '', dealer_rate: '', rate: '',
-  low_stock_threshold: '10', moq: '1', barcode: '',
+  low_stock_threshold: '10', moq: '1', barcode: '', notes: '',
   description: '', tags: [], images: [],
   made_to_order: false, is_active: true,
   photoFile: null, photoPreview: '', scannedPhotoUrl: '',
@@ -494,13 +494,32 @@ function LineEditor({ initial, shopId, supplierId, onClose, onSave }) {
     onSave(line)
   }
 
+  // The owner started typing a new product, then found it already exists (by
+  // name or barcode). Flip this line to a restock of that item, keeping the
+  // quantity and notes they had already entered.
+  function useExistingItem(item) {
+    setLine((l) => ({
+      mode: 'existing',
+      item,
+      quantity: l.quantity,
+      purchase_rate: String(item.purchase_rate ?? l.purchase_rate ?? ''),
+      notes: l.notes || '',
+    }))
+    setErrors({})
+  }
+
   const cost = lineCost(line)
 
   return (
-    <Dialog title={isNew ? 'New product on this bill' : 'Add existing item'} onClose={onClose}>
+    <Dialog
+      title={isNew ? 'New product on this bill' : 'Add existing item'}
+      hint={isNew ? 'Item No is assigned automatically on save (SHOP-0001…).' : undefined}
+      onClose={onClose}
+    >
       <form onSubmit={submit} className="space-y-5">
         {isNew
-          ? <NewProductFields line={line} set={set} setVal={setVal} errors={errors} shopId={shopId} />
+          ? <NewProductFields line={line} set={set} setVal={setVal} errors={errors}
+                              shopId={shopId} onUseExisting={useExistingItem} />
           : <ExistingItemFields line={line} setVal={setVal} errors={errors}
                                 shopId={shopId} supplierId={supplierId} />}
 
@@ -525,6 +544,10 @@ function LineEditor({ initial, shopId, supplierId, onClose, onSave }) {
             Line total: <span className="fig font-bold text-dues">{money(cost)}</span>
           </p>
         )}
+
+        <Textarea label="Notes (optional)" rows={2} value={line.notes || ''}
+                  onChange={set('notes')}
+                  placeholder="Batch, damage, anything to remember about this product" />
 
         <div className="flex justify-end gap-3 pt-1">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
@@ -637,8 +660,10 @@ function ExistingItemFields({ line, setVal, errors, shopId, supplierId }) {
   )
 }
 
-// ---- New product mode: the full catalogue form, advanced fields folded away ----
-function NewProductFields({ line, set, setVal, errors, shopId }) {
+// ---- New product mode: the full catalogue form. Everything the old single-item
+// Purchase Entry asked for stays on screen; only the shopfront copy (description,
+// tags, gallery) folds away, since it can be filled in later from Inventory. ----
+function NewProductFields({ line, set, setVal, errors, shopId, onUseExisting }) {
   const { categories } = useShop()
   const [more, setMore] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
@@ -654,7 +679,7 @@ function NewProductFields({ line, set, setVal, errors, shopId }) {
     if (!name) { setNameInfo(null); return }
     const { data } = await supabase
       .from('items')
-      .select('id, item_no, name, quantity')
+      .select('id, item_no, name, quantity, purchase_rate, low_stock_threshold')
       .eq('shop_id', shopId)
       .ilike('name', name)
       .limit(1)
@@ -676,7 +701,7 @@ function NewProductFields({ line, set, setVal, errors, shopId }) {
     try {
       const { data: existing } = await supabase
         .from('items')
-        .select('id, item_no, name, quantity')
+        .select('id, item_no, name, quantity, purchase_rate, low_stock_threshold')
         .eq('shop_id', shopId)
         .eq('barcode', code)
         .maybeSingle()
@@ -735,17 +760,39 @@ function NewProductFields({ line, set, setVal, errors, shopId }) {
             <span className="fig">{nameInfo.item_no}</span> — {nameInfo.name} ·{' '}
             in stock <span className="fig font-semibold text-ink">{qty(nameInfo.quantity)}</span>
           </p>
-          <p className="mt-1 text-muted">
-            Close this and use <span className="font-medium text-ink">Add existing item</span> instead,
-            so this bill tops up that product rather than creating a duplicate.
-          </p>
+          <p className="mt-1 text-muted">Add new stock to it instead of creating a duplicate:</p>
+          <button
+            type="button"
+            onClick={() => onUseExisting(nameInfo)}
+            className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-peacock px-3 py-2 text-sm font-semibold text-white hover:bg-peacock-700"
+          >
+            <IconCircleArrowRight size={17} /> Use this item on the bill
+          </button>
         </div>
       )}
 
-      <Select label="Category" value={line.category_id} onChange={set('category_id')} error={errors.category_id}>
-        <option value="">Select category…</option>
-        {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-      </Select>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Select label="Category" value={line.category_id} onChange={set('category_id')} error={errors.category_id}>
+          <option value="">Select category…</option>
+          {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </Select>
+        <Field label="Location / Rack No" placeholder="e.g. R1-A (display only)"
+               value={line.location} onChange={set('location')} />
+      </div>
+
+      {/* Make to Order — listed on the shopfront but never stocked. */}
+      <Toggle
+        label="Make to Order (no stock limit)"
+        hint="Always shown on the shopfront. Buyers can order any quantity — nothing is stocked in on this bill."
+        on={line.made_to_order}
+        onChange={() => setVal('made_to_order', !line.made_to_order)}
+      />
+      <Toggle
+        label="Active on storefront"
+        hint="Show this product on your public shopfront. Turn off to keep it in your catalogue but hidden from buyers."
+        on={line.is_active}
+        onChange={() => setVal('is_active', !line.is_active)}
+      />
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Dealer Rate" prefix="₹" type="number" min="0" step="0.01" inputMode="decimal"
@@ -754,100 +801,89 @@ function NewProductFields({ line, set, setVal, errors, shopId }) {
                value={line.rate} onChange={set('rate')} error={errors.rate} />
       </div>
 
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Min order qty (MOQ)" type="number" min="1" inputMode="decimal"
+               value={line.moq} onChange={set('moq')} error={errors.moq}
+               hint="Least a customer can order" />
+        {!line.made_to_order && (
+          <Field label="Low stock threshold" type="number" min="0" inputMode="decimal"
+                 value={line.low_stock_threshold} onChange={set('low_stock_threshold')}
+                 hint="Flag as Low below this" />
+        )}
+      </div>
+
+      {/* Photo */}
+      <div className="flex flex-wrap items-start gap-4">
+        <div className="h-24 w-24 shrink-0 overflow-hidden rounded-lg border border-line bg-paper-2">
+          {preview
+            ? <img src={preview} alt="preview" className="h-full w-full object-cover" />
+            : <div className="grid h-full w-full place-items-center text-muted"><IconCamera size={24} /></div>}
+        </div>
+        <div className="space-y-2">
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-line bg-card px-4 py-2.5 text-sm font-semibold hover:bg-paper-2">
+            <IconCamera size={18} /> {preview ? 'Change photo' : 'Add photo'}
+            <input type="file" accept="image/*" capture="environment" className="hidden" onChange={onPhoto} />
+          </label>
+          {preview && (
+            <button type="button" onClick={clearPhoto}
+                    className="ml-2 inline-flex items-center gap-1 text-xs text-dues hover:underline">
+              <IconX size={14} /> Remove
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Barcode */}
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="min-w-[10rem] flex-1">
+          <Field label="Barcode / QR code" placeholder="Scan or type a code"
+                 value={line.barcode} onChange={set('barcode')} />
+        </div>
+        <Button onClick={() => setShowScanner(true)} disabled={scanBusy}>
+          {scanBusy ? <><Spinner /> Looking up…</> : <><IconScan size={18} /> Scan</>}
+        </Button>
+        <Button variant="ghost" onClick={generateBarcode}>
+          <IconBarcode size={18} /> Generate
+        </Button>
+      </div>
+
+      {scanInfo?.tone === 'found' && (
+        <div className="rounded-lg border border-peacock/30 bg-peacock/5 px-4 py-3 text-sm">
+          <p className="font-semibold text-ink">This product is already in your shop.</p>
+          <p className="mt-0.5 text-muted">
+            <span className="fig">{scanInfo.item.item_no}</span> — {scanInfo.item.name} ·{' '}
+            in stock <span className="fig font-semibold text-ink">{qty(scanInfo.item.quantity)}</span>
+          </p>
+          <p className="mt-1 text-muted">Add new stock to it instead of creating a duplicate:</p>
+          <button
+            type="button"
+            onClick={() => onUseExisting(scanInfo.item)}
+            className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-peacock px-3 py-2 text-sm font-semibold text-white hover:bg-peacock-700"
+          >
+            <IconCircleArrowRight size={17} /> Use this item on the bill
+          </button>
+        </div>
+      )}
+      {scanInfo?.tone === 'api' && (
+        <p className="rounded-lg border border-profit/30 bg-profit/5 px-4 py-3 text-sm">
+          Found online: <span className="font-semibold text-ink">{scanInfo.name}</span>. Name and photo
+          were filled in — check them, then set your rates.
+        </p>
+      )}
+      {scanInfo?.tone === 'none' && (
+        <p className="rounded-lg bg-paper-2 px-4 py-3 text-sm text-muted">
+          No matching product found. The code was saved — fill in the rest of the details.
+        </p>
+      )}
+
       <button type="button" onClick={() => setMore((m) => !m)}
               className="inline-flex items-center gap-1 text-sm font-medium text-peacock hover:underline">
         {more ? <IconChevronUp size={16} /> : <IconChevronDown size={16} />}
-        {more ? 'Fewer details' : 'More details — photo, barcode, rack, tags'}
+        {more ? 'Fewer details' : 'Shopfront details — description, tags, extra photos'}
       </button>
 
       {more && (
         <div className="space-y-4 rounded-lg border border-line bg-paper-2 p-4">
-          {/* Make to Order — listed on the shopfront but never stocked. */}
-          <Toggle
-            label="Make to Order (no stock limit)"
-            hint="Always shown on the shopfront. Buyers can order any quantity — nothing is stocked in on this bill."
-            on={line.made_to_order}
-            onChange={() => setVal('made_to_order', !line.made_to_order)}
-          />
-          <Toggle
-            label="Active on storefront"
-            hint="Show this product on your public shopfront."
-            on={line.is_active}
-            onChange={() => setVal('is_active', !line.is_active)}
-          />
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Location / Rack No" placeholder="e.g. R1-A"
-                   value={line.location} onChange={set('location')} />
-            <Field label="Min order qty (MOQ)" type="number" min="1" inputMode="decimal"
-                   value={line.moq} onChange={set('moq')} error={errors.moq}
-                   hint="Least a customer can order" />
-          </div>
-          {!line.made_to_order && (
-            <Field label="Low stock threshold" type="number" min="0" inputMode="decimal"
-                   value={line.low_stock_threshold} onChange={set('low_stock_threshold')}
-                   hint="Flag as Low below this" />
-          )}
-
-          {/* Photo */}
-          <div className="flex flex-wrap items-start gap-4">
-            <div className="h-24 w-24 shrink-0 overflow-hidden rounded-lg border border-line bg-card">
-              {preview
-                ? <img src={preview} alt="preview" className="h-full w-full object-cover" />
-                : <div className="grid h-full w-full place-items-center text-muted"><IconCamera size={24} /></div>}
-            </div>
-            <div className="space-y-2">
-              <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-line bg-card px-4 py-2.5 text-sm font-semibold hover:bg-paper-2">
-                <IconCamera size={18} /> {preview ? 'Change photo' : 'Add photo'}
-                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={onPhoto} />
-              </label>
-              {preview && (
-                <button type="button" onClick={clearPhoto}
-                        className="ml-2 inline-flex items-center gap-1 text-xs text-dues hover:underline">
-                  <IconX size={14} /> Remove
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Barcode */}
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="min-w-[10rem] flex-1">
-              <Field label="Barcode / QR code" placeholder="Scan or type a code"
-                     value={line.barcode} onChange={set('barcode')} />
-            </div>
-            <Button onClick={() => setShowScanner(true)} disabled={scanBusy}>
-              {scanBusy ? <><Spinner /> Looking up…</> : <><IconScan size={18} /> Scan</>}
-            </Button>
-            <Button variant="ghost" onClick={generateBarcode}>
-              <IconBarcode size={18} /> Generate
-            </Button>
-          </div>
-
-          {scanInfo?.tone === 'found' && (
-            <div className="rounded-lg border border-peacock/30 bg-peacock/5 px-4 py-3 text-sm">
-              <p className="font-semibold text-ink">This product is already in your shop.</p>
-              <p className="mt-0.5 text-muted">
-                <span className="fig">{scanInfo.item.item_no}</span> — {scanInfo.item.name} ·{' '}
-                in stock <span className="fig font-semibold text-ink">{qty(scanInfo.item.quantity)}</span>
-              </p>
-              <p className="mt-1 text-muted">
-                Close this and use <span className="font-medium text-ink">Add existing item</span> to top it up.
-              </p>
-            </div>
-          )}
-          {scanInfo?.tone === 'api' && (
-            <p className="rounded-lg border border-profit/30 bg-profit/5 px-4 py-3 text-sm">
-              Found online: <span className="font-semibold text-ink">{scanInfo.name}</span>. Name and photo
-              were filled in — check them, then set your rates.
-            </p>
-          )}
-          {scanInfo?.tone === 'none' && (
-            <p className="rounded-lg bg-card px-4 py-3 text-sm text-muted">
-              No matching product found. The code was saved — fill in the rest below.
-            </p>
-          )}
-
           <Textarea label="Description (optional)" rows={3} value={line.description}
                     onChange={set('description')}
                     placeholder="Shown on the shopfront item page — material, size, occasion…" />
@@ -855,7 +891,7 @@ function NewProductFields({ line, set, setVal, errors, shopId }) {
                      hint="Used for search & filtering, e.g. wedding, premium, handmade." />
           <ImagesInput label="More photos (optional)" value={line.images}
                        onChange={(images) => setVal('images', images)}
-                       hint="Extra images shown in a gallery on the item page." />
+                       hint="Extra images shown in a gallery on the item page. The photo above stays the cover." />
         </div>
       )}
 
@@ -866,7 +902,7 @@ function NewProductFields({ line, set, setVal, errors, shopId }) {
 
 function Toggle({ label, hint, on, onChange }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-lg bg-card px-4 py-3">
+    <div className="flex items-center justify-between gap-4 rounded-lg bg-paper-2 px-4 py-3">
       <div>
         <p className="text-sm font-medium">{label}</p>
         <p className="text-xs text-muted">{hint}</p>
@@ -879,15 +915,18 @@ function Toggle({ label, hint, on, onChange }) {
   )
 }
 
-function Dialog({ title, children, onClose }) {
+function Dialog({ title, hint, children, onClose }) {
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-ink/40 p-4" onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()}
            className="mx-auto my-4 w-full max-w-2xl rounded-lg border border-line bg-card p-5 sm:p-6">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="font-[var(--font-display)] text-xl font-bold">{title}</h3>
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <h3 className="font-[var(--font-display)] text-xl font-bold">{title}</h3>
+            {hint && <p className="mt-0.5 text-sm text-muted">{hint}</p>}
+          </div>
           <button type="button" onClick={onClose} aria-label="Close"
-                  className="rounded-lg p-1 text-muted hover:bg-paper-2">
+                  className="shrink-0 rounded-lg p-1 text-muted hover:bg-paper-2">
             <IconX size={20} />
           </button>
         </div>
