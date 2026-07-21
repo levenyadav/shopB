@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { IconSearch, IconInbox, IconCoin } from '@tabler/icons-react'
+import { IconSearch, IconInbox, IconCoin, IconFileSpreadsheet } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
-import { Badge, Spinner, PhotoThumb } from '../../components/ui'
+import { toCsv, downloadText } from '../../lib/csv'
+import { toInputDate } from '../../lib/dates'
+import { Badge, Spinner, PhotoThumb, Button } from '../../components/ui'
 
 // SPEC §6.5 / §10.4 — Sales list (owner only). Every approved order becomes a
 // sale row (created by the approval insert in OrderDetail; stock/ledger handled
@@ -14,6 +16,21 @@ import { Badge, Spinner, PhotoThumb } from '../../components/ui'
 const PAYMENT_FILTERS = [
   ['', 'All'], ['cash', 'Cash'], ['upi', 'UPI'], ['udhaar', 'Udhaar'],
 ]
+
+// Column order of the CSV export (see exportCsv below).
+const CSV_COLUMNS = [
+  'Date', 'Item No', 'Item', 'Category', 'Buyer', 'Phone', 'Buyer Type', 'Source',
+  'Quantity', 'Rate', 'Amount', 'Purchase Rate', 'Profit', 'Payment',
+]
+
+// Sortable local timestamp for the spreadsheet — `dateTime` is for humans on
+// screen, this is what a spreadsheet can order and filter by.
+function csvDateTime(ts) {
+  if (!ts) return ''
+  const d = new Date(ts)
+  const p = (x) => String(x).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
 
 // Buyer-facing payment label + tone for the row badge.
 export const PAYMENT_META = {
@@ -38,8 +55,8 @@ export default function Sales() {
     const { data, error } = await supabase
       .from('sales')
       .select(
-        'id, quantity, rate_charged, amount, profit, payment_type, buyer_type, category_id, created_at, ' +
-          'item_no, item_name, ' +
+        'id, quantity, rate_charged, amount, purchase_rate, profit, payment_type, buyer_type, ' +
+          'category_id, source, created_at, item_no, item_name, ' +
           'item:items(name, photo_url), ' +
           'buyer:profiles!sales_buyer_id_fkey(full_name, phone), ' +
           'category:categories(name)',
@@ -82,6 +99,37 @@ export default function Sales() {
     { amount: 0, profit: 0 },
   ), [filtered])
 
+  // Export exactly what the owner is looking at — the filtered rows, in the same
+  // order — so the spreadsheet matches the totals on screen. Money columns are
+  // plain numbers (no ₹, no thousands separator) so Excel/Sheets can sum them;
+  // the date is sortable rather than pretty. purchase_rate/profit are owner-only
+  // (Golden Rule #3/#4) and this page is owner-only, so they belong in the file.
+  function exportCsv() {
+    const rows = filtered.map((s) => ({
+      'Date': csvDateTime(s.created_at),
+      'Item No': s.item_no || '',
+      'Item': s.item?.name || s.item_name || '',
+      'Category': s.category?.name || '',
+      'Buyer': s.buyer?.full_name || '',
+      'Phone': s.buyer?.phone || '',
+      'Buyer Type': s.buyer_type || '',
+      'Source': s.source === 'counter' ? 'Counter' : 'Shopfront',
+      'Quantity': Number(s.quantity || 0),
+      'Rate': Number(s.rate_charged || 0),
+      'Amount': Number(s.amount || 0),
+      'Purchase Rate': Number(s.purchase_rate || 0),
+      'Profit': Number(s.profit || 0),
+      'Payment': PAYMENT_META[s.payment_type]?.label || s.payment_type || '',
+    }))
+    // Totals row, so the file stands on its own when it is mailed to the CA.
+    rows.push({
+      'Date': 'TOTAL', 'Item': `${filtered.length} sales`,
+      'Amount': totals.amount, 'Profit': totals.profit,
+    })
+    const span = from || to ? `${from || 'start'}_to_${to || toInputDate(new Date())}` : toInputDate(new Date())
+    downloadText(`sales-${span}.csv`, toCsv(CSV_COLUMNS, rows))
+  }
+
   return (
     <div className="space-y-5">
       {/* Totals for the current filter (SPEC §3.2 — every number has a label) */}
@@ -89,6 +137,18 @@ export default function Sales() {
         <Stat label="Sales shown" value={<span className="fig">{qty(filtered.length)}</span>} />
         <Stat label="Total amount" value={<span className="fig">{money(totals.amount).replace('₹', currency)}</span>} />
         <Stat label="Total profit" value={<span className="fig text-profit">{money(totals.profit).replace('₹', currency)}</span>} accent />
+      </div>
+
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-muted">
+          {filtered.length === 0
+            ? 'Nothing to export yet.'
+            : `Download the ${qty(filtered.length)} sale${filtered.length === 1 ? '' : 's'} shown below as a spreadsheet.`}
+        </p>
+        <Button variant="ghost" onClick={exportCsv} disabled={filtered.length === 0}
+                className="shrink-0">
+          <IconFileSpreadsheet size={18} /> Export CSV
+        </Button>
       </div>
 
       {/* Filters: search + buyer + category + date, payment as pills */}
