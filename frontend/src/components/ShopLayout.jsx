@@ -1,8 +1,9 @@
-import { Link, NavLink, Outlet } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
   IconReceipt2, IconUserCircle, IconLogin2, IconLogout, IconLayoutDashboard,
   IconClipboardCheck, IconBrandWhatsapp, IconBrandInstagram, IconBrandFacebook,
-  IconBrandYoutube, IconMapPin, IconShoppingCart,
+  IconBrandYoutube, IconMapPin, IconShoppingCart, IconMenu2, IconX, IconHome,
 } from '@tabler/icons-react'
 import { useAuth } from '../context/AuthContext'
 import { useShop } from '../context/ShopContext'
@@ -41,93 +42,197 @@ export default function ShopLayout() {
   const { profile, role, signOut } = useAuth()
   const { shop } = useShop()
   const { count } = useCart()
+  const { pathname } = useLocation()
+  const [menuOpen, setMenuOpen] = useState(false)
   // Owner/staff preview the shopfront but don't order — the cart is for buyers
   // and anonymous browsers (who can build a cart, then sign in to check out).
   const showCart = role !== 'owner' && role !== 'staff'
 
+  // A shopfront needs its full width for the product grid, so the menu is a
+  // drawer at every size rather than a permanent sidebar. Only the logo and the
+  // cart stay in the header — the two things a buyer reaches for mid-browse.
+  useEffect(() => { setMenuOpen(false) }, [pathname])
+
   return (
     <div className="min-h-screen bg-paper">
       <header className="sticky top-0 z-20 border-b border-line bg-card">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-2.5 sm:gap-3 sm:px-6 sm:py-3">
           <div className="flex min-w-0 items-center gap-1">
             <BackButton />
-            <Link to="/" className="shrink-0">
-              <Brand shop={shop} maxWords={3} textClassName="text-[10px] sm:text-xs" logoClassName="h-9 sm:h-10" />
+            <Link to="/" className="min-w-0 shrink">
+              <Brand shop={shop} maxWords={3} textClassName="text-[10px] sm:text-xs" logoClassName="h-8 sm:h-10" />
             </Link>
           </div>
 
-          <nav className="flex items-center gap-1 sm:gap-2">
-            <InstallButton className="mr-1" />
-
-            {role === 'owner' && (
-              <HeaderLink to="/owner" icon={IconLayoutDashboard} label="Owner console" />
-            )}
-
-            {role === 'staff' && (
-              <HeaderLink to="/staff" icon={IconClipboardCheck} label="Fulfilment" />
-            )}
-
-            {(role === 'customer' || role === 'dealer') && (
-              <>
-                <HeaderLink to="/orders" icon={IconReceipt2} label="My Orders" />
-                <Link
-                  to="/account"
-                  className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-ink/80 hover:bg-paper-2"
-                >
-                  <IconUserCircle size={19} stroke={1.7} />
-                  <span className="hidden sm:flex sm:flex-col sm:items-start sm:leading-tight">
-                    <span>{profile?.full_name?.split(' ')[0] || 'Account'}</span>
-                    {Number(profile?.balance_due) > 0 && (
-                      <span className="fig text-[11px] text-dues">
-                        Udhaar {money(profile.balance_due)}
-                      </span>
-                    )}
-                  </span>
-                </Link>
-              </>
-            )}
-
+          <nav className="flex shrink-0 items-center gap-1 sm:gap-2">
             {showCart && (
               <Link
                 to="/cart"
-                aria-label="Cart"
-                className="relative inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-ink/80 hover:bg-paper-2"
+                aria-label={`Cart${count > 0 ? `, ${count} item${count === 1 ? '' : 's'}` : ''}`}
+                className="relative inline-flex h-11 items-center gap-2 rounded-lg px-2.5 text-sm font-medium text-ink/80 hover:bg-paper-2 sm:px-3"
               >
-                <IconShoppingCart size={19} stroke={1.7} />
+                <IconShoppingCart size={22} stroke={1.7} />
                 <span className="hidden sm:inline">Cart</span>
                 {count > 0 && (
-                  <span className="fig absolute -right-0.5 -top-0.5 grid h-5 min-w-[1.25rem] place-items-center rounded-full bg-saffron px-1 text-[11px] font-bold text-white">
+                  <span className="fig absolute right-0 top-1 grid h-5 min-w-[1.25rem] place-items-center rounded-full bg-saffron px-1 text-[11px] font-bold text-white">
                     {count}
                   </span>
                 )}
               </Link>
             )}
 
-            {profile ? (
-              <button
-                onClick={signOut}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-card px-3 py-2 text-sm font-medium text-muted hover:text-ink"
-              >
-                <IconLogout size={18} /> <span className="hidden sm:inline">Sign out</span>
-              </button>
-            ) : (
-              <Link
-                to="/login"
-                className="inline-flex items-center gap-1.5 rounded-lg bg-peacock px-4 py-2 text-sm font-semibold text-white hover:bg-peacock-700"
-              >
-                <IconLogin2 size={18} /> Sign in / Register
-              </Link>
-            )}
+            <button
+              onClick={() => setMenuOpen(true)}
+              aria-label="Open menu"
+              className="inline-flex h-11 items-center gap-2 rounded-lg border border-line px-2.5 text-sm font-medium text-ink/80 hover:bg-paper-2 sm:px-3"
+            >
+              <IconMenu2 size={22} stroke={1.7} />
+              <span className="hidden sm:inline">Menu</span>
+            </button>
           </nav>
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
+      <MenuDrawer
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        shop={shop}
+        profile={profile}
+        role={role}
+        signOut={signOut}
+      />
+
+      <main className="mx-auto max-w-6xl px-4 py-5 sm:px-6 sm:py-8">
         <Outlet />
       </main>
 
       <Footer shop={shop} />
     </div>
+  )
+}
+
+// Slide-in menu. Holds everything that used to crowd the header: the buyer's
+// orders and account (with running udhaar), the owner/staff link back to their
+// console, and sign in / sign out.
+function MenuDrawer({ open, onClose, shop, profile, role, signOut }) {
+  // Don't let the page scroll behind an open drawer.
+  useEffect(() => {
+    if (!open) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prev }
+  }, [open])
+
+  // Escape closes it — the drawer covers the screen on a phone.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, onClose])
+
+  const isBuyer = role === 'customer' || role === 'dealer'
+
+  return (
+    <>
+      <div
+        className={`fixed inset-0 z-40 bg-ink/40 transition-opacity ${
+          open ? 'opacity-100' : 'pointer-events-none opacity-0'
+        }`}
+        onClick={onClose}
+      />
+      <aside
+        aria-hidden={!open}
+        className={`fixed inset-y-0 right-0 z-50 flex w-[85vw] max-w-xs transform flex-col border-l border-line bg-card transition-transform duration-200 ${
+          open ? 'translate-x-0' : 'translate-x-full'
+        }`}
+      >
+        <div className="flex items-center justify-between border-b border-line px-4 py-3">
+          <Brand shop={shop} maxWords={3} textClassName="text-[10px]" logoClassName="h-8" />
+          <button
+            onClick={onClose}
+            aria-label="Close menu"
+            className="grid h-10 w-10 place-items-center rounded-lg text-muted hover:bg-paper-2 hover:text-ink"
+          >
+            <IconX size={22} />
+          </button>
+        </div>
+
+        <nav className="flex-1 overflow-y-auto p-3">
+          <ul className="space-y-1">
+            <li><DrawerLink to="/" end icon={IconHome} label="Shop" /></li>
+
+            {role === 'owner' && (
+              <li><DrawerLink to="/owner" icon={IconLayoutDashboard} label="Owner console" /></li>
+            )}
+            {role === 'staff' && (
+              <li><DrawerLink to="/staff" icon={IconClipboardCheck} label="Fulfilment" /></li>
+            )}
+
+            {isBuyer && (
+              <>
+                <li><DrawerLink to="/orders" icon={IconReceipt2} label="My Orders" /></li>
+                <li>
+                  <DrawerLink
+                    to="/account"
+                    icon={IconUserCircle}
+                    label={profile?.full_name?.split(' ')[0] || 'Account'}
+                    note={
+                      Number(profile?.balance_due) > 0
+                        ? `Udhaar ${money(profile.balance_due)}`
+                        : null
+                    }
+                  />
+                </li>
+              </>
+            )}
+          </ul>
+        </nav>
+
+        <div className="space-y-2 border-t border-line p-3">
+          {/* Renders nothing on desktop or once installed — no empty gap. */}
+          <InstallButton className="h-11 w-full justify-center" />
+
+          {profile ? (
+            <button
+              onClick={signOut}
+              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-line bg-card text-sm font-medium text-muted hover:text-ink"
+            >
+              <IconLogout size={18} /> Sign out
+            </button>
+          ) : (
+            <Link
+              to="/login"
+              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-peacock text-sm font-semibold text-white hover:bg-peacock-700"
+            >
+              <IconLogin2 size={18} /> Sign in / Register
+            </Link>
+          )}
+        </div>
+      </aside>
+    </>
+  )
+}
+
+function DrawerLink({ to, end, icon: Icon, label, note }) {
+  return (
+    <NavLink
+      to={to}
+      end={end}
+      className={({ isActive }) =>
+        `flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
+          isActive
+            ? 'bg-peacock/10 font-semibold text-peacock'
+            : 'font-medium text-ink/80 hover:bg-paper-2 hover:text-ink'
+        }`
+      }
+    >
+      <Icon size={20} stroke={1.7} />
+      <span className="flex flex-1 flex-col items-start leading-tight">
+        <span>{label}</span>
+        {note && <span className="fig text-[11px] text-dues">{note}</span>}
+      </span>
+    </NavLink>
   )
 }
 
@@ -150,9 +255,11 @@ function Footer({ shop }) {
 
           {/* Page links */}
           {pages.length > 0 && (
-            <nav className="flex flex-wrap justify-center gap-x-5 gap-y-2 text-sm">
+            <nav className="flex flex-wrap justify-center gap-x-5 gap-y-1 text-sm">
               {pages.map((p) => (
-                <Link key={p.to} to={p.to} className="text-ink/70 hover:text-peacock">{p.label}</Link>
+                <Link key={p.to} to={p.to} className="inline-flex min-h-11 items-center text-ink/70 hover:text-peacock">
+                  {p.label}
+                </Link>
               ))}
             </nav>
           )}
@@ -168,7 +275,7 @@ function Footer({ shop }) {
                   rel="noopener noreferrer"
                   aria-label={s.label}
                   title={s.label}
-                  className="grid h-9 w-9 place-items-center rounded-full border border-line text-muted transition hover:border-peacock hover:text-peacock"
+                  className="grid h-11 w-11 place-items-center rounded-full border border-line text-muted transition hover:border-peacock hover:text-peacock"
                 >
                   <s.icon size={18} stroke={1.7} />
                 </a>
@@ -182,20 +289,5 @@ function Footer({ shop }) {
         </div>
       </div>
     </footer>
-  )
-}
-
-function HeaderLink({ to, icon: Icon, label }) {
-  return (
-    <NavLink
-      to={to}
-      className={({ isActive }) =>
-        `inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition ${
-          isActive ? 'bg-peacock/10 text-peacock' : 'text-ink/80 hover:bg-paper-2'
-        }`
-      }
-    >
-      <Icon size={19} stroke={1.7} /> <span className="hidden sm:inline">{label}</span>
-    </NavLink>
   )
 }

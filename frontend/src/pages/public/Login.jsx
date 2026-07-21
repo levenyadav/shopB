@@ -4,6 +4,8 @@ import { IconArrowLeft } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { toE164India } from '../../lib/helpers'
 import Credit from '../../components/Credit'
+import Brand from '../../components/Brand'
+import { useShop } from '../../context/ShopContext'
 
 // SPEC §4.3/§4.4 — buyers sign in with their MOBILE NUMBER + a one-time SMS code
 // (phone OTP). Email is an optional contact field, never the login handle.
@@ -15,6 +17,7 @@ import Credit from '../../components/Credit'
 // Both finish the same way: `verify` checks the code and returns a one-time
 // `token_hash` we redeem for a real Supabase session.
 export default function Login() {
+  const { shop } = useShop()
   const [mode, setMode] = useState('signin')  // 'signin' | 'register'
   const [step, setStep] = useState('phone')    // 'phone' → 'otp'
   const [name, setName] = useState('')         // register only
@@ -96,7 +99,7 @@ export default function Login() {
       {/* Left — the khata page */}
       <aside className="relative hidden md:flex flex-col justify-between p-12 khata-page">
         <div className="pl-12">
-          <span className="shop-stamp text-sm font-bold">Khattri Card Pratham</span>
+          <Brand shop={shop} maxWords={3} textClassName="text-sm" logoClassName="h-10" />
         </div>
         <div className="pl-12 max-w-md">
           <h1 className="font-[var(--font-display)] text-4xl leading-tight font-extrabold text-ink">
@@ -127,7 +130,7 @@ export default function Login() {
 
           {/* mobile brand */}
           <div className="md:hidden mb-8">
-            <span className="shop-stamp text-xs font-bold">Khattri Card Pratham</span>
+            <Brand shop={shop} maxWords={3} textClassName="text-xs" logoClassName="h-9" />
           </div>
 
           <h2 className="font-[var(--font-display)] text-2xl font-bold mb-1">
