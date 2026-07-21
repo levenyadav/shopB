@@ -19,7 +19,7 @@ const PAYMENT_FILTERS = [
 
 // Column order of the CSV export (see exportCsv below).
 const CSV_COLUMNS = [
-  'Date', 'Item No', 'Item', 'Category', 'Buyer', 'Phone', 'Buyer Type', 'Source',
+  'Invoice No', 'Date', 'Item No', 'Item', 'Category', 'Buyer', 'Phone', 'Buyer Type', 'Source',
   'Quantity', 'Rate', 'Amount', 'Purchase Rate', 'Profit', 'Payment',
 ]
 
@@ -49,6 +49,7 @@ export default function Sales() {
   const [categoryId, setCategoryId] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
+  const [invoiceNos, setInvoiceNos] = useState({ bySale: new Map(), byBill: new Map() })
 
   async function load() {
     setErr('')
@@ -56,7 +57,7 @@ export default function Sales() {
       .from('sales')
       .select(
         'id, quantity, rate_charged, amount, purchase_rate, profit, payment_type, buyer_type, ' +
-          'category_id, source, created_at, item_no, item_name, ' +
+          'category_id, source, bill_id, created_at, item_no, item_name, ' +
           'item:items(name, photo_url), ' +
           'buyer:profiles!sales_buyer_id_fkey(full_name, phone), ' +
           'category:categories(name)',
@@ -64,8 +65,27 @@ export default function Sales() {
       .order('created_at', { ascending: false })
     if (error) setErr(error.message)
     else setSales(data ?? [])
+
+    // Invoice numbers live on the separate `invoices` row (016), linked by
+    // sale_id for a shopfront sale and by bill_id for a counter bill — and
+    // bill_id carries no FK, so this can't be a PostgREST embed. One extra read,
+    // mapped by hand. A counter bill is invoiced once, so every line of that
+    // bill shares its number.
+    const { data: invs } = await supabase
+      .from('invoices')
+      .select('invoice_no, sale_id, bill_id')
+    const bySale = new Map()
+    const byBill = new Map()
+    for (const inv of invs ?? []) {
+      if (inv.sale_id) bySale.set(inv.sale_id, inv.invoice_no)
+      if (inv.bill_id) byBill.set(inv.bill_id, inv.invoice_no)
+    }
+    setInvoiceNos({ bySale, byBill })
   }
   useEffect(() => { load() }, [])
+
+  const invoiceNoFor = (s) =>
+    invoiceNos.bySale.get(s.id) || (s.bill_id ? invoiceNos.byBill.get(s.bill_id) : '') || ''
 
   const filtered = useMemo(() => {
     if (!sales) return []
@@ -83,12 +103,12 @@ export default function Sales() {
         if (toTs && t > toTs) return false
       }
       if (needle) {
-        const hay = `${s.item?.name || s.item_name || ''} ${s.buyer?.full_name || ''} ${s.buyer?.phone || ''}`.toLowerCase()
+        const hay = `${s.item?.name || s.item_name || ''} ${s.buyer?.full_name || ''} ${s.buyer?.phone || ''} ${invoiceNoFor(s)}`.toLowerCase()
         if (!hay.includes(needle)) return false
       }
       return true
     })
-  }, [sales, q, buyerType, payment, categoryId, from, to])
+  }, [sales, q, buyerType, payment, categoryId, from, to, invoiceNos])
 
   const totals = useMemo(() => filtered.reduce(
     (a, s) => {
@@ -106,6 +126,7 @@ export default function Sales() {
   // (Golden Rule #3/#4) and this page is owner-only, so they belong in the file.
   function exportCsv() {
     const rows = filtered.map((s) => ({
+      'Invoice No': invoiceNoFor(s),
       'Date': csvDateTime(s.created_at),
       'Item No': s.item_no || '',
       'Item': s.item?.name || s.item_name || '',
@@ -123,7 +144,7 @@ export default function Sales() {
     }))
     // Totals row, so the file stands on its own when it is mailed to the CA.
     rows.push({
-      'Date': 'TOTAL', 'Item': `${filtered.length} sales`,
+      'Invoice No': 'TOTAL', 'Item': `${filtered.length} sales`,
       'Amount': totals.amount, 'Profit': totals.profit,
     })
     const span = from || to ? `${from || 'start'}_to_${to || toInputDate(new Date())}` : toInputDate(new Date())
@@ -158,7 +179,7 @@ export default function Sales() {
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search buyer or item…"
+            placeholder="Search buyer, item or invoice no…"
             className="w-full rounded-lg border border-line bg-card py-2.5 pl-9 pr-3 text-ink outline-none focus:border-peacock focus:ring-1 focus:ring-peacock"
           />
         </div>
@@ -210,6 +231,7 @@ export default function Sales() {
         <ul className="space-y-2.5">
           {filtered.map((s) => {
             const pay = PAYMENT_META[s.payment_type] || { label: s.payment_type, tone: 'muted' }
+            const invNo = invoiceNoFor(s)
             return (
               <li key={s.id}>
                 <Link
@@ -220,6 +242,7 @@ export default function Sales() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium text-ink">{s.item?.name || s.item_name || 'Item'}</p>
                     <p className="truncate text-xs text-muted">
+                      {invNo && <span className="fig mr-2 text-ink/70">{invNo}</span>}
                       {s.buyer?.full_name || 'Buyer'}
                       <Badge tone={s.buyer_type === 'dealer' ? 'peacock' : 'muted'} className="ml-1.5">
                         {s.buyer_type}
