@@ -148,7 +148,10 @@ export default function MyOrderDetail() {
                 state_name: inv.bill_to_state_name, state_code: inv.bill_to_state_code, type: inv.buyer_type,
               },
               invoice: { invoice_no: inv.invoice_no, date: inv.created_at, notes: inv.invoice_notes },
-              lines: [{ name: inv.item_name, item_no: inv.item_no, hsn: inv.hsn_sac, qty: inv.quantity, rate: inv.rate_charged }],
+              lines: [{
+                name: inv.item_name, item_no: inv.item_no, hsn: inv.hsn_sac,
+                gstRate: inv.item_gst_rate, qty: inv.quantity, rate: inv.rate_charged,
+              }],
               bill: bills[l.id],
               gstRate: shop?.gst_rate,
             })

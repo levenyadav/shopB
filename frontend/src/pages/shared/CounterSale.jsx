@@ -66,6 +66,7 @@ export default function CounterSale() {
       return [...ls, {
         id: it.id, item_no: it.item_no, name: it.name, category_id: it.category_id,
         photo_url: it.photo_url, stock: Number(it.quantity) || 0, hsn_sac: it.hsn_sac ?? null,
+        gst_rate: it.gst_rate ?? null,   // null = the shop's default slab (034)
         rate: Number(it.rate), dealer_rate: Number(it.dealer_rate),
         purchase_rate: Number(it.purchase_rate ?? 0),
         quantity: 1, charge: rateForBuyer(it, buyerType),
@@ -110,7 +111,8 @@ export default function CounterSale() {
       tendered: payment === 'cash' && tendered !== '' ? Number(tendered) : null,
       total,
       lines: cart.map((l) => ({
-        item_name: l.name, item_no: l.item_no, hsn_sac: l.hsn_sac ?? null, quantity: l.quantity,
+        item_name: l.name, item_no: l.item_no, hsn_sac: l.hsn_sac ?? null,
+        gst_rate: l.gst_rate ?? null, quantity: l.quantity,
         rate: l.charge, amount: round2(l.charge * l.quantity),
       })),
     })
@@ -250,7 +252,7 @@ function ItemPicker({ shopId, isOwner, onAdd, currency }) {
     const t = setTimeout(async () => {
       let query = supabase
         .from('items')
-        .select('id, item_no, name, category_id, photo_url, quantity, rate, dealer_rate, hsn_sac' + (isOwner ? ', purchase_rate' : ''))
+        .select('id, item_no, name, category_id, photo_url, quantity, rate, dealer_rate, hsn_sac, gst_rate' + (isOwner ? ', purchase_rate' : ''))
         .eq('shop_id', shopId).eq('is_active', true).gt('quantity', 0)
         .order('name').limit(24)
       const safe = orSafe(term)
@@ -265,7 +267,7 @@ function ItemPicker({ shopId, isOwner, onAdd, currency }) {
     setScan(false)
     const { data } = await supabase
       .from('items')
-      .select('id, item_no, name, category_id, photo_url, quantity, rate, dealer_rate' + (isOwner ? ', purchase_rate' : ''))
+      .select('id, item_no, name, category_id, photo_url, quantity, rate, dealer_rate, hsn_sac, gst_rate' + (isOwner ? ', purchase_rate' : ''))
       .eq('shop_id', shopId).eq('barcode', code).eq('is_active', true).maybeSingle()
     if (data && Number(data.quantity) > 0) { onAdd(data); setFlash(`Added ${data.name}`); setTimeout(() => setFlash(''), 1500) }
     else setFlash(data ? `${data.name} is out of stock` : `No item for code ${code}`)
@@ -466,7 +468,8 @@ function ReceiptScreen({ bill, shop, currency, onNew, home, navigate }) {
       },
       invoice: { invoice_no: ref, date: bill.created_at },
       lines: bill.lines.map((l) => ({
-        name: l.item_name, item_no: l.item_no, hsn: l.hsn_sac, qty: l.quantity, rate: l.rate,
+        name: l.item_name, item_no: l.item_no, hsn: l.hsn_sac,
+        gstRate: l.gst_rate, qty: l.quantity, rate: l.rate,
       })),
       gstRate: shop?.gst_rate,
     })

@@ -8,7 +8,7 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty } from '../../lib/format'
-import { round2, stockValue, isDuplicateCompanyNo } from '../../lib/helpers'
+import { round2, stockValue, isDuplicateCompanyNo, GST_SLABS } from '../../lib/helpers'
 import { printBarcodeLabels, barcodeValue, DEFAULT_LABEL_OPTS } from '../../lib/barcodeLabel'
 import { Button, Field, Select, Textarea, StockBadge, Badge, Spinner, TagsInput, ImagesInput } from '../../components/ui'
 
@@ -38,7 +38,7 @@ export default function Inventory() {
       .from('items')
       .select(
         'id, item_no, name, company_no, location, quantity, purchase_rate, dealer_rate, rate, ' +
-          'low_stock_threshold, moq, barcode, hsn_sac, photo_url, is_active, discontinued, discontinued_at, made_to_order, supplier_id, category_id, ' +
+          'low_stock_threshold, moq, barcode, hsn_sac, gst_rate, photo_url, is_active, discontinued, discontinued_at, made_to_order, supplier_id, category_id, ' +
           'description, tags, images, ' +
           'supplier:suppliers(name), category:categories(name)',
       )
@@ -655,7 +655,8 @@ function Lightbox({ url, onClose }) {
 }
 
 function EditModal({ item, categories, suppliers, onClose, onSaved }) {
-  const { shopId } = useShop()
+  const { shopId, shop } = useShop()
+  const shopGstRate = Number(shop?.gst_rate || 0)
   const [f, setF] = useState({
     name: item.name,
     company_no: item.company_no || '',
@@ -670,6 +671,8 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
     moq: String(item.moq ?? 1),
     barcode: item.barcode || '',
     hsn_sac: item.hsn_sac || '',
+    // '' = no product rate; the shop's default GST rate applies (034).
+    gst_rate: item.gst_rate == null ? '' : String(round2(item.gst_rate)),
     description: item.description || '',
     tags: item.tags || [],
     images: item.images || [],
@@ -739,6 +742,7 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
           moq: round2(f.moq || 1),
           barcode: f.barcode.trim() || null,
           hsn_sac: f.hsn_sac.trim() || null,
+          gst_rate: f.gst_rate === '' ? null : round2(f.gst_rate),
           photo_url,
           description: f.description.trim() || null,
           tags: f.tags,
@@ -851,6 +855,17 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
           <Field label="Barcode / QR" value={f.barcode} onChange={set('barcode')} />
           <Field label="HSN / SAC code" value={f.hsn_sac} onChange={set('hsn_sac')}
                  hint="Optional. Printed on the tax invoice." />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {/* Per-product GST slab (034). Settings holds one default rate; this
+              overrides it for products in a different slab. */}
+          <Select label="GST rate" value={f.gst_rate} onChange={set('gst_rate')}
+                  hint={`Used on this product's invoices instead of the shop default (${shopGstRate}%)`}>
+            <option value="">Shop default — {shopGstRate}%</option>
+            {GST_SLABS.map((g) => (
+              <option key={g} value={String(g)}>{g}% {g === 0 ? '(exempt / nil-rated)' : ''}</option>
+            ))}
+          </Select>
         </div>
 
         <Textarea

@@ -74,7 +74,7 @@ export function Field({ label, hint, error, prefix, suffix, className = '', ...p
   )
 }
 
-export function Select({ label, error, children, className = '', ...props }) {
+export function Select({ label, hint, error, children, className = '', ...props }) {
   return (
     <label className="block">
       {label && (
@@ -87,7 +87,11 @@ export function Select({ label, error, children, className = '', ...props }) {
       >
         {children}
       </select>
-      {error && <span className="mt-1 block text-xs text-dues">{error}</span>}
+      {error ? (
+        <span className="mt-1 block text-xs text-dues">{error}</span>
+      ) : hint ? (
+        <span className="mt-1 block text-xs text-muted">{hint}</span>
+      ) : null}
     </label>
   )
 }

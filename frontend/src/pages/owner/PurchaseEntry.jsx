@@ -9,7 +9,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { money, qty } from '../../lib/format'
-import { round2, isDuplicateCompanyNo } from '../../lib/helpers'
+import { round2, isDuplicateCompanyNo, GST_SLABS } from '../../lib/helpers'
 import { Button, Field, Select, Textarea, Spinner, StockBadge, TagsInput, ImagesInput, Badge } from '../../components/ui'
 import BarcodeScanner from '../../components/BarcodeScanner'
 
@@ -55,6 +55,7 @@ const BLANK_NEW = {
   mode: 'new',
   name: '', company_no: '', category_id: '', location: '',
   quantity: '', purchase_rate: '', dealer_rate: '', rate: '',
+  gst_rate: '',   // '' = use the shop's default GST rate (migration 034)
   low_stock_threshold: '10', moq: '1', barcode: '', notes: '',
   description: '', tags: [], images: [],
   made_to_order: false, is_active: true,
@@ -163,6 +164,8 @@ function BillEntry() {
               purchase_rate: round2(line.purchase_rate),
               dealer_rate: round2(line.dealer_rate),
               rate: round2(line.rate),
+              // Blank = no product rate; the shop's default GST rate applies.
+              gst_rate: line.gst_rate === '' ? null : round2(line.gst_rate),
               low_stock_threshold: round2(line.low_stock_threshold || 10),
               moq: round2(line.moq || 1),
               barcode: line.barcode.trim() || null,
@@ -664,7 +667,8 @@ function ExistingItemFields({ line, setVal, errors, shopId, supplierId }) {
 // Purchase Entry asked for stays on screen; only the shopfront copy (description,
 // tags, gallery) folds away, since it can be filled in later from Inventory. ----
 function NewProductFields({ line, set, setVal, errors, shopId, onUseExisting }) {
-  const { categories } = useShop()
+  const { categories, shop } = useShop()
+  const shopGstRate = Number(shop?.gst_rate || 0)
   const [more, setMore] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
   const [scanBusy, setScanBusy] = useState(false)
@@ -799,6 +803,19 @@ function NewProductFields({ line, set, setVal, errors, shopId, onUseExisting }) 
                value={line.dealer_rate} onChange={set('dealer_rate')} error={errors.dealer_rate} />
         <Field label="Rate (retail)" prefix="₹" type="number" min="0" step="0.01" inputMode="decimal"
                value={line.rate} onChange={set('rate')} error={errors.rate} />
+      </div>
+
+      {/* GST slab for THIS product (034). Settings holds one default rate, but
+          cards, boxes and gift items don't all sit in the same slab — set it here
+          and this product's invoices are taxed at its own rate. */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Select label="GST rate" value={line.gst_rate} onChange={set('gst_rate')}
+                hint={`Leave on the shop default (${shopGstRate}%) unless this product is taxed differently`}>
+          <option value="">Shop default — {shopGstRate}%</option>
+          {GST_SLABS.map((g) => (
+            <option key={g} value={String(g)}>{g}% {g === 0 ? '(exempt / nil-rated)' : ''}</option>
+          ))}
+        </Select>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">

@@ -17,7 +17,7 @@
 // out into CGST + SGST (intra-state, split in half). The grand total therefore
 // always equals the locked sale amount — editing the invoice never changes it.
 
-import { round2, gstBreakup } from './helpers'
+import { round2, gstBreakupByRate, itemGstRate } from './helpers'
 
 // ---------------------------------------------------------------------------
 // Number → Indian-system words, for "Amount Chargeable (in words)".
@@ -67,17 +67,19 @@ export function amountInWords(amount, currencyWord = 'INR') {
 
 // ---------------------------------------------------------------------------
 // Normalise raw data into a render-ready model. `lines[].rate` is the inclusive
-// per-unit price (rate_charged); `gstRate` is the shop's single rate (0 = none).
+// per-unit price (rate_charged); `lines[].gstRate` is that product's own GST slab
+// (migration 034, null = use the shop default) and `gstRate` is the shop default.
 // ---------------------------------------------------------------------------
 export function buildInvoiceModel({ shop, buyer, consignee, invoice, lines, bill, gstRate }) {
-  const rate = Number(gstRate || 0)
-  const hasGst = rate > 0 && !!shop?.gstin
-  // Per-line: inclusive line total, then the taxable portion backed out of it.
+  const registered = !!shop?.gstin
+  // Per-line: inclusive line total, then the taxable portion backed out of it at
+  // THAT product's rate — a bill can mix 5% cards with 18% boxes.
   const rows = lines.map((ln, i) => {
+    const lineRate = registered ? itemGstRate(ln.gstRate, gstRate) : 0
     const inclusive = round2(Number(ln.qty) * Number(ln.rate))
-    const taxable = hasGst ? round2(inclusive / (1 + rate / 100)) : inclusive
+    const taxable = lineRate > 0 ? round2(inclusive / (1 + lineRate / 100)) : inclusive
     // "Disc. %" on the reference bill is the GST-extraction fraction (MRP→taxable).
-    const discPct = hasGst ? round2((1 - 1 / (1 + rate / 100)) * 100) : 0
+    const discPct = lineRate > 0 ? round2((1 - 1 / (1 + lineRate / 100)) * 100) : 0
     return {
       sl: i + 1,
       name: ln.name || '—',
@@ -85,16 +87,23 @@ export function buildInvoiceModel({ shop, buyer, consignee, invoice, lines, bill
       hsn: ln.hsn || '',
       qty: Number(ln.qty),
       rate: Number(ln.rate),
+      gstRate: lineRate,
       discPct,
       taxable,
       amount: inclusive,
     }
   })
+  const hasGst = rows.some((r) => r.gstRate > 0)
+  // More than one slab on this bill → print each line's rate beside its name, so
+  // the buyer can see why two lines were taxed differently.
+  const multiRate = new Set(rows.map((r) => r.gstRate)).size > 1
 
   // Product subtotal (gross rate × qty). GST is inclusive and is backed out of
   // THIS subtotal only — bill adjustments below are pass-through, no tax on top.
   const itemsTotal = round2(rows.reduce((s, r) => s + r.amount, 0))
-  const gst = hasGst ? gstBreakup(itemsTotal, rate) : null
+  const gst = hasGst
+    ? gstBreakupByRate(rows.map((r) => ({ amount: r.amount, rate: r.gstRate })))
+    : null
 
   // Bill adjustments (023): the discount is a real margin loss shown as its own
   // negative line; shipping / packing / other are pass-through additions. Each is
@@ -114,20 +123,21 @@ export function buildInvoiceModel({ shop, buyer, consignee, invoice, lines, bill
   const grandTotal = round2(itemsTotal + adjTotal)
 
   // HSN-wise tax summary — only rows that carry an HSN/SAC code (optional).
+  // Grouped by HSN *and* rate: the same code can only ever carry one slab, but
+  // grouping on both keeps the summary honest if two products disagree.
   let hsnSummary = null
   if (hasGst && rows.some((r) => r.hsn)) {
     const byHsn = new Map()
     for (const r of rows) {
-      const key = r.hsn || '—'
-      const acc = byHsn.get(key) || { hsn: key, taxable: 0 }
+      const key = `${r.hsn || '—'}|${r.gstRate}`
+      const acc = byHsn.get(key) || { hsn: r.hsn || '—', rate: r.gstRate, taxable: 0 }
       acc.taxable = round2(acc.taxable + r.taxable)
       byHsn.set(key, acc)
     }
-    const half = rate / 2
     hsnSummary = [...byHsn.values()].map((h) => {
-      const tax = round2(h.taxable * rate / 100)
+      const tax = round2(h.taxable * h.rate / 100)
       const cgst = round2(tax / 2)
-      return { ...h, halfRate: half, cgst, sgst: round2(tax - cgst), total: tax }
+      return { ...h, halfRate: h.rate / 2, cgst, sgst: round2(tax - cgst), total: tax }
     })
   }
 
@@ -151,6 +161,7 @@ export function buildInvoiceModel({ shop, buyer, consignee, invoice, lines, bill
     consignee: consignee || buyer, // Ship-To defaults to Bill-To
     rows,
     anyHsn,
+    multiRate,
     gst,
     hsnSummary,
     adjustments,
@@ -217,7 +228,9 @@ function itemRows(m) {
   const body = m.rows.map((r) => `
     <tr>
       <td class="c">${r.sl}</td>
-      <td class="desc"><b>${esc(r.name)}</b>${r.item_no ? `<span class="muted"> · ${esc(r.item_no)}</span>` : ''}</td>
+      <td class="desc"><b>${esc(r.name)}</b>${r.item_no ? `<span class="muted"> · ${esc(r.item_no)}</span>` : ''}${
+        m.multiRate ? `<span class="muted"> · GST ${r.gstRate}%</span>` : ''
+      }</td>
       ${m.anyHsn ? `<td class="c">${esc(r.hsn)}</td>` : ''}
       <td class="r nowrap">${r.qty} pcs</td>
       <td class="r">${fmt(r.rate, c)}</td>
@@ -226,18 +239,21 @@ function itemRows(m) {
       <td class="r">${fmt(m.gst ? r.taxable : r.amount, c)}</td>
     </tr>`).join('')
 
-  // Tax lines + grand total, echoing the reference's in-table block.
-  const taxBlock = m.gst ? `
+  // Tax lines + grand total, echoing the reference's in-table block. One
+  // CGST/SGST pair per GST slab on the bill (a 12% line and an 18% line each get
+  // their own, Tally-style).
+  const pad = `${m.anyHsn ? '<td></td>' : ''}<td></td><td></td><td></td>${m.gst ? '<td></td>' : ''}`
+  const taxBlock = m.gst
+    ? m.gst.groups.map((g) => `
     <tr class="tax">
-      <td></td><td class="desc r">OUTPUT CGST @ ${m.gst.rate / 2}%</td>
-      ${m.anyHsn ? '<td></td>' : ''}<td></td><td></td><td></td>${m.gst ? '<td></td>' : ''}
-      <td class="r">${fmt(m.gst.cgst, c)}</td>
+      <td></td><td class="desc r">OUTPUT CGST @ ${g.rate / 2}%</td>
+      ${pad}<td class="r">${fmt(g.cgst, c)}</td>
     </tr>
     <tr class="tax">
-      <td></td><td class="desc r">OUTPUT SGST @ ${m.gst.rate / 2}%</td>
-      ${m.anyHsn ? '<td></td>' : ''}<td></td><td></td><td></td>${m.gst ? '<td></td>' : ''}
-      <td class="r">${fmt(m.gst.sgst, c)}</td>
-    </tr>` : ''
+      <td></td><td class="desc r">OUTPUT SGST @ ${g.rate / 2}%</td>
+      ${pad}<td class="r">${fmt(g.sgst, c)}</td>
+    </tr>`).join('')
+    : ''
 
   // Bill-level adjustments (discount / shipping / packing / other), each on its
   // own line. A discount is negative and printed in parentheses, Tally-style.
@@ -281,6 +297,9 @@ function itemRows(m) {
 function hsnSummaryTable(m) {
   if (!m.hsnSummary) return ''
   const c = m.currency
+  // Foot the summary from its own rows — it can list an exempt (0%) HSN that the
+  // CGST/SGST totals rightly leave out, so m.gst's totals would not tally here.
+  const sum = (k) => round2(m.hsnSummary.reduce((s, h) => s + h[k], 0))
   const rows = m.hsnSummary.map((h) => `
     <tr>
       <td>${esc(h.hsn)}</td>
@@ -303,10 +322,10 @@ function hsnSummaryTable(m) {
       <tfoot>
         <tr>
           <td class="r">Total</td>
-          <td class="r">${fmt(m.gst.taxable, c)}</td>
-          <td></td><td class="r">${fmt(m.gst.cgst, c)}</td>
-          <td></td><td class="r">${fmt(m.gst.sgst, c)}</td>
-          <td class="r">${fmt(m.gst.tax, c)}</td>
+          <td class="r">${fmt(sum('taxable'), c)}</td>
+          <td></td><td class="r">${fmt(sum('cgst'), c)}</td>
+          <td></td><td class="r">${fmt(sum('sgst'), c)}</td>
+          <td class="r">${fmt(sum('total'), c)}</td>
         </tr>
       </tfoot>
     </table>`

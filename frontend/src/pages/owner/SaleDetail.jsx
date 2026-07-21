@@ -64,7 +64,7 @@ export default function SaleDetail() {
       .select(
         'id, order_id, bill_id, quantity, rate_charged, amount, purchase_rate, profit, payment_type, buyer_type, created_at, ' +
           'item_no, item_name, ' +
-          'item:items(name, item_no, photo_url, location, hsn_sac), ' +
+          'item:items(name, item_no, photo_url, location, hsn_sac, gst_rate), ' +
           'buyer:profiles!sales_buyer_id_fkey(full_name, phone, balance_due, gstin, address, state_name, state_code), ' +
           'category:categories(name), ' +
           'order:orders!sales_order_id_fkey(notes, created_at)',
@@ -117,7 +117,10 @@ export default function SaleDetail() {
     shop,
     buyer: billTo,
     invoice: { invoice_no: invoice?.invoice_no, date: sale.created_at, notes: invoice?.notes },
-    lines: [{ name: item?.name || sale.item_name, item_no: item?.item_no || sale.item_no, hsn: item?.hsn_sac, qty: sale.quantity, rate: sale.rate_charged }],
+    lines: [{
+      name: item?.name || sale.item_name, item_no: item?.item_no || sale.item_no,
+      hsn: item?.hsn_sac, gstRate: item?.gst_rate, qty: sale.quantity, rate: sale.rate_charged,
+    }],
     bill,
     gstRate: shop?.gst_rate,
   })

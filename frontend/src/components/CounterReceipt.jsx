@@ -1,5 +1,6 @@
+import { Fragment } from 'react'
 import { money, qty, dateTime } from '../lib/format'
-import { gstBreakup } from '../lib/helpers'
+import { gstBreakupByRate, itemGstRate } from '../lib/helpers'
 
 // Counter-sale receipt for a walk-in bill (POS). Multi-item, grouped by bill_id.
 // Hidden on screen (.print-slip); the browser's native print shows only this
@@ -20,9 +21,15 @@ export default function CounterReceipt({ bill, shop }) {
   const ref = bill.invoice_no || `#${bill.bill_id?.slice(0, 8).toUpperCase()}`
   const m = (n) => money(n).replace('₹', currency)
 
-  const gstRate = Number(shop?.gst_rate || 0)
-  const isTax = gstRate > 0 && !!shop?.gstin
-  const gst = isTax ? gstBreakup(bill.total, gstRate) : null
+  // Each line is taxed at its own product's slab (034), falling back to the shop
+  // default; the tax is backed out of the inclusive line amounts and grouped by
+  // slab, so a bill mixing 12% and 18% goods prints one pair of rows per slab.
+  const gst = shop?.gstin
+    ? gstBreakupByRate(bill.lines.map((l) => ({
+        amount: l.amount, rate: itemGstRate(l.gst_rate, shop?.gst_rate),
+      })))
+    : null
+  const isTax = !!gst
   const anyHsn = bill.lines.some((l) => l.hsn_sac)
 
   return (
@@ -75,8 +82,12 @@ export default function CounterReceipt({ bill, shop }) {
         {gst && (
           <>
             <Line label="Taxable value" value={<span className="fig">{m(gst.taxable)}</span>} />
-            <Line label={`CGST @ ${gst.rate / 2}%`} value={<span className="fig">{m(gst.cgst)}</span>} />
-            <Line label={`SGST @ ${gst.rate / 2}%`} value={<span className="fig">{m(gst.sgst)}</span>} />
+            {gst.groups.map((g) => (
+              <Fragment key={g.rate}>
+                <Line label={`CGST @ ${g.rate / 2}%`} value={<span className="fig">{m(g.cgst)}</span>} />
+                <Line label={`SGST @ ${g.rate / 2}%`} value={<span className="fig">{m(g.sgst)}</span>} />
+              </Fragment>
+            ))}
           </>
         )}
         <Line label="Total amount" value={<span className="fig text-base font-bold">{m(bill.total)}</span>} />

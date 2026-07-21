@@ -127,9 +127,9 @@ function ShopInfo() {
             <Field label="GSTIN" value={form.gstin} onChange={set('gstin')}
                    placeholder="e.g. 27ABCDE1234F1Z5"
                    hint="Leave blank if you don't bill with GST." />
-            <Field label="GST rate" suffix="%" type="number" min="0" max="100" step="0.01" inputMode="decimal"
+            <Field label="Default GST rate" suffix="%" type="number" min="0" max="100" step="0.01" inputMode="decimal"
                    value={form.gst_rate} onChange={set('gst_rate')}
-                   hint="Shown on invoices when GSTIN is set. Rates are tax-inclusive." />
+                   hint="Used for every product that has no rate of its own. Set a different slab on a product in Purchase Entry or Inventory. Rates are tax-inclusive." />
           </div>
 
           {/* Invoice billing identity — prints on the customer Tax Invoice. */}

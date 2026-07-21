@@ -89,3 +89,52 @@ export function gstBreakup(amountInclusive, ratePct) {
   const sgst = round2(tax - cgst) // remainder, so cgst + sgst === tax exactly
   return { rate, taxable, cgst, sgst, tax, total: amount }
 }
+
+// The Indian GST slabs a product can sit in, for the rate picker on Purchase
+// Entry / Inventory. '' means "leave it to the shop default" (items.gst_rate NULL).
+export const GST_SLABS = [0, 3, 5, 12, 18, 28]
+
+// Which GST rate a product is taxed at (migration 034). An item may sit in its
+// own slab (5 / 12 / 18 / 28 %); when it doesn't say, the shop's single default
+// rate applies. `null`/`''`/undefined on the item means "use the shop default";
+// an explicit 0 means the product is exempt, and stays 0.
+export function itemGstRate(itemRate, shopRate) {
+  const own = itemRate === null || itemRate === undefined || itemRate === ''
+    ? null
+    : Number(itemRate)
+  const rate = own !== null && Number.isFinite(own) ? own : Number(shopRate || 0)
+  return rate > 0 ? rate : 0
+}
+
+// GST break-up for a bill whose lines sit in DIFFERENT slabs. Each line is
+// tax-inclusive (Golden Rule #5 — the locked amount is what the buyer pays), so
+// tax is backed out per line and the lines are then grouped by rate: a bill with
+// 12% cards and 18% boxes prints one CGST/SGST pair per slab, exactly like Tally.
+// `lines` = [{ amount, rate }]. Returns null when nothing is taxed.
+//   groups[]  — one per distinct rate, ascending
+//   totals    — taxable / cgst / sgst / tax summed across groups
+//   rate      — the single rate when every line shares one (else null)
+export function gstBreakupByRate(lines) {
+  const byRate = new Map()
+  for (const ln of lines || []) {
+    const rate = Number(ln.rate || 0)
+    if (rate <= 0) continue
+    byRate.set(rate, round2((byRate.get(rate) || 0) + Number(ln.amount || 0)))
+  }
+  if (byRate.size === 0) return null
+
+  const groups = [...byRate.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([rate, amount]) => ({ ...gstBreakup(amount, rate), rate }))
+
+  const sum = (k) => round2(groups.reduce((s, g) => s + g[k], 0))
+  return {
+    groups,
+    rate: groups.length === 1 ? groups[0].rate : null,
+    taxable: sum('taxable'),
+    cgst: sum('cgst'),
+    sgst: sum('sgst'),
+    tax: sum('tax'),
+    total: sum('total'),
+  }
+}
