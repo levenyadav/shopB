@@ -1,5 +1,5 @@
 -- =============================================================================
--- 022_item_made_to_order.sql — "Made to Order" items (on-demand / booking).
+-- 022_item_made_to_order.sql — "Make to order" items (on-demand / booking).
 --
 -- Some products are not held as stock: the owner lists them, and only sources or
 -- makes them AFTER a buyer books an order. A card/box shop takes many such custom

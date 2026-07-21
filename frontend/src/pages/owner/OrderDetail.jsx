@@ -335,7 +335,7 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
 
       {madeToOrder && (
         <div className="flex items-start gap-2 rounded-lg bg-peacock/5 px-4 py-2.5 text-sm">
-          <span className="mt-0.5 shrink-0 rounded bg-peacock/10 px-1.5 py-0.5 text-[11px] font-semibold text-peacock">Made to order</span>
+          <span className="mt-0.5 shrink-0 rounded bg-peacock/10 px-1.5 py-0.5 text-[11px] font-semibold text-peacock">Make to order</span>
           {costMissing ? (
             <span className="text-dues">
               No purchase rate is set for this item. Set its cost in Inventory before approving so profit is accurate.

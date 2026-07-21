@@ -118,7 +118,7 @@ export default function OrderManagement() {
         <select value={itemKind} onChange={(e) => setItemKind(e.target.value)}
                 className="rounded-lg border border-line bg-card px-3 py-2.5 text-ink outline-none focus:border-peacock focus:ring-1 focus:ring-peacock">
           <option value="">All items</option>
-          <option value="mto">Made to order</option>
+          <option value="mto">Make to order</option>
           <option value="stock">Stock items</option>
         </select>
         <div className="flex flex-wrap gap-1.5 sm:col-span-2 lg:col-span-4">
@@ -156,7 +156,7 @@ export default function OrderManagement() {
                 <div className="min-w-0 flex-1">
                   <p className="flex items-center gap-1.5 truncate font-medium text-ink">
                     <span className="truncate">{o.item?.name || o.item_name || 'Item'}</span>
-                    {o.item?.made_to_order && <Badge tone="peacock">Made to order</Badge>}
+                    {o.item?.made_to_order && <Badge tone="peacock">Make to order</Badge>}
                   </p>
                   <p className="truncate text-xs text-muted">
                     {o.buyer?.full_name || 'Buyer'}
