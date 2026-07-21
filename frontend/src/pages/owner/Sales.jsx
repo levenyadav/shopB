@@ -5,7 +5,7 @@ import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
 import { toCsv, downloadText } from '../../lib/csv'
-import { toInputDate } from '../../lib/dates'
+import { toInputDate, startOfWeek, startOfMonth } from '../../lib/dates'
 import { Badge, Spinner, PhotoThumb, Button } from '../../components/ui'
 
 // SPEC §6.5 / §10.4 — Sales list (owner only). Every approved order becomes a
@@ -21,6 +21,14 @@ const PAYMENT_FILTERS = [
 const CSV_COLUMNS = [
   'Invoice No', 'Series', 'Date', 'Item No', 'Item', 'Category', 'Buyer', 'Phone', 'Buyer Type', 'Source',
   'Quantity', 'Rate', 'Amount', 'Purchase Rate', 'Profit', 'Payment',
+]
+
+// Quick date ranges. 'all' clears the range; the rest run up to today.
+const RANGES = [
+  { key: 'all', label: 'All time' },
+  { key: 'today', label: 'Today' },
+  { key: 'week', label: 'This week' },
+  { key: 'month', label: 'This month' },
 ]
 
 // Invoice numbering series (035) — customers and dealers run separate books.
@@ -54,6 +62,27 @@ export default function Sales() {
   const [to, setTo] = useState('')
   const [invoiceNos, setInvoiceNos] = useState({ bySale: new Map(), byBill: new Map() })
   const [menu, setMenu] = useState(false)
+
+  // Quick ranges fill the From/To boxes rather than holding a state of their own,
+  // so the two never disagree and typing a custom range simply lands on "Custom".
+  function applyRange(key) {
+    const today = toInputDate(new Date())
+    if (key === 'all')   { setFrom(''); setTo(''); return }
+    if (key === 'today') { setFrom(today); setTo(today); return }
+    if (key === 'week')  { setFrom(toInputDate(startOfWeek())); setTo(today); return }
+    if (key === 'month') { setFrom(toInputDate(startOfMonth())); setTo(today); return }
+  }
+
+  // Which pill is lit — derived from From/To, never stored.
+  const activeRange = useMemo(() => {
+    if (!from && !to) return 'all'
+    const today = toInputDate(new Date())
+    if (to !== today) return ''
+    if (from === today) return 'today'
+    if (from === toInputDate(startOfWeek())) return 'week'
+    if (from === toInputDate(startOfMonth())) return 'month'
+    return ''
+  }, [from, to])
 
   async function load() {
     setErr('')
@@ -246,6 +275,20 @@ export default function Sales() {
           <option value="">All categories</option>
           {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
+        {/* Quick ranges — the four the owner actually asks for, one tap each.
+            They just fill From/To, so a custom range still works underneath. */}
+        <div className="flex flex-wrap gap-1.5 sm:col-span-2 lg:col-span-4">
+          {RANGES.map(({ key, label }) => (
+            <button
+              key={key} type="button" onClick={() => applyRange(key)}
+              className={`rounded-full border px-3 py-1.5 text-sm font-medium transition ${
+                activeRange === key ? 'border-peacock bg-peacock text-white' : 'border-line bg-card text-muted hover:text-ink'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <label className="flex items-center gap-2 text-sm text-muted">
           <span className="shrink-0">From</span>
           <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)}
