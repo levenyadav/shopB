@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useShop } from '../context/ShopContext'
 import Brand from './Brand'
+import BackButton from './BackButton'
 
 // Live count of orders awaiting approval (SPEC §6.4). Seeds from a count query,
 // then Supabase Realtime keeps it current: a new order bumps it, any status
@@ -112,7 +113,7 @@ export default function OwnerLayout() {
       {/* ---- Main column ---- */}
       <div className="flex min-h-screen flex-col">
         <header className="sticky top-0 z-20 flex items-center justify-between border-b border-line bg-card px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-2">
             <button
               className="rounded-lg p-1.5 text-muted hover:bg-paper-2 md:hidden"
               onClick={() => setOpen(true)}
@@ -120,7 +121,8 @@ export default function OwnerLayout() {
             >
               <IconMenu2 size={22} />
             </button>
-            <h1 className="font-[var(--font-display)] text-xl font-bold">{title}</h1>
+            <BackButton hideAt="md" />
+            <h1 className="truncate font-[var(--font-display)] text-xl font-bold">{title}</h1>
           </div>
 
           <div className="flex items-center gap-3">

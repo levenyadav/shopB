@@ -11,6 +11,7 @@ import { money } from '../lib/format'
 import Credit from './Credit'
 import Brand from './Brand'
 import InstallButton from './InstallButton'
+import BackButton from './BackButton'
 
 // Social icons shown in the footer — only those the owner filled in (Settings).
 // WhatsApp may be a bare number; normalise it to a wa.me link.
@@ -48,9 +49,12 @@ export default function ShopLayout() {
     <div className="min-h-screen bg-paper">
       <header className="sticky top-0 z-20 border-b border-line bg-card">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <Link to="/" className="shrink-0">
-            <Brand shop={shop} maxWords={3} textClassName="text-[10px] sm:text-xs" logoClassName="h-9 sm:h-10" />
-          </Link>
+          <div className="flex min-w-0 items-center gap-1">
+            <BackButton />
+            <Link to="/" className="shrink-0">
+              <Brand shop={shop} maxWords={3} textClassName="text-[10px] sm:text-xs" logoClassName="h-9 sm:h-10" />
+            </Link>
+          </div>
 
           <nav className="flex items-center gap-1 sm:gap-2">
             <InstallButton className="mr-1" />

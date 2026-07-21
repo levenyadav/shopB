@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
+import { IconArrowLeft } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { toE164India } from '../../lib/helpers'
 import Credit from '../../components/Credit'
@@ -113,6 +115,16 @@ export default function Login() {
       {/* Right — sign in */}
       <main className="flex items-center justify-center p-6 sm:p-12 bg-paper">
         <div className="w-full max-w-sm">
+          {/* This screen has no header, so this is the only way back to the shop —
+              shown at every width, not just mobile (SPEC §3 — no dead ends). A
+              buyer who tapped Sign in from the cart can get back to browsing. */}
+          <Link
+            to="/"
+            className="mb-6 -ml-1 inline-flex items-center gap-1.5 rounded-lg px-1 py-1 text-sm font-medium text-muted hover:text-ink"
+          >
+            <IconArrowLeft size={18} /> Back to shop
+          </Link>
+
           {/* mobile brand */}
           <div className="md:hidden mb-8">
             <span className="shop-stamp text-xs font-bold">Khattri Card Pratham</span>

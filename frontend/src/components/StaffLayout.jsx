@@ -5,6 +5,7 @@ import {
 } from '@tabler/icons-react'
 import { useAuth } from '../context/AuthContext'
 import { useShop } from '../context/ShopContext'
+import BackButton from './BackButton'
 
 // SPEC §10.3 — Staff console. Two jobs: pack the fulfilment board, and ring up
 // walk-ins at the counter (POS, SPEC §6.5a). Tabs switch between them.
@@ -25,11 +26,14 @@ export default function StaffLayout() {
     <div className="min-h-screen bg-paper">
       <header className="no-print sticky top-0 z-20 border-b border-line bg-card">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <Link to="/staff" className="flex items-center gap-2">
-            <span className="shop-stamp text-[10px] font-bold">
-              {shop?.name?.split(' ').slice(0, 2).join(' ') || 'Shop'}
-            </span>
-          </Link>
+          <div className="flex min-w-0 items-center gap-1">
+            <BackButton />
+            <Link to="/staff" className="flex items-center gap-2">
+              <span className="shop-stamp text-[10px] font-bold">
+                {shop?.name?.split(' ').slice(0, 2).join(' ') || 'Shop'}
+              </span>
+            </Link>
+          </div>
 
           <nav className="flex items-center gap-1">
             {TABS.map((t) => (
