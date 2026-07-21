@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { IconSearch, IconInbox, IconCoin, IconFileSpreadsheet } from '@tabler/icons-react'
+import { IconSearch, IconInbox, IconCoin, IconFileSpreadsheet, IconChevronDown } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
@@ -53,6 +53,7 @@ export default function Sales() {
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [invoiceNos, setInvoiceNos] = useState({ bySale: new Map(), byBill: new Map() })
+  const [menu, setMenu] = useState(false)
 
   async function load() {
     setErr('')
@@ -114,6 +115,13 @@ export default function Sales() {
     })
   }, [sales, q, buyerType, payment, categoryId, from, to, invoiceNos])
 
+  // How many of the rows on screen belong to each book — shown on the export
+  // menu so the owner knows what a choice will produce before clicking it.
+  const counts = useMemo(() => ({
+    customer: filtered.filter((s) => s.buyer_type === 'customer').length,
+    dealer: filtered.filter((s) => s.buyer_type === 'dealer').length,
+  }), [filtered])
+
   const totals = useMemo(() => filtered.reduce(
     (a, s) => {
       a.amount += Number(s.amount || 0)
@@ -128,8 +136,25 @@ export default function Sales() {
   // plain numbers (no ₹, no thousands separator) so Excel/Sheets can sum them;
   // the date is sortable rather than pretty. purchase_rate/profit are owner-only
   // (Golden Rule #3/#4) and this page is owner-only, so they belong in the file.
-  function exportCsv() {
-    const rows = filtered.map((s) => ({
+  //
+  // `scope` narrows it further without touching the screen: '' = everything
+  // shown, 'customer' / 'dealer' = that book only. The two books are exported
+  // and filed separately, so it must be possible to pull one without first
+  // rearranging the page.
+  function exportCsv(scope = '') {
+    const picked = scope ? filtered.filter((s) => s.buyer_type === scope) : filtered
+    if (!picked.length) {
+      setErr(`No ${scope} sales in what you are looking at. Widen the filters and try again.`)
+      return
+    }
+    setErr('')
+    // Totals belong to the file, not the screen — a customer-only export must
+    // add up to the customer rows inside it.
+    const sums = picked.reduce(
+      (a, s) => { a.amount += Number(s.amount || 0); a.profit += Number(s.profit || 0); return a },
+      { amount: 0, profit: 0 },
+    )
+    const rows = picked.map((s) => ({
       'Invoice No': invoiceNoFor(s),
       // Which series the number was drawn from — not the same as Buyer Type. A
       // dealer sale from before the split legitimately carries a customer number.
@@ -151,14 +176,15 @@ export default function Sales() {
     }))
     // Totals row, so the file stands on its own when it is mailed to the CA.
     rows.push({
-      'Invoice No': 'TOTAL', 'Item': `${filtered.length} sales`,
-      'Amount': totals.amount, 'Profit': totals.profit,
+      'Invoice No': 'TOTAL', 'Item': `${picked.length} sales`,
+      'Amount': sums.amount, 'Profit': sums.profit,
     })
     const span = from || to ? `${from || 'start'}_to_${to || toInputDate(new Date())}` : toInputDate(new Date())
-    // Name the file after the buyer filter — a dealer export and a customer
-    // export must never be mistaken for each other once they are off the screen.
-    const book = buyerType ? `${buyerType}-` : ''
-    downloadText(`sales-${book}${span}.csv`, toCsv(CSV_COLUMNS, rows))
+    // Name the file after whichever book it holds — a dealer export and a
+    // customer export must never be mistaken for each other once they are off
+    // the screen. The explicit scope wins over the dropdown.
+    const book = scope || buyerType
+    downloadText(`sales-${book ? `${book}-` : ''}${span}.csv`, toCsv(CSV_COLUMNS, rows))
   }
 
   return (
@@ -174,12 +200,28 @@ export default function Sales() {
         <p className="text-sm text-muted">
           {filtered.length === 0
             ? 'Nothing to export yet.'
-            : `Download the ${qty(filtered.length)} sale${filtered.length === 1 ? '' : 's'} shown below as a spreadsheet.`}
+            : `Download the ${qty(filtered.length)} sale${filtered.length === 1 ? '' : 's'} shown below — all of them, or one book on its own.`}
         </p>
-        <Button variant="ghost" onClick={exportCsv} disabled={filtered.length === 0}
-                className="shrink-0">
-          <IconFileSpreadsheet size={18} /> Export CSV
-        </Button>
+        <div className="relative shrink-0">
+          <Button variant="ghost" onClick={() => setMenu((m) => !m)} disabled={filtered.length === 0}>
+            <IconFileSpreadsheet size={18} /> Export CSV
+            <IconChevronDown size={16} className={`transition ${menu ? 'rotate-180' : ''}`} />
+          </Button>
+          {menu && (
+            <>
+              {/* Click anywhere else to dismiss. */}
+              <div className="fixed inset-0 z-10" onClick={() => setMenu(false)} />
+              <div className="absolute right-0 z-20 mt-1 w-64 overflow-hidden rounded-lg border border-line bg-card shadow-lg">
+                <ExportChoice label="All sales shown" count={filtered.length}
+                              onClick={() => { setMenu(false); exportCsv() }} />
+                <ExportChoice label="Customer sales only" count={counts.customer}
+                              onClick={() => { setMenu(false); exportCsv('customer') }} />
+                <ExportChoice label="Dealer sales only" count={counts.dealer}
+                              onClick={() => { setMenu(false); exportCsv('dealer') }} />
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Filters: search + buyer + category + date, payment as pills */}
@@ -272,6 +314,20 @@ export default function Sales() {
         </ul>
       )}
     </div>
+  )
+}
+
+// One line of the export menu. The count is the point: it says what you are
+// about to get, and a zero tells you why the file would be empty.
+function ExportChoice({ label, count, onClick }) {
+  return (
+    <button
+      type="button" onClick={onClick} disabled={count === 0}
+      className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-sm text-ink transition hover:bg-paper-2 disabled:opacity-40 disabled:hover:bg-transparent"
+    >
+      {label}
+      <span className="fig text-xs text-muted">{qty(count)}</span>
+    </button>
   )
 }
 
