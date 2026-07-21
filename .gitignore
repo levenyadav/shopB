@@ -42,5 +42,7 @@ pnpm-debug.log*
 coverage/
 .cache/
 
-# Local scratch scripts (may contain live API keys — never commit)
-scripts/test-fast2sms.js
+# Local scratch scripts (may contain live API keys — never commit).
+# Ignore the whole folder: naming files one by one missed test-laaffic.js, which
+# had a live Api-Key/Api-Secret sitting in it and was staged-clean to push.
+scripts/
