@@ -197,6 +197,31 @@ row for the opening quantity. The `on_purchase_insert` trigger raises
 `items.quantity`, raises the supplier's `balance_due`, and writes the ledger.
 The form never sets `items.quantity` directly.
 
+**Bill-level charges — postage and purchase GST (migration 036):**
+A supplier bill also carries postage / freight and the GST the supplier charged.
+Both are money owed to that supplier; **neither is part of the product's cost**:
+
+| | Treatment | Why |
+|---|---|---|
+| Postage / freight | Pass-through — recorded on the bill, raises `balance_due`, never touches `purchase_rate` | Keeps profit (Golden Rule #6) meaning the same before and after, so old and new profit stay comparable |
+| CGST + SGST | Recorded separately as recoverable input tax credit; never folded into cost | The shop claims ITC, so the tax comes back — the period sum of `cgst_amount + sgst_amount` is the credit to claim |
+
+So `purchase_rate` stays the **pre-tax goods rate** (Golden Rule #4 unchanged), and
+a bill reads `goods + postage + CGST + SGST = grand total`. Intra-state only: every
+supplier is in-state, so there is no IGST column. Adding one later is a column plus
+a supplier `state_code`, not a rewrite.
+
+The charges live in `purchase_bills`, one row per `purchase_group_id`. The verified
+033 triggers still book the **goods** untouched; the insert into `purchase_bills`
+fires its own trigger that books the **non-goods money** as one further balance move
+and one append-only ledger entry — the same shape `order_bills` uses on the selling
+side (§6.4). The client writes the purchase lines first and the charges row second,
+so a failure leaves a bill missing its charges (re-insertable), never a half-moved
+balance.
+
+Note the direction differs from a customer invoice: a sale amount is tax-**inclusive**
+and tax is backed out of it, while a supplier adds tax **on top** of the goods value.
+
 ---
 
 ### 6.2 Module 2 — Inventory (All Stock)

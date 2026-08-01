@@ -138,3 +138,39 @@ export function gstBreakupByRate(lines) {
     total: sum('total'),
   }
 }
+
+// ---------------------------------------------------------------------------
+// Buying side (migration 036). A supplier bill is goods + postage + the GST the
+// supplier charged. Note the direction is the OPPOSITE of a customer invoice:
+// a sale amount is tax-INCLUSIVE and tax is backed out of it, while a supplier
+// adds tax ON TOP of the goods value. purchase_rate is the pre-tax goods rate,
+// so tax here is exclusive and grand total grows.
+//
+// Neither postage nor tax touches product cost: postage is pass-through and GST
+// is recoverable input credit, so profit (Golden Rule #6) is unaffected.
+// ---------------------------------------------------------------------------
+export function purchaseBillTotals({ goods, postage, cgst, sgst }) {
+  const g = round2(goods || 0)
+  const p = round2(postage || 0)
+  const c = round2(cgst || 0)
+  const s = round2(sgst || 0)
+  return { goods: g, postage: p, cgst: c, sgst: s, tax: round2(c + s), grand: round2(g + p + c + s) }
+}
+
+// Suggested CGST/SGST for a supplier bill, from the GST slab each product sits
+// in. Lines in different slabs are taxed at their own rate and summed, then the
+// total splits in half (intra-state). Only a SUGGESTION — the owner types what
+// the supplier's bill actually says, because a supplier's own rounding rarely
+// lands to the rupee. `lines` = [{ amount, rate }].
+export function suggestPurchaseGst(lines) {
+  let tax = 0
+  for (const ln of lines || []) {
+    const rate = Number(ln.rate || 0)
+    if (rate <= 0) continue
+    tax += Number(ln.amount || 0) * (rate / 100)
+  }
+  tax = round2(tax)
+  if (tax <= 0) return null
+  const cgst = round2(tax / 2)
+  return { tax, cgst, sgst: round2(tax - cgst) } // sgst takes the remainder
+}

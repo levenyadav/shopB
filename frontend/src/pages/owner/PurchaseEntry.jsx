@@ -9,7 +9,10 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { money, qty } from '../../lib/format'
-import { round2, isDuplicateCompanyNo, GST_SLABS } from '../../lib/helpers'
+import {
+  round2, isDuplicateCompanyNo, GST_SLABS, itemGstRate,
+  purchaseBillTotals, suggestPurchaseGst,
+} from '../../lib/helpers'
 import { Button, Field, Select, Textarea, Spinner, StockBadge, TagsInput, ImagesInput, Badge } from '../../components/ui'
 import BarcodeScanner from '../../components/BarcodeScanner'
 
@@ -74,9 +77,12 @@ const today = () => new Date().toISOString().slice(0, 10)
 // =============================================================================
 function BillEntry() {
   const { profile } = useAuth()
-  const { shopId, suppliers, refreshSuppliers } = useShop()
+  const { shopId, shop, suppliers, refreshSuppliers } = useShop()
 
-  const [bill, setBill] = useState({ supplier_id: '', invoice_no: '', invoice_date: today() })
+  const [bill, setBill] = useState({
+    supplier_id: '', invoice_no: '', invoice_date: today(),
+    postage: '', cgst: '', sgst: '',
+  })
   const [lines, setLines] = useState([])
   const [editing, setEditing] = useState(null)  // { line, index } while the editor is open
   const [errors, setErrors] = useState({})
@@ -94,8 +100,35 @@ function BillEntry() {
 
   // Only stocked lines carry money. A Make-to-Order line lists the product but
   // buys nothing, so it adds ₹0 to the bill.
-  const billTotal = lines.reduce((sum, l) => sum + lineCost(l), 0)
+  const goodsTotal = lines.reduce((sum, l) => sum + lineCost(l), 0)
   const stockedCount = lines.filter((l) => !isListingOnly(l)).length
+
+  // Goods + postage + the tax the supplier charged = what this supplier is owed.
+  // Postage is pass-through and GST is input credit, so neither lands in cost
+  // (migration 036) — the products' rates are unaffected by anything here.
+  const totals = purchaseBillTotals({
+    goods: goodsTotal, postage: bill.postage, cgst: bill.cgst, sgst: bill.sgst,
+  })
+
+  // What the tax WOULD be at each product's own GST slab. Offered as a one-tap
+  // fill, never forced: the supplier's own rounding rarely matches to the rupee,
+  // so what their bill says wins.
+  const suggestedGst = suggestPurchaseGst(
+    lines.filter((l) => !isListingOnly(l)).map((l) => ({
+      amount: lineCost(l),
+      rate: itemGstRate(
+        l.mode === 'new' ? l.gst_rate : l.item?.gst_rate,
+        shop?.gst_rate,
+      ),
+    })),
+  )
+  const gstFilled = round2(bill.cgst || 0) === (suggestedGst?.cgst ?? -1)
+                 && round2(bill.sgst || 0) === (suggestedGst?.sgst ?? -1)
+
+  function applySuggestedGst() {
+    if (!suggestedGst) return
+    setBill((b) => ({ ...b, cgst: String(suggestedGst.cgst), sgst: String(suggestedGst.sgst) }))
+  }
 
   function upsertLine(line) {
     setLines((ls) => {
@@ -228,15 +261,51 @@ function BillEntry() {
         }
       }
 
+      // 3) Postage and the supplier's GST, booked SECOND and separately: the
+      //    goods are already on the supplier's balance (033), and this row's own
+      //    trigger (036) adds the non-goods money in one further ledger entry.
+      //    Written only when there is something to write, and only when the bill
+      //    has real lines to hang off — a listing-only bill charges nothing.
+      const bookedGoods = rows.reduce((s, r) => s + Number(r.total_cost), 0)
+      const billCharges = purchaseBillTotals({
+        goods: bookedGoods, postage: bill.postage, cgst: bill.cgst, sgst: bill.sgst,
+      })
+      if (rows.length && (billCharges.postage > 0 || billCharges.tax > 0)) {
+        const { error: cErr } = await supabase.from('purchase_bills').insert({
+          shop_id: shopId,
+          supplier_id: bill.supplier_id,
+          purchase_group_id: groupId,
+          goods_total: billCharges.goods,
+          postage: billCharges.postage,
+          cgst_amount: billCharges.cgst,
+          sgst_amount: billCharges.sgst,
+          grand_total: billCharges.grand,
+        })
+        // The stock and the goods money are already safely recorded, so this is
+        // never a reason to fail the whole bill — say exactly what is missing
+        // and what it means, per SPEC §3 (no dead ends).
+        if (cErr) {
+          throw new Error(
+            `The bill and stock were saved, but the postage / GST on it was not: ${cErr.message}. ` +
+              `${supplier?.name || 'The supplier'}'s balance is short by ` +
+              `${money(billCharges.postage + billCharges.tax)} — add it as a separate entry, ` +
+              `or check that migration 036 has been run.`,
+          )
+        }
+      }
+
       setDone({
         invoice_no,
         supplier: supplier?.name || 'supplier',
         lineCount: lines.length,
         stockedCount: rows.length,
         listedCount: lines.length - rows.length,
-        billTotal: rows.reduce((s, r) => s + Number(r.total_cost), 0),
+        billTotal: bookedGoods,
+        postage: billCharges.postage,
+        tax: billCharges.tax,
+        grandTotal: rows.length ? billCharges.grand : 0,
       })
-      setBill({ supplier_id: '', invoice_no: '', invoice_date: today() })
+      setBill({ supplier_id: '', invoice_no: '', invoice_date: today(), postage: '', cgst: '', sgst: '' })
       setLines([])
       setErrors({})
     } catch (err) {
@@ -327,20 +396,57 @@ function BillEntry() {
           )}
         </Section>
 
+        {/* ---- Postage & tax on this bill (migration 036) ---- */}
+        {lines.length > 0 && (
+          <Section
+            title="Postage & tax on this bill"
+            hint="What the supplier charged on top of the goods. Leave blank if the bill has none."
+          >
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field label="Postage / freight" prefix="₹" type="number" min="0" step="0.01"
+                     inputMode="decimal" value={bill.postage} onChange={setBillField('postage')}
+                     hint="Courier, transport, packing" />
+              <Field label="CGST" prefix="₹" type="number" min="0" step="0.01"
+                     inputMode="decimal" value={bill.cgst} onChange={setBillField('cgst')} />
+              <Field label="SGST" prefix="₹" type="number" min="0" step="0.01"
+                     inputMode="decimal" value={bill.sgst} onChange={setBillField('sgst')} />
+            </div>
+
+            {suggestedGst && !gstFilled && (
+              <button
+                type="button" onClick={applySuggestedGst}
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-peacock hover:underline"
+              >
+                <IconSparkles size={16} />
+                Fill {money(suggestedGst.cgst)} + {money(suggestedGst.sgst)} from these products' GST rates
+              </button>
+            )}
+
+            <p className="text-xs text-muted">
+              Postage and GST are added to what you owe this supplier, but never to a
+              product's cost rate — postage is a bill expense and GST comes back as
+              input credit, so your profit per item is unchanged.
+            </p>
+          </Section>
+        )}
+
         {/* ---- Total ---- */}
         {lines.length > 0 && (
           <div className="rounded-lg border border-line bg-card p-5 sm:p-6">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <span className="font-semibold">
-                Bill total
-                <span className="ml-2 text-sm font-normal text-muted">
-                  {stockedCount} product{stockedCount === 1 ? '' : 's'} stocking in
-                </span>
-              </span>
-              <span className="fig text-2xl font-bold text-dues">{money(billTotal)}</span>
+            <dl className="space-y-1.5 text-sm">
+              <Row label={`Goods (${stockedCount} product${stockedCount === 1 ? '' : 's'} stocking in)`}
+                   value={money(totals.goods)} />
+              {totals.postage > 0 && <Row label="Postage / freight" value={money(totals.postage)} />}
+              {totals.cgst > 0 && <Row label="CGST" value={money(totals.cgst)} />}
+              {totals.sgst > 0 && <Row label="SGST" value={money(totals.sgst)} />}
+            </dl>
+            <div className="mt-3 flex flex-wrap items-baseline justify-between gap-2 border-t border-line pt-3">
+              <span className="font-semibold">Bill total</span>
+              <span className="fig text-2xl font-bold text-dues">{money(totals.grand)}</span>
             </div>
             <p className="mt-1 text-sm text-muted">
               Added to {supplier?.name || 'this supplier'}'s balance due.
+              {totals.tax > 0 && ` ${money(totals.tax)} of it is GST you can claim back.`}
             </p>
           </div>
         )}
@@ -575,7 +681,7 @@ function ExistingItemFields({ line, setVal, errors, shopId, supplierId }) {
     // Make-to-Order items hold no stock, so they can never be restocked.
     let q = supabase
       .from('items')
-      .select('id, item_no, name, company_no, quantity, purchase_rate, low_stock_threshold, supplier_id, discontinued')
+      .select('id, item_no, name, company_no, quantity, purchase_rate, low_stock_threshold, supplier_id, discontinued, gst_rate')
       .eq('shop_id', shopId)
       .eq('made_to_order', false)
       .order('name')
@@ -982,8 +1088,15 @@ function BillSuccess({ done, onAnother }) {
       </p>
       <div className="mt-5 grid grid-cols-2 gap-3 text-left">
         <Box label="Products stocked in" value={String(done.stockedCount)} />
-        <Box label="Added to supplier due" value={money(done.billTotal)} tone="dues" />
+        <Box label="Added to supplier due" value={money(done.grandTotal || done.billTotal)} tone="dues" />
       </div>
+      {(done.postage > 0 || done.tax > 0) && (
+        <p className="mt-3 rounded-lg bg-paper-2 px-4 py-2.5 text-left text-sm text-muted">
+          Goods {money(done.billTotal)}
+          {done.postage > 0 && <> · postage {money(done.postage)}</>}
+          {done.tax > 0 && <> · GST {money(done.tax)} (claimable)</>}
+        </p>
+      )}
       {done.listedCount > 0 && (
         <p className="mt-3 rounded-lg bg-peacock/5 px-4 py-2.5 text-left text-sm text-muted">
           {done.listedCount} Make-to-Order product{done.listedCount === 1 ? ' was' : 's were'} listed on the
@@ -997,6 +1110,16 @@ function BillSuccess({ done, onAnother }) {
           View Inventory
         </Link>
       </div>
+    </div>
+  )
+}
+
+// One labelled line in the bill breakdown (SPEC §3.2 — every number has a label).
+function Row({ label, value }) {
+  return (
+    <div className="flex justify-between gap-3">
+      <dt className="text-muted">{label}</dt>
+      <dd className="fig font-medium">{value}</dd>
     </div>
   )
 }

@@ -16,9 +16,13 @@ import { Badge, Spinner, PhotoThumb, Button } from '../../components/ui'
 //
 // Bills are grouped by purchase_group_id so a 12-line supplier bill reads as ONE
 // card, and each card expands to its lines. Filters: search, supplier, date.
+// One row per purchase line. The last four are bill-level (migration 036), so
+// they are written only on a bill's FIRST line and left blank on the rest —
+// otherwise summing the column would count one bill's postage many times.
 const CSV_COLUMNS = [
   'Bill No', 'Bill Date', 'Supplier', 'Phone', 'Item No', 'Item',
   'Quantity', 'Rate', 'Amount',
+  'Postage', 'CGST', 'SGST', 'Bill Total',
 ]
 
 // Quick date ranges. 'all' clears the range; the rest run up to today.
@@ -72,6 +76,16 @@ export default function PurchaseHistory() {
 
   async function load() {
     setErr('')
+    // Postage / GST live in their own table (migration 036) and are asked for
+    // separately, because migrations are applied by hand and the app can run one
+    // ahead of the database — a missing table must cost the charges line, not the
+    // whole page.
+    const charges = new Map()
+    const { data: billRows } = await supabase
+      .from('purchase_bills')
+      .select('purchase_group_id, postage, cgst_amount, sgst_amount, grand_total')
+    for (const c of billRows ?? []) charges.set(c.purchase_group_id, c)
+
     const { data, error } = await supabase
       .from('purchases')
       .select(
@@ -82,8 +96,8 @@ export default function PurchaseHistory() {
           'entered_by:profiles(full_name)',
       )
       .order('created_at', { ascending: false })
-    if (error) setErr(error.message)
-    else setPurchases(data ?? [])
+    if (error) { setErr(error.message); return }
+    setPurchases((data ?? []).map((p) => ({ ...p, charges: charges.get(p.purchase_group_id) || null })))
   }
   useEffect(() => { load() }, [])
 
@@ -104,6 +118,7 @@ export default function PurchaseHistory() {
           invoice_date: p.invoice_date,
           createdAt: p.created_at,
           enteredBy: p.entered_by?.full_name,
+          charges: p.charges,
           lines: [],
         }
         map.set(key, b)
@@ -116,7 +131,13 @@ export default function PurchaseHistory() {
     const list = [...map.values()]
     for (const b of list) {
       b.qty = b.lines.reduce((a, l) => a + Number(l.quantity || 0), 0)
+      // Goods is what the lines cost; postage and the supplier's GST (036) sit
+      // on top of it. `total` stays the goods figure so the per-line sums still
+      // tie out, and `grand` is what the supplier was actually owed.
       b.total = b.lines.reduce((a, l) => a + Number(l.total_cost || 0), 0)
+      b.postage = Number(b.charges?.postage || 0)
+      b.tax = Number(b.charges?.cgst_amount || 0) + Number(b.charges?.sgst_amount || 0)
+      b.grand = b.total + b.postage + b.tax
     }
     return list.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
   }, [purchases])
@@ -158,9 +179,14 @@ export default function PurchaseHistory() {
       a.bills += 1
       a.lines += b.lines.length
       a.amount += b.total
+      a.postage += b.postage
+      a.cgst += Number(b.charges?.cgst_amount || 0)
+      a.sgst += Number(b.charges?.sgst_amount || 0)
+      a.tax += b.tax
+      a.grand += b.grand
       return a
     },
-    { bills: 0, lines: 0, amount: 0 },
+    { bills: 0, lines: 0, amount: 0, postage: 0, cgst: 0, sgst: 0, tax: 0, grand: 0 },
   ), [filtered])
 
   // Export exactly what the owner is looking at — one row per purchase line,
@@ -174,7 +200,7 @@ export default function PurchaseHistory() {
     setErr('')
     const rows = []
     for (const b of filtered) {
-      for (const l of b.lines) {
+      b.lines.forEach((l, i) => {
         rows.push({
           'Bill No': b.invoice_no || (b.lines.length > 1 ? 'Batch' : ''),
           'Bill Date': b.invoice_date ? b.invoice_date : csvDateTime(b.createdAt).slice(0, 10),
@@ -185,12 +211,21 @@ export default function PurchaseHistory() {
           'Quantity': Number(l.quantity || 0),
           'Rate': Number(l.purchase_rate || 0),
           'Amount': Number(l.total_cost || 0),
+          // Bill-level, so only against the first line of the bill.
+          'Postage': i === 0 ? b.postage : '',
+          'CGST': i === 0 ? Number(b.charges?.cgst_amount || 0) : '',
+          'SGST': i === 0 ? Number(b.charges?.sgst_amount || 0) : '',
+          'Bill Total': i === 0 ? b.grand : '',
         })
-      }
+      })
     }
     rows.push({
       'Bill No': 'TOTAL', 'Item': `${totals.bills} bills, ${totals.lines} lines`,
       'Amount': totals.amount,
+      'Postage': totals.postage,
+      'CGST': totals.cgst,
+      'SGST': totals.sgst,
+      'Bill Total': totals.grand,
     })
     const span = from || to ? `${from || 'start'}_to_${to || toInputDate(new Date())}` : toInputDate(new Date())
     downloadText(`purchases-${span}.csv`, toCsv(CSV_COLUMNS, rows))
@@ -208,10 +243,24 @@ export default function PurchaseHistory() {
   return (
     <div className="space-y-5">
       {/* Totals for the current filter (SPEC §3.2 — every number has a label) */}
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className={`grid gap-3 sm:grid-cols-2 ${totals.tax > 0 ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
         <Stat label="Bills shown" value={<span className="fig">{qty(totals.bills)}</span>} />
         <Stat label="Items bought" value={<span className="fig">{qty(totals.lines)}</span>} />
-        <Stat label="Total purchase value" value={<span className="fig text-profit">{money(totals.amount).replace('₹', currency)}</span>} accent />
+        <Stat
+          label="Total paid to suppliers"
+          value={<span className="fig text-profit">{money(totals.grand).replace('₹', currency)}</span>}
+          hint={totals.postage > 0 || totals.tax > 0
+            ? `Goods ${money(totals.amount).replace('₹', currency)}${totals.postage > 0 ? ` · postage ${money(totals.postage).replace('₹', currency)}` : ''}${totals.tax > 0 ? ` · GST ${money(totals.tax).replace('₹', currency)}` : ''}`
+            : null}
+          accent
+        />
+        {totals.tax > 0 && (
+          <Stat
+            label="GST paid (input credit)"
+            value={<span className="fig">{money(totals.tax).replace('₹', currency)}</span>}
+            hint="Claimable back — not part of product cost"
+          />
+        )}
       </div>
 
       <div className="flex items-center justify-between gap-3">
@@ -342,7 +391,12 @@ function BillCard({ bill, expanded, onToggle, currency }) {
             {bill.enteredBy && <span className="ml-2">by {bill.enteredBy}</span>}
           </p>
         </div>
-        <p className="fig shrink-0 font-semibold">{money(bill.total).replace('₹', currency)}</p>
+        <div className="shrink-0 text-right">
+          <p className="fig font-semibold">{money(bill.grand).replace('₹', currency)}</p>
+          {(bill.postage > 0 || bill.tax > 0) && (
+            <p className="text-xs text-muted">goods {money(bill.total).replace('₹', currency)}</p>
+          )}
+        </div>
       </button>
 
       {expanded && (
@@ -361,19 +415,44 @@ function BillCard({ bill, expanded, onToggle, currency }) {
               <p className="fig shrink-0 text-sm font-semibold">{money(l.total_cost).replace('₹', currency)}</p>
             </li>
           ))}
+
+          {/* Postage and the supplier's GST (036) — on the bill, never in the
+              product cost above. */}
+          {(bill.postage > 0 || bill.tax > 0) && (
+            <li className="space-y-1 bg-paper-2 px-4 py-2.5 text-sm">
+              <ChargeRow label="Goods" value={money(bill.total).replace('₹', currency)} />
+              {bill.postage > 0 && <ChargeRow label="Postage / freight" value={money(bill.postage).replace('₹', currency)} />}
+              {Number(bill.charges?.cgst_amount) > 0 && <ChargeRow label="CGST" value={money(bill.charges.cgst_amount).replace('₹', currency)} />}
+              {Number(bill.charges?.sgst_amount) > 0 && <ChargeRow label="SGST" value={money(bill.charges.sgst_amount).replace('₹', currency)} />}
+              <div className="flex justify-between gap-3 border-t border-line pt-1 font-semibold">
+                <span>Bill total</span>
+                <span className="fig">{money(bill.grand).replace('₹', currency)}</span>
+              </div>
+            </li>
+          )}
         </ul>
       )}
     </div>
   )
 }
 
-function Stat({ label, value, accent }) {
+function ChargeRow({ label, value }) {
+  return (
+    <div className="flex justify-between gap-3">
+      <span className="text-muted">{label}</span>
+      <span className="fig">{value}</span>
+    </div>
+  )
+}
+
+function Stat({ label, value, hint, accent }) {
   return (
     <div className={`rounded-lg border bg-card px-5 py-3 ${accent ? 'border-profit/30' : 'border-line'}`}>
       <p className="flex items-center gap-1.5 text-xs text-muted">
         {accent && <IconCoin size={14} className="text-profit" />}{label}
       </p>
       <p className="mt-0.5 text-2xl font-bold">{value}</p>
+      {hint && <p className="mt-0.5 text-xs text-muted">{hint}</p>}
     </div>
   )
 }
