@@ -60,13 +60,24 @@ export default function PurchaseBillDetail() {
       // Postage / GST live in their own table (036) and are asked for separately:
       // migrations are applied by hand, so the app can run one ahead of the
       // database. A missing table must cost the charges line, not the page.
+      //
+      // The read is allowed to fail, but it is NOT allowed to fail silently:
+      // swallowing the error makes an unreadable table look exactly like a bill
+      // that genuinely had no postage or GST, and the owner is told a lie about
+      // their own money. Keep the reason and say so on the page.
       let charges = null
+      let chargesErr = ''
       if (group) {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('purchase_bills')
           .select('postage, cgst_amount, sgst_amount, grand_total, notes')
           .eq('purchase_group_id', group).maybeSingle()
+        if (error) chargesErr = error.message
         charges = data || null
+      } else {
+        // No group → this bill predates migration 033, so it can never have a
+        // charges row: 036 keys them on purchase_group_id.
+        chargesErr = 'ungrouped'
       }
       if (!active) return
 
@@ -86,6 +97,7 @@ export default function PurchaseBillDetail() {
         pcs: lines.reduce((a, l) => a + Number(l.quantity || 0), 0),
         goods, postage, cgst, sgst,
         grand: goods + postage + cgst + sgst,
+        chargesErr,
       })
     }
     load()
@@ -191,8 +203,22 @@ export default function PurchaseBillDetail() {
               GST <span className="fig">{c(bill.cgst + bill.sgst)}</span> is claimable input credit — not part of product cost.
             </p>
           )}
-          {!hasCharges && (
+          {/* "None recorded" and "couldn't be read" are different facts and must
+              never look the same — the owner has to know which one they are
+              looking at before trusting the total. */}
+          {!hasCharges && !bill.chargesErr && (
             <p className="pt-1 text-xs text-muted">No postage or GST recorded on this bill.</p>
+          )}
+          {!hasCharges && bill.chargesErr === 'ungrouped' && (
+            <p className="pt-1 text-xs text-muted">
+              This bill predates multi-line bills, so postage and GST were never recorded against it.
+            </p>
+          )}
+          {!hasCharges && bill.chargesErr && bill.chargesErr !== 'ungrouped' && (
+            <p className="pt-1 text-xs text-dues">
+              Postage and GST could not be read for this bill, so the total above is goods only.
+              Fix: run migration 036 on the database. ({bill.chargesErr})
+            </p>
           )}
         </div>
       </div>

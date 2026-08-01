@@ -80,11 +80,17 @@ export default function PurchaseHistory() {
     // separately, because migrations are applied by hand and the app can run one
     // ahead of the database — a missing table must cost the charges line, not the
     // whole page.
+    // A failure here must not be silent: without these rows every bill totals to
+    // goods only, and a wrong total that looks right is worse than an error.
     const charges = new Map()
-    const { data: billRows } = await supabase
+    const { data: billRows, error: chargesErr } = await supabase
       .from('purchase_bills')
       .select('purchase_group_id, postage, cgst_amount, sgst_amount, grand_total')
     for (const c of billRows ?? []) charges.set(c.purchase_group_id, c)
+    if (chargesErr) {
+      setErr(`Postage and GST could not be read, so bill totals below are goods only. `
+           + `Fix: run migration 036 on the database. (${chargesErr.message})`)
+    }
 
     const { data, error } = await supabase
       .from('purchases')
