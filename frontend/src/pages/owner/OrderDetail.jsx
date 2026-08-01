@@ -10,7 +10,7 @@ import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
 import { lineProfit, round2, toE164India } from '../../lib/helpers'
 import {
-  Button, Textarea, OrderStatusBadge, InProcessBadge, IN_PROCESS_STATUSES, Badge, Spinner,
+  Button, Textarea, Field, OrderStatusBadge, InProcessBadge, IN_PROCESS_STATUSES, Badge, Spinner,
 } from '../../components/ui'
 
 // Owner-side fulfilment timeline (post-approval). orders.status advances
@@ -228,6 +228,7 @@ function ApprovedTracker({ order }) {
 
 function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onApproved, onRejected }) {
   const [pay, setPay] = useState('cash')
+  const [shipping, setShipping] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [rejecting, setRejecting] = useState(false)
@@ -240,21 +241,24 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
   const listProfit = profit
   const costMissing = madeToOrder && !(costNum > 0)
 
-  // The bill is exactly the product subtotal the buyer already saw — no charges
-  // and no discount are added at approval (Golden Rule #5: the rate is locked).
+  // The bill is exactly the product subtotal the buyer already saw, plus any
+  // shipping & handling the owner adds here — the rate stays locked (Golden Rule
+  // #5), and shipping is a pass-through charge that carries no profit.
   const subtotal = Number(order.amount)
-  const grandTotal = subtotal
+  const shippingNum = round2(Number(shipping) || 0)
+  const grandTotal = round2(subtotal + shippingNum)
   const effProfit = round2(listProfit)
 
   async function approve() {
     setBusy(true); setErr('')
     // One RPC (migration 023) books the sale atomically: stock, udhaar, ledger,
-    // fulfilment, order-status and the bill. Charges/discount are always zero.
+    // fulfilment, order-status and the bill. The shipping fee passes through to
+    // the buyer's bill and the ledger — it carries no profit.
     const { error } = await supabase.rpc('approve_order', {
       p_order_id: order.id,
       p_payment_type: pay,
       p_discount: 0,
-      p_shipping: 0,
+      p_shipping: shippingNum,
       p_packing: 0,
       p_other: 0,
       p_notes: null,
@@ -285,14 +289,28 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
         </div>
       )}
 
-      {/* Bill total — the price the buyer already saw, nothing added. */}
+      {/* Bill total — the price the buyer already saw, plus any shipping fee. */}
       <dl className="space-y-1.5 rounded-lg bg-paper-2 px-4 py-3 text-sm">
         <BillRow label="Subtotal" value={cf(subtotal)} />
+        {shippingNum > 0 && <BillRow label="Shipping & handling" value={cf(shippingNum)} />}
         <div className="flex items-center justify-between border-t border-line pt-1.5 font-semibold">
           <span>Grand total</span>
           <span className="fig">{cf(grandTotal)}</span>
         </div>
       </dl>
+
+      <Field
+        label="Shipping & handling fee"
+        prefix={currency}
+        type="number"
+        min={0}
+        step="1"
+        inputMode="decimal"
+        placeholder="0"
+        value={shipping}
+        onChange={(e) => setShipping(e.target.value)}
+        hint="Added on top of the item total and printed on the buyer's bill. Leave empty for pickup / no shipping."
+      />
 
       <div>
         <p className="mb-1.5 text-sm font-medium">How is the buyer paying?</p>
