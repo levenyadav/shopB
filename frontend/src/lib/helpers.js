@@ -75,19 +75,22 @@ export function stockValue(item) {
   return round2(Number(item.quantity || 0) * Number(item.purchase_rate || 0))
 }
 
-// GST breakup for a customer invoice (SPEC §15). The sale amount is locked
-// (Golden Rule #5) and is what the buyer owes, so we treat it as tax-INCLUSIVE
-// and back out the tax — the grand total stays equal to the sale amount. CGST
-// and SGST split the tax in half (intra-state). Returns null when no GST applies.
-export function gstBreakup(amountInclusive, ratePct) {
+// GST on a customer invoice (SPEC §15, migration 037). A selling rate is the
+// PRE-TAX price and GST is charged ON TOP of it, the same direction a supplier
+// bills the shop (036) — so the amount is the taxable value and the buyer's
+// total grows by the tax. CGST and SGST split the tax in half (intra-state).
+// Returns null when no GST applies.
+//
+// Golden Rule #5 is untouched: `amount` is still the locked goods money and is
+// never recomputed here. The tax rides on top of it.
+export function gstOnTop(amountExclusive, ratePct) {
   const rate = Number(ratePct || 0)
-  const amount = round2(amountInclusive)
+  const taxable = round2(amountExclusive)
   if (rate <= 0) return null
-  const taxable = round2(amount / (1 + rate / 100))
-  const tax = round2(amount - taxable)
+  const tax = round2(taxable * (rate / 100))
   const cgst = round2(tax / 2)
   const sgst = round2(tax - cgst) // remainder, so cgst + sgst === tax exactly
-  return { rate, taxable, cgst, sgst, tax, total: amount }
+  return { rate, taxable, cgst, sgst, tax, total: round2(taxable + tax) }
 }
 
 
@@ -103,15 +106,16 @@ export function itemGstRate(itemRate, shopRate) {
   return rate > 0 ? rate : 0
 }
 
-// GST break-up for a bill whose lines sit in DIFFERENT slabs. Each line is
-// tax-inclusive (Golden Rule #5 — the locked amount is what the buyer pays), so
-// tax is backed out per line and the lines are then grouped by rate: a bill with
-// 12% cards and 18% boxes prints one CGST/SGST pair per slab, exactly like Tally.
+// GST for a bill whose lines sit in DIFFERENT slabs. Each line's amount is the
+// pre-tax value (037) and is taxed at its own rate, then the lines are grouped
+// by rate: a bill with 12% cards and 18% boxes prints one CGST/SGST pair per
+// slab, exactly like Tally.
 // `lines` = [{ amount, rate }]. Returns null when nothing is taxed.
 //   groups[]  — one per distinct rate, ascending
 //   totals    — taxable / cgst / sgst / tax summed across groups
+//   total     — taxable + tax across every group
 //   rate      — the single rate when every line shares one (else null)
-export function gstBreakupByRate(lines) {
+export function gstOnTopByRate(lines) {
   const byRate = new Map()
   for (const ln of lines || []) {
     const rate = Number(ln.rate || 0)
@@ -122,7 +126,7 @@ export function gstBreakupByRate(lines) {
 
   const groups = [...byRate.entries()]
     .sort((a, b) => a[0] - b[0])
-    .map(([rate, amount]) => ({ ...gstBreakup(amount, rate), rate }))
+    .map(([rate, amount]) => ({ ...gstOnTop(amount, rate), rate }))
 
   const sum = (k) => round2(groups.reduce((s, g) => s + g[k], 0))
   return {

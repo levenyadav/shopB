@@ -8,7 +8,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { useCart } from '../../context/CartContext'
 import { money } from '../../lib/format'
-import { rateForBuyer, round2 } from '../../lib/helpers'
+import { rateForBuyer, round2, itemGstRate } from '../../lib/helpers'
 import { Button, Textarea, Badge, Spinner } from '../../components/ui'
 import QtyStepper from '../../components/QtyStepper'
 
@@ -21,7 +21,7 @@ import QtyStepper from '../../components/QtyStepper'
 export default function ItemDetail() {
   const { id } = useParams()
   const { role } = useAuth()
-  const { currency, categories } = useShop()
+  const { currency, categories, shop } = useShop()
   const [item, setItem] = useState(null)
   const [err, setErr] = useState('')
   const [notFound, setNotFound] = useState(false)
@@ -31,7 +31,7 @@ export default function ItemDetail() {
     let active = true
     supabase
       .from('shopfront_items')
-      .select('id, name, quantity, rate, dealer_rate, low_stock_threshold, photo_url, category_id, moq, description, tags, images, made_to_order')
+      .select('id, name, quantity, rate, dealer_rate, low_stock_threshold, photo_url, category_id, moq, description, tags, images, made_to_order, gst_rate')
       .eq('id', id)
       .maybeSingle()
       .then(({ data, error }) => {
@@ -56,6 +56,7 @@ export default function ItemDetail() {
   if (!item) return <div className="grid place-items-center py-20 text-muted"><Spinner /></div>
 
   const price = rateForBuyer(item, role)
+  const gstRate = itemGstRate(item.gst_rate, shop?.gst_rate)
   const available = Number(item.quantity)
   const isStaffSide = role === 'owner' || role === 'staff'
 
@@ -87,6 +88,13 @@ export default function ItemDetail() {
             <span className="fig text-3xl font-bold text-peacock">
               {money(price).replace('₹', currency)}
             </span>
+            {/* GST is charged on top of this rate (037) — say so here rather than
+                let it appear for the first time in the cart. */}
+            {gstRate > 0 && (
+              <span className="pb-1 text-sm text-muted">
+                + GST <span className="fig">{gstRate}%</span>
+              </span>
+            )}
             {role === 'dealer' && <Badge tone="peacock">Dealer rate</Badge>}
             {item.made_to_order
               ? <Badge tone="peacock">Make to Order</Badge>

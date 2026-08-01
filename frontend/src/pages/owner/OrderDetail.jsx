@@ -8,7 +8,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
-import { lineProfit, round2, toE164India } from '../../lib/helpers'
+import { lineProfit, round2, toE164India, gstOnTop, itemGstRate } from '../../lib/helpers'
 import {
   Button, Textarea, OrderStatusBadge, InProcessBadge, IN_PROCESS_STATUSES, Badge, Spinner,
 } from '../../components/ui'
@@ -154,7 +154,7 @@ export default function OrderDetail() {
         ) : (
           <ApprovePanel
             order={order} item={item} profit={profit} ownerId={profile.id}
-            currency={currency} madeToOrder={madeToOrder}
+            currency={currency} shop={shop} madeToOrder={madeToOrder}
             onApproved={() => { setJustApproved(true); load() }}
             onRejected={load}
           />
@@ -226,7 +226,7 @@ function ApprovedTracker({ order }) {
   )
 }
 
-function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onApproved, onRejected }) {
+function ApprovePanel({ order, item, profit, ownerId, currency, shop, madeToOrder, onApproved, onRejected }) {
   const [pay, setPay] = useState('cash')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -240,10 +240,14 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
   const listProfit = profit
   const costMissing = madeToOrder && !(costNum > 0)
 
-  // The bill is exactly the product subtotal the buyer already saw — no charges
-  // and no discount are added at approval (Golden Rule #5: the rate is locked).
+  // The goods are exactly the subtotal the buyer already saw — no charges and no
+  // discount are added at approval (Golden Rule #5: the rate is locked). GST is
+  // charged on top of that (037); approve_order works it out server-side from
+  // the product's slab, so this is a preview of what it will book, not a second
+  // calculation the owner could change.
   const subtotal = Number(order.amount)
-  const grandTotal = subtotal
+  const gst = gstOnTop(subtotal, itemGstRate(item.gst_rate, shop?.gst_rate))
+  const grandTotal = round2(subtotal + (gst?.tax || 0))
   const effProfit = round2(listProfit)
 
   async function approve() {
@@ -285,9 +289,15 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
         </div>
       )}
 
-      {/* Bill total — the price the buyer already saw, nothing added. */}
+      {/* Bill total — the price the buyer already saw, plus the GST on it. */}
       <dl className="space-y-1.5 rounded-lg bg-paper-2 px-4 py-3 text-sm">
-        <BillRow label="Subtotal" value={cf(subtotal)} />
+        <BillRow label="Goods" value={cf(subtotal)} />
+        {gst && (
+          <>
+            <BillRow label={`CGST @ ${round2(gst.rate / 2)}%`} value={cf(gst.cgst)} />
+            <BillRow label={`SGST @ ${round2(gst.rate / 2)}%`} value={cf(gst.sgst)} />
+          </>
+        )}
         <div className="flex items-center justify-between border-t border-line pt-1.5 font-semibold">
           <span>Grand total</span>
           <span className="fig">{cf(grandTotal)}</span>

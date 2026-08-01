@@ -219,8 +219,41 @@ side (§6.4). The client writes the purchase lines first and the charges row sec
 so a failure leaves a bill missing its charges (re-insertable), never a half-moved
 balance.
 
-Note the direction differs from a customer invoice: a sale amount is tax-**inclusive**
-and tax is backed out of it, while a supplier adds tax **on top** of the goods value.
+Both sides of the books now run the same direction: a supplier adds tax **on top**
+of the goods value, and so does the shop when it sells (migration 037, below).
+
+**Selling-side GST — charged on top (migration 037):**
+A selling rate (`rate` / `dealer_rate`) is the **pre-tax** price. GST is added over
+it, so a customer bill reads:
+
+```
+goods (qty × rate_at_order)
+− discount
++ shipping + packing + other
++ CGST + SGST          ← on the goods NET OF DISCOUNT
+= grand_total
+```
+
+The slab is the product's own `items.gst_rate`, falling back to `shops.gst_rate`
+(§034). Shipping / packing / other stay pass-through and are **never** taxed, the
+same treatment postage gets on the buying side. A discount **does** reduce the
+taxable value — it is a genuine reduction in the price of the goods.
+
+The amounts live in `order_bills` (`taxable_value`, `cgst_amount`, `sgst_amount`,
+`gst_rate`), written by `approve_order()` and `create_counter_sale()`; the tax is
+computed **server-side** from the product's slab, never sent by the client, so
+staff at the counter cannot influence it. The extra tax reaches `balance_due` and
+the append-only ledger through the same RPC that already books shipping/packing/
+other (Golden Rules #9/#10).
+
+This keeps **profit honest**. Golden Rule #6 is `(rate − purchase_rate) × qty`;
+`purchase_rate` is the pre-tax goods cost, so while `rate` was tax-inclusive every
+sale counted the GST collected for the government as margin. With both sides
+pre-tax, the subtraction is like-for-like. Golden Rule #5 is unchanged and sharper:
+`rate_at_order` and `sales.amount` remain the locked **goods** money, and the tax
+rides on top of them. `order_bills` rows written before 037 carry zero tax and keep
+their stored `grand_total`, so an old invoice reprints exactly as it was issued —
+nothing is back-charged.
 
 ---
 
