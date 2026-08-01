@@ -36,7 +36,9 @@ export default function PartyDetail() {
 
       const ledgerQuery = supabase
         .from('ledger')
-        .select('id, entry_type, debit, credit, running_balance, description, created_at')
+        // reference_id/reference_table let a purchase or sale row open the
+        // document behind it (see LedgerTable.detailPath).
+        .select('id, entry_type, debit, credit, running_balance, description, created_at, reference_id, reference_table')
         .eq('party_id', id)
         .eq('party_type', type)
         .order('created_at', { ascending: false })

@@ -1,4 +1,5 @@
-import { IconReceipt2 } from '@tabler/icons-react'
+import { Link } from 'react-router-dom'
+import { IconReceipt2, IconChevronRight } from '@tabler/icons-react'
 import { money, dateTime } from '../lib/format'
 import { Badge } from './ui'
 
@@ -14,6 +15,18 @@ const ENTRY = {
   sale:        { label: 'Sale',         tone: 'saffron', sign: +1 },
   payment_in:  { label: 'Payment in',   tone: 'profit',  sign: -1 },
   payment_out: { label: 'Payment out',  tone: 'profit',  sign: -1 },
+}
+
+// Where an entry came from. Every ledger row carries reference_id +
+// reference_table (001), so a purchase or a sale can open the document behind
+// it. A purchase's reference_id is the bill's FIRST purchases line (033) —
+// exactly what /owner/purchases/:id expects. Payments have no detail page yet,
+// so those rows stay plain text rather than pretending to be clickable.
+function detailPath(e) {
+  if (!e.reference_id) return null
+  if (e.entry_type === 'purchase') return `/owner/purchases/${e.reference_id}`
+  if (e.entry_type === 'sale') return `/owner/sales/${e.reference_id}`
+  return null
 }
 
 export default function LedgerTable({ entries, currency = '₹' }) {
@@ -40,15 +53,27 @@ export default function LedgerTable({ entries, currency = '₹' }) {
           const meta = ENTRY[e.entry_type] || { label: e.entry_type, tone: 'muted', sign: +1 }
           const amount = Number(e.debit || 0) + Number(e.credit || 0)
           const up = meta.sign > 0
-          return (
-            <li key={e.id} className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1 px-5 py-3 text-sm sm:grid-cols-[1fr_auto_auto]">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <Badge tone={meta.tone}>{meta.label}</Badge>
-                  <span className="truncate text-ink">{e.description}</span>
-                </div>
-                <p className="mt-0.5 text-xs text-muted">{dateTime(e.created_at)}</p>
+          const to = detailPath(e)
+          const entry = (
+            <>
+              <div className="flex items-center gap-2">
+                <Badge tone={meta.tone}>{meta.label}</Badge>
+                <span className="truncate text-ink">{e.description}</span>
+                {to && <IconChevronRight size={15} className="shrink-0 text-muted" />}
               </div>
+              <p className="mt-0.5 text-xs text-muted">
+                {dateTime(e.created_at)}
+                {to && <span className="ml-2 text-peacock">{e.entry_type === 'sale' ? 'View sale' : 'View bill'}</span>}
+              </p>
+            </>
+          )
+          return (
+            <li key={e.id} className={`grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1 px-5 py-3 text-sm sm:grid-cols-[1fr_auto_auto] ${to ? 'transition hover:bg-paper-2' : ''}`}>
+              {to ? (
+                <Link to={to} className="min-w-0">{entry}</Link>
+              ) : (
+                <div className="min-w-0">{entry}</div>
+              )}
 
               <div className="text-right">
                 <span className="sm:hidden mr-1 text-xs text-muted">Change</span>

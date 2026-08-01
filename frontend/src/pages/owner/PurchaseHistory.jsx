@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { IconSearch, IconInbox, IconCoin, IconFileSpreadsheet, IconChevronDown, IconChevronRight, IconTag } from '@tabler/icons-react'
+import { IconSearch, IconInbox, IconCoin, IconFileSpreadsheet, IconChevronDown, IconChevronRight, IconTag, IconFileInvoice } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime, dateShort } from '../../lib/format'
@@ -430,6 +430,17 @@ function BillCard({ bill, expanded, onToggle, currency }) {
               </div>
             </li>
           )}
+
+          {/* The full bill on its own page — printable, and the same page the
+              supplier's ledger entry opens. Any line id resolves the bill. */}
+          <li className="px-4 py-2.5">
+            <Link
+              to={`/owner/purchases/${bill.lines[0].id}`}
+              className="inline-flex items-center gap-1 text-sm font-medium text-peacock hover:underline"
+            >
+              <IconFileInvoice size={16} /> Open full bill
+            </Link>
+          </li>
         </ul>
       )}
     </div>

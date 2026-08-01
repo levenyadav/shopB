@@ -15,6 +15,7 @@ import MyAccount from './pages/customer/MyAccount'
 import Dashboard from './pages/owner/Dashboard'
 import PurchaseEntry from './pages/owner/PurchaseEntry'
 import PurchaseHistory from './pages/owner/PurchaseHistory'
+import PurchaseBillDetail from './pages/owner/PurchaseBillDetail'
 import BulkPurchase from './pages/owner/BulkPurchase'
 import Inventory from './pages/owner/Inventory'
 import StockInquiry from './pages/owner/StockInquiry'
@@ -115,6 +116,7 @@ export default function App() {
         <Route index element={<Dashboard />} />
         <Route path="purchase" element={<PurchaseEntry />} />
         <Route path="purchases" element={<PurchaseHistory />} />
+        <Route path="purchases/:id" element={<PurchaseBillDetail />} />
         <Route path="bulk-purchase" element={<BulkPurchase />} />
         <Route path="inventory" element={<Inventory />} />
         <Route path="stock" element={<StockInquiry />} />
