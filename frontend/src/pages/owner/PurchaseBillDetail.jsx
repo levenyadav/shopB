@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   IconArrowLeft, IconPrinter, IconEye, IconTag, IconTruck, IconUser, IconPhone, IconMapPin,
+  IconPlus, IconX, IconDeviceFloppy,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime, dateShort } from '../../lib/format'
+import { round2, purchaseBillTotals, suggestPurchaseGst } from '../../lib/helpers'
 import { buildPurchaseBillModel, viewPurchaseBill, printPurchaseBill } from '../../lib/purchaseBillTemplate'
-import { Badge, Spinner, Button, PhotoThumb } from '../../components/ui'
+import { Badge, Spinner, Button, PhotoThumb, Field } from '../../components/ui'
 
 // SPEC §6.1 / §6.7.1 — one supplier bill, in full. Reached from the supplier's
 // ledger (the `purchase` entry links straight here) and from Purchase History.
@@ -25,6 +27,7 @@ export default function PurchaseBillDetail() {
   const [bill, setBill] = useState(null)
   const [err, setErr] = useState('')
   const [missing, setMissing] = useState(false)
+  const [reload, setReload] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -42,10 +45,10 @@ export default function PurchaseBillDetail() {
       let lineQuery = supabase
         .from('purchases')
         .select(
-          'id, quantity, purchase_rate, total_cost, notes, created_at, ' +
+          'id, shop_id, supplier_id, quantity, purchase_rate, total_cost, notes, created_at, ' +
             'invoice_no, invoice_date, purchase_group_id, ' +
             'item_no, item_name, ' +
-            'item:items(id, name, item_no, photo_url, hsn_sac), ' +
+            'item:items(id, name, item_no, photo_url, hsn_sac, gst_rate), ' +
             'supplier:suppliers(id, name, phone, contact_person, address), ' +
             'entered_by:profiles(full_name)',
         )
@@ -88,6 +91,9 @@ export default function PurchaseBillDetail() {
       const sgst = Number(charges?.sgst_amount || 0)
       setBill({
         lines,
+        group,
+        shopId: first.shop_id,
+        supplierId: first.supplier_id,
         supplier: first.supplier,
         invoice_no: lines.find((l) => l.invoice_no)?.invoice_no || '',
         invoice_date: lines.find((l) => l.invoice_date)?.invoice_date || null,
@@ -102,7 +108,7 @@ export default function PurchaseBillDetail() {
     }
     load()
     return () => { active = false }
-  }, [id])
+  }, [id, reload])
 
   if (missing) return (
     <Empty>
@@ -223,6 +229,15 @@ export default function PurchaseBillDetail() {
         </div>
       </div>
 
+      {/* A bill entered before migration 036 reached the database never got its
+          charges row, and 036 books money on INSERT — applying the migration
+          afterwards recovers nothing by itself. This puts that one missing
+          insert back, so the trigger books it exactly as it would have on the
+          day (Golden Rule #10 — the app never moves the balance itself). */}
+      {!hasCharges && bill.group && !bill.chargesErr && (
+        <BackfillCharges bill={bill} currency={currency} onSaved={() => setReload((n) => n + 1)} />
+      )}
+
       {bill.notes && (
         <div className="rounded-lg border border-line bg-card p-4 text-sm">
           <p className="text-xs text-muted">Note</p>
@@ -249,6 +264,125 @@ export default function PurchaseBillDetail() {
 
       {err && bill && <p className="no-print rounded-lg bg-dues/10 px-4 py-3 text-sm text-dues">{err}</p>}
     </div>
+  )
+}
+
+// Record the postage / CGST / SGST that a bill was entered without. INSERT only:
+// the 036 trigger fires on insert and the ledger is append-only (Golden Rule #9),
+// so once these are booked they are history — this form disappears and the
+// figures show read-only. Correcting a wrong figure is a Payment Out, not an edit.
+function BackfillCharges({ bill, currency, onSaved }) {
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState({ postage: '', cgst: '', sgst: '' })
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+  const set = (k) => (e) => { setForm((f) => ({ ...f, [k]: e.target.value })); setErr('') }
+
+  const totals = purchaseBillTotals({
+    goods: bill.goods, postage: form.postage, cgst: form.cgst, sgst: form.sgst,
+  })
+  const added = round2(totals.postage + totals.tax)
+
+  // Same suggestion Purchase Entry offers: the tax these products' own GST slabs
+  // (migration 034) imply. A hint only — the owner types what the paper bill says.
+  const suggested = suggestPurchaseGst(bill.lines.map((l) => ({
+    amount: Number(l.total_cost || 0), rate: l.item?.gst_rate,
+  })))
+
+  async function save(e) {
+    e.preventDefault()
+    if (added <= 0) { setErr('Enter postage, CGST or SGST first — there is nothing to record yet.'); return }
+    setSaving(true); setErr('')
+    const { error } = await supabase.from('purchase_bills').insert({
+      shop_id: bill.shopId,
+      supplier_id: bill.supplierId,
+      purchase_group_id: bill.group,
+      goods_total: totals.goods,
+      postage: totals.postage,
+      cgst_amount: totals.cgst,
+      sgst_amount: totals.sgst,
+      grand_total: totals.grand,
+    })
+    setSaving(false)
+    if (error) { setErr(`Could not record these charges: ${error.message}`); return }
+    onSaved()
+  }
+
+  const c = (n) => money(n).replace('₹', currency)
+
+  if (!open) {
+    return (
+      <div className="no-print flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-line bg-card px-5 py-4">
+        <p className="text-sm text-muted">
+          Did this bill have postage or GST? It was never recorded, so the total above is goods only.
+        </p>
+        <Button variant="ghost" onClick={() => setOpen(true)}>
+          <IconPlus size={18} /> Add postage / GST
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <form onSubmit={save} className="no-print space-y-4 rounded-lg border border-line bg-card p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="font-semibold text-ink">Add postage / GST to this bill</h3>
+          <p className="text-xs text-muted">
+            Type what the supplier's paper bill says. This is recorded once and can't be edited afterwards.
+          </p>
+        </div>
+        <button type="button" onClick={() => setOpen(false)} className="shrink-0 text-muted hover:text-ink">
+          <IconX size={18} />
+        </button>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Field label="Postage / freight" prefix={currency} inputMode="decimal"
+               value={form.postage} onChange={set('postage')} placeholder="0" />
+        <Field label="CGST" prefix={currency} inputMode="decimal"
+               value={form.cgst} onChange={set('cgst')} placeholder="0" />
+        <Field label="SGST" prefix={currency} inputMode="decimal"
+               value={form.sgst} onChange={set('sgst')} placeholder="0" />
+      </div>
+
+      {suggested && (
+        <button
+          type="button"
+          onClick={() => setForm((f) => ({ ...f, cgst: String(suggested.cgst), sgst: String(suggested.sgst) }))}
+          className="text-xs font-medium text-peacock hover:underline"
+        >
+          Fill {c(suggested.cgst)} + {c(suggested.sgst)} from these products' GST rates
+        </button>
+      )}
+
+      <div className="space-y-1 rounded-lg bg-paper-2 px-4 py-3 text-sm">
+        <Charge label="Goods (already recorded)" value={c(totals.goods)} />
+        {totals.postage > 0 && <Charge label="Postage / freight" value={c(totals.postage)} />}
+        {totals.cgst > 0 && <Charge label="CGST" value={c(totals.cgst)} />}
+        {totals.sgst > 0 && <Charge label="SGST" value={c(totals.sgst)} />}
+        <div className="flex justify-between gap-3 border-t border-line pt-1.5 font-semibold">
+          <span>New bill total</span>
+          <span className="fig">{c(totals.grand)}</span>
+        </div>
+      </div>
+
+      <p className="rounded-lg bg-saffron/10 px-4 py-3 text-xs text-ink">
+        Saving adds <span className="fig font-semibold">{c(added)}</span> to{' '}
+        {bill.supplier?.name || 'this supplier'}'s balance and writes one ledger entry —
+        the same as if it had been entered with the bill. Postage stays out of item cost,
+        and the GST stays claimable input credit.
+      </p>
+
+      {err && <p className="rounded-lg bg-dues/10 px-4 py-3 text-sm text-dues">{err}</p>}
+
+      <div className="flex flex-wrap gap-3">
+        <Button type="submit" disabled={saving || added <= 0}>
+          {saving ? <Spinner /> : <IconDeviceFloppy size={18} />} Record these charges
+        </Button>
+        <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+      </div>
+    </form>
   )
 }
 
