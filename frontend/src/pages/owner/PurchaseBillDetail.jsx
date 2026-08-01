@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
-  IconArrowLeft, IconPrinter, IconTag, IconTruck, IconUser, IconPhone, IconMapPin,
+  IconArrowLeft, IconPrinter, IconEye, IconTag, IconTruck, IconUser, IconPhone, IconMapPin,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime, dateShort } from '../../lib/format'
+import { buildPurchaseBillModel, viewPurchaseBill, printPurchaseBill } from '../../lib/purchaseBillTemplate'
 import { Badge, Spinner, Button, PhotoThumb } from '../../components/ui'
-import PurchaseBillSlip from '../../components/PurchaseBillSlip'
 
 // SPEC §6.1 / §6.7.1 — one supplier bill, in full. Reached from the supplier's
 // ledger (the `purchase` entry links straight here) and from Purchase History.
@@ -45,7 +45,7 @@ export default function PurchaseBillDetail() {
           'id, quantity, purchase_rate, total_cost, notes, created_at, ' +
             'invoice_no, invoice_date, purchase_group_id, ' +
             'item_no, item_name, ' +
-            'item:items(id, name, item_no, photo_url), ' +
+            'item:items(id, name, item_no, photo_url, hsn_sac), ' +
             'supplier:suppliers(id, name, phone, contact_person, address), ' +
             'entered_by:profiles(full_name)',
         )
@@ -103,6 +103,7 @@ export default function PurchaseBillDetail() {
 
   const c = (n) => money(n).replace('₹', currency)
   const hasCharges = bill.postage > 0 || bill.cgst > 0 || bill.sgst > 0
+  const doc = buildPurchaseBillModel({ shop, bill })
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
@@ -204,7 +205,10 @@ export default function PurchaseBillDetail() {
       )}
 
       <div className="no-print flex flex-wrap items-center gap-3">
-        <Button onClick={() => window.print()}>
+        <Button onClick={() => viewPurchaseBill(doc)}>
+          <IconEye size={18} /> View bill document
+        </Button>
+        <Button variant="ghost" onClick={() => printPurchaseBill(doc)}>
           <IconPrinter size={18} /> Print / Save PDF
         </Button>
         {bill.supplier && (
@@ -218,9 +222,6 @@ export default function PurchaseBillDetail() {
       </div>
 
       {err && bill && <p className="no-print rounded-lg bg-dues/10 px-4 py-3 text-sm text-dues">{err}</p>}
-
-      {/* Hidden on screen; the only thing inked by window.print() (SPEC §13). */}
-      <PurchaseBillSlip bill={bill} shop={shop} />
     </div>
   )
 }
