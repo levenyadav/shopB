@@ -226,54 +226,11 @@ function ApprovedTracker({ order }) {
   )
 }
 
-// Evaluate one charge rule against this order; returns the fee (>=0) or null if
-// the rule doesn't apply. Mirrors the intent baked into charge_rules (migration
-// 023): buyer-type gate + a value/quantity condition; % fees are of order value.
-function evalRule(rule, { buyerType, orderValue, quantity }) {
-  if (rule.is_active === false) return null
-  if (rule.applies_to !== 'all' && rule.applies_to !== buyerType) return null
-  const val = rule.basis === 'quantity' ? Number(quantity) : Number(orderValue)
-  const t = Number(rule.threshold)
-  const hi = rule.threshold_hi == null ? null : Number(rule.threshold_hi)
-  let ok = false
-  if (rule.operator === 'lt') ok = val < t
-  else if (rule.operator === 'lte') ok = val <= t
-  else if (rule.operator === 'gte') ok = val >= t
-  else if (rule.operator === 'gt') ok = val > t
-  else if (rule.operator === 'between') ok = hi != null && val >= t && val <= hi
-  if (!ok) return null
-  return rule.is_percent ? round2((Number(orderValue) * Number(rule.fee)) / 100) : Number(rule.fee)
-}
-
-// Highest applicable fee for a charge type (a free-shipping rule sets fee 0, so a
-// qualifying free-shipping rule still wins only if it's the highest — see Settings).
-function suggestFee(rules, type, ctx) {
-  let best = null
-  for (const r of rules) {
-    if (r.charge_type !== type) continue
-    const f = evalRule(r, ctx)
-    if (f != null && (best == null || f > best)) best = f
-  }
-  return best
-}
-
-// Parse a money input box to a non-negative number (blank -> 0).
-const num = (v) => Math.max(0, Number(v || 0))
-
 function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onApproved, onRejected }) {
   const [pay, setPay] = useState('cash')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [rejecting, setRejecting] = useState(false)
-
-  // Finalize-bill charges (migration 023). Per-line price is NEVER edited here
-  // (Golden Rule #5) — these sit on TOP of the product subtotal the buyer saw.
-  const [discount, setDiscount] = useState('')
-  const [shipping, setShipping] = useState('')
-  const [packing, setPacking] = useState('')
-  const [other, setOther] = useState('')
-  const [notes, setNotes] = useState('')
-  const [suggested, setSuggested] = useState(false)
 
   const cf = (n) => money(n).replace('₹', currency)
   // Cost is the item's known purchase rate for both stock and made-to-order items
@@ -283,44 +240,24 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
   const listProfit = profit
   const costMissing = madeToOrder && !(costNum > 0)
 
+  // The bill is exactly the product subtotal the buyer already saw — no charges
+  // and no discount are added at approval (Golden Rule #5: the rate is locked).
   const subtotal = Number(order.amount)
-  const discountNum = Math.min(num(discount), subtotal)
-  const netCharges = round2(num(shipping) + num(packing) + num(other) - discountNum)
-  const grandTotal = round2(subtotal + netCharges)
-  const effProfit = round2(listProfit - discountNum)   // discount is a real margin loss
-
-  // Auto-suggest shipping / packing from the owner's charge_rules (Settings).
-  useEffect(() => {
-    let alive = true
-    async function loadRules() {
-      const { data } = await supabase
-        .from('charge_rules')
-        .select('charge_type, applies_to, basis, operator, threshold, threshold_hi, fee, is_percent, is_active')
-        .eq('shop_id', order.shop_id)
-      if (!alive || !data?.length) return
-      const ctx = { buyerType: order.buyer_type, orderValue: subtotal, quantity: order.quantity }
-      const sShip = suggestFee(data, 'shipping', ctx)
-      const sPack = suggestFee(data, 'packing', ctx)
-      if (sShip != null) setShipping(String(sShip))
-      if (sPack != null) setPacking(String(sPack))
-      if (sShip != null || sPack != null) setSuggested(true)
-    }
-    loadRules()
-    return () => { alive = false }
-  }, [order.shop_id, order.buyer_type, order.quantity, subtotal])
+  const grandTotal = subtotal
+  const effProfit = round2(listProfit)
 
   async function approve() {
     setBusy(true); setErr('')
-    // One RPC (migration 023) books the sale GROSS + the net charges/discount
-    // atomically: stock, udhaar, ledger, fulfilment, order-status and the bill.
+    // One RPC (migration 023) books the sale atomically: stock, udhaar, ledger,
+    // fulfilment, order-status and the bill. Charges/discount are always zero.
     const { error } = await supabase.rpc('approve_order', {
       p_order_id: order.id,
       p_payment_type: pay,
-      p_discount: discountNum,
-      p_shipping: num(shipping),
-      p_packing: num(packing),
-      p_other: num(other),
-      p_notes: notes.trim() || null,
+      p_discount: 0,
+      p_shipping: 0,
+      p_packing: 0,
+      p_other: 0,
+      p_notes: null,
     })
     setBusy(false)
     if (error) { setErr(error.message); return }
@@ -348,40 +285,9 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
         </div>
       )}
 
-      {/* Charges — added on top of the price the buyer already saw. */}
-      <div className="space-y-3 rounded-lg border border-line bg-paper-2 p-4">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-semibold">Charges &amp; discount</p>
-          {suggested && (
-            <span className="rounded-full bg-peacock/10 px-2 py-0.5 text-[11px] font-semibold text-peacock">
-              Auto-filled from rules
-            </span>
-          )}
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <ChargeInput label="Discount" value={discount} onChange={setDiscount} currency={currency} tone="dues" />
-          <ChargeInput label="Shipping" value={shipping} onChange={setShipping} currency={currency} />
-          <ChargeInput label="Packing" value={packing} onChange={setPacking} currency={currency} />
-          <ChargeInput label="Other charge" value={other} onChange={setOther} currency={currency} />
-        </div>
-        <input
-          value={notes} onChange={(e) => setNotes(e.target.value)}
-          placeholder="Bill note (optional — prints on the invoice)"
-          className="w-full rounded-lg border border-line bg-card px-3 py-2 text-sm outline-none focus:border-peacock"
-        />
-        <p className="text-[11px] text-muted">
-          Prices already include GST (tax-inclusive) — nothing is added for tax. Shipping, packing &amp; other are
-          pass-through (no profit); a discount reduces your profit.
-        </p>
-      </div>
-
-      {/* Live bill breakdown */}
+      {/* Bill total — the price the buyer already saw, nothing added. */}
       <dl className="space-y-1.5 rounded-lg bg-paper-2 px-4 py-3 text-sm">
         <BillRow label="Subtotal" value={cf(subtotal)} />
-        {discountNum > 0 && <BillRow label="Discount" value={'− ' + cf(discountNum)} tone="dues" />}
-        {num(shipping) > 0 && <BillRow label="Shipping" value={'+ ' + cf(num(shipping))} />}
-        {num(packing) > 0 && <BillRow label="Packing" value={'+ ' + cf(num(packing))} />}
-        {num(other) > 0 && <BillRow label="Other" value={'+ ' + cf(num(other))} />}
         <div className="flex items-center justify-between border-t border-line pt-1.5 font-semibold">
           <span>Grand total</span>
           <span className="fig">{cf(grandTotal)}</span>
@@ -427,23 +333,6 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
         </Button>
       </div>
     </div>
-  )
-}
-
-function ChargeInput({ label, value, onChange, currency, tone }) {
-  return (
-    <label className="block">
-      <span className={`mb-1 block text-xs font-medium ${tone === 'dues' ? 'text-dues' : 'text-muted'}`}>{label}</span>
-      <div className="flex items-center rounded-lg border border-line bg-card focus-within:border-peacock">
-        <span className="pl-2.5 text-xs text-muted">{currency}</span>
-        <input
-          type="number" min="0" step="0.01" inputMode="decimal"
-          value={value} onChange={(e) => onChange(e.target.value)}
-          placeholder="0"
-          className="w-full bg-transparent px-2 py-2 text-sm outline-none"
-        />
-      </div>
-    </label>
   )
 }
 
