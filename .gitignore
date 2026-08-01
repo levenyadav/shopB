@@ -46,3 +46,6 @@ coverage/
 # Ignore the whole folder: naming files one by one missed test-laaffic.js, which
 # had a live Api-Key/Api-Secret sitting in it and was staged-clean to push.
 scripts/
+
+# Screenshots dropped in the project root while testing
+Screenshot*.png
