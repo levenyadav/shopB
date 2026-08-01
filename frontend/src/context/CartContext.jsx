@@ -54,9 +54,6 @@ export function CartProvider({ children }) {
           photo_url: item.photo_url ?? null,
           rate: Number(item.rate),
           dealer_rate: Number(item.dealer_rate),
-          // The product's GST slab (034), so the cart can show the tax charged
-          // on top (037). null = the shop's default rate.
-          gst_rate: item.gst_rate ?? null,
           moq,
           available,
           made_to_order: mto,
@@ -71,7 +68,6 @@ export function CartProvider({ children }) {
       next[i] = {
         ...next[i], qty: merged, available, moq, made_to_order: mto,
         rate: Number(item.rate), dealer_rate: Number(item.dealer_rate),
-        gst_rate: item.gst_rate ?? null,
         notes: note ?? next[i].notes,
       }
       return next

@@ -8,7 +8,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { useCart } from '../../context/CartContext'
 import { money } from '../../lib/format'
-import { rateForBuyer, round2, gstOnTopByRate, itemGstRate } from '../../lib/helpers'
+import { rateForBuyer, round2 } from '../../lib/helpers'
 import { Button, Spinner } from '../../components/ui'
 import QtyStepper from '../../components/QtyStepper'
 
@@ -21,20 +21,14 @@ import QtyStepper from '../../components/QtyStepper'
 export default function Cart() {
   const navigate = useNavigate()
   const { role, profile } = useAuth()
-  const { shopId, currency, shop } = useShop()
+  const { shopId, currency } = useShop()
   const { lines, setQty, remove, clear } = useCart()
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
   const isBuyer = role === 'customer' || role === 'dealer'
   const priceOf = (l) => rateForBuyer(l, role)
-  const goods = round2(lines.reduce((s, l) => s + priceOf(l) * l.qty, 0))
-  // GST is charged on top of the rate (037), so the cart must say so before the
-  // buyer commits — the shop confirms the exact figure at approval.
-  const gst = gstOnTopByRate(lines.map((l) => ({
-    amount: round2(priceOf(l) * l.qty), rate: itemGstRate(l.gst_rate, shop?.gst_rate),
-  })))
-  const total = round2(goods + (gst?.tax || 0))
+  const total = round2(lines.reduce((s, l) => s + priceOf(l) * l.qty, 0))
 
   async function checkout() {
     if (!isBuyer) { navigate('/login'); return }
@@ -116,23 +110,9 @@ export default function Cart() {
           </ul>
 
           <div className="space-y-4 rounded-lg border border-line bg-card p-5">
-            <div className="space-y-1.5 border-b border-line pb-3">
-              {gst && (
-                <>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted">Items</span>
-                    <span className="fig">{money(goods).replace('₹', currency)}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted">GST{gst.rate ? ` @ ${gst.rate}%` : ''}</span>
-                    <span className="fig">{money(gst.tax).replace('₹', currency)}</span>
-                  </div>
-                </>
-              )}
-              <div className="flex items-center justify-between">
-                <span className="text-muted">Total</span>
-                <span className="fig text-2xl font-bold">{money(total).replace('₹', currency)}</span>
-              </div>
+            <div className="flex items-center justify-between border-b border-line pb-3">
+              <span className="text-muted">Total</span>
+              <span className="fig text-2xl font-bold">{money(total).replace('₹', currency)}</span>
             </div>
 
             {err && <p className="rounded-lg bg-dues/10 px-3 py-2 text-sm text-dues">{err}</p>}

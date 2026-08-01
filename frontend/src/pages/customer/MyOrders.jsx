@@ -44,7 +44,7 @@ export default function MyOrders() {
       if (billable.length) {
         const { data: bls } = await supabase
           .from('customer_bills')
-          .select('order_id, discount_amount, shipping_fee, packing_fee, other_charge, cgst_amount, sgst_amount')
+          .select('order_id, discount_amount, shipping_fee, packing_fee, other_charge')
           .in('order_id', billable.map((o) => o.id))
         for (const b of bls ?? []) billById[b.order_id] = b
       }
@@ -127,15 +127,12 @@ function groupOrders(rows) {
     }
     g.lines.push(o)
     // A rejected line is never charged, so it adds nothing to the total. Fees
-    // and GST only exist once the shop has approved and billed the line (023,
-    // 037), so a pending card shows the goods alone — the same figure its own
-    // page shows before confirmation.
+    // only exist once the shop has approved and billed the line (023).
     if (o.status !== 'rejected') {
       const b = o.bill
       g.totalAmount += (Number(o.amount) || 0)
         - Number(b?.discount_amount || 0) + Number(b?.shipping_fee || 0)
         + Number(b?.packing_fee || 0) + Number(b?.other_charge || 0)
-        + Number(b?.cgst_amount || 0) + Number(b?.sgst_amount || 0)
       g.totalQty += Number(o.quantity) || 0
     }
     // Show the least-progressed status so the buyer sees the group as still open.

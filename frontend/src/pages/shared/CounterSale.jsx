@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   IconSearch, IconBarcode, IconPlus, IconMinus, IconTrash, IconUserPlus,
@@ -8,7 +8,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { money, qty } from '../../lib/format'
-import { rateForBuyer, lineProfit, round2, toE164India, gstOnTopByRate, itemGstRate } from '../../lib/helpers'
+import { rateForBuyer, lineProfit, round2, toE164India } from '../../lib/helpers'
 import { Button, Field, Spinner, Badge, PhotoThumb } from '../../components/ui'
 import BarcodeScanner from '../../components/BarcodeScanner'
 import CounterReceipt from '../../components/CounterReceipt'
@@ -41,16 +41,7 @@ export default function CounterSale() {
   const [done, setDone] = useState(null)  // completed bill → receipt screen
 
   const buyerType = buyer?.role === 'dealer' ? 'dealer' : 'customer'
-  const goods = useMemo(() => round2(cart.reduce((s, l) => s + l.charge * l.quantity, 0)), [cart])
-  // GST is charged on top of the rate (037). create_counter_sale computes the
-  // same figure server-side from each product's slab, so what is shown at the
-  // counter is what is booked — this is a preview of that, not a second opinion.
-  const gst = useMemo(() => (shop?.gstin
-    ? gstOnTopByRate(cart.map((l) => ({
-        amount: round2(l.charge * l.quantity), rate: itemGstRate(l.gst_rate, shop?.gst_rate),
-      })))
-    : null), [cart, shop])
-  const total = round2(goods + (gst?.tax || 0))
+  const total = useMemo(() => round2(cart.reduce((s, l) => s + l.charge * l.quantity, 0)), [cart])
   const profit = useMemo(
     () => round2(cart.reduce((s, l) => s + lineProfit(l.charge, l.purchase_rate ?? 0, l.quantity), 0)),
     [cart],
@@ -190,17 +181,6 @@ export default function CounterSale() {
             )}
 
             <div className="space-y-1 border-t border-line px-4 py-3">
-              {gst && (
-                <>
-                  <Row label="Goods" value={<span className="fig">{m(goods)}</span>} />
-                  {gst.groups.map((g) => (
-                    <Fragment key={g.rate}>
-                      <Row label={`CGST @ ${round2(g.rate / 2)}%`} value={<span className="fig">{m(g.cgst)}</span>} />
-                      <Row label={`SGST @ ${round2(g.rate / 2)}%`} value={<span className="fig">{m(g.sgst)}</span>} />
-                    </Fragment>
-                  ))}
-                </>
-              )}
               <Row label="Total" value={<span className="fig text-lg font-bold">{m(total)}</span>} />
               {isOwner && cart.length > 0 && (
                 <Row label="Profit (owner only)" value={<span className="fig text-sm font-semibold text-profit">{m(profit)}</span>} />

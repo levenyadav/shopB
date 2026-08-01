@@ -70,7 +70,7 @@ export function buildSlipPdf(job, shop) {
 
 // ---------------------------------------------------------------------------
 // Customer Invoice (SPEC §15) — buyer-facing bill. GST is optional: when the
-// shop has a GSTIN + rate, an `invoice.gst` breakup (from helpers.gstOnTop) is
+// shop has a GSTIN + rate, an `invoice.gst` breakup (from helpers.gstBreakup) is
 // printed; otherwise it's a plain bill. `lines` is an array so a future
 // multi-item order prints multiple rows unchanged.
 // ---------------------------------------------------------------------------

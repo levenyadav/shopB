@@ -51,7 +51,7 @@ export default function SaleDetail() {
   async function loadBill(saleRow) {
     const { data } = await supabase
       .from('order_bills')
-      .select('subtotal, discount_amount, shipping_fee, packing_fee, other_charge, taxable_value, cgst_amount, sgst_amount, gst_rate, grand_total')
+      .select('subtotal, discount_amount, shipping_fee, packing_fee, other_charge, grand_total')
       .eq('sale_id', saleRow.id)
       .maybeSingle()
     setBill(data || null)

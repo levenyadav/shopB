@@ -7,7 +7,7 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
-import { round2, itemGstRate, gstOnTopByRate } from '../../lib/helpers'
+import { round2, itemGstRate, gstBreakupByRate } from '../../lib/helpers'
 import { buildInvoiceModel, viewInvoice, printInvoice } from '../../lib/invoiceTemplate'
 import { Button, OrderStatusBadge, Spinner } from '../../components/ui'
 
@@ -129,32 +129,16 @@ export default function MyOrderDetail() {
     }
   }, { discount: 0, shipping: 0, packing: 0, other: 0 })
   const hasFees = fees.discount > 0 || fees.shipping > 0 || fees.packing > 0 || fees.other > 0
+  const totalAmount = round2(itemsTotal - fees.discount + fees.shipping + fees.packing + fees.other)
 
-  // GST is charged ON TOP of the rate (037), on the goods net of discount —
-  // charges are pass-through and untaxed, matching the printed invoice. An
-  // approved line uses the slab locked on its invoice and, where the shop has
-  // already billed it, the tax the shop actually charged; a pending line is
-  // estimated from the product's current slab.
-  const taxedShare = itemsTotal > 0 ? Math.max(0, itemsTotal - fees.discount) / itemsTotal : 0
-  const estimated = gstOnTopByRate(charged.map((l) => ({
-    amount: round2((Number(l.amount) || 0) * taxedShare),
+  // Rates are tax-INCLUSIVE (Golden Rule #5), so GST is shown as what is already
+  // inside the item total — never added on top. Charges are pass-through and
+  // carry no tax, matching the printed invoice. An approved line uses the rate
+  // locked on its invoice; a pending one uses the product's current slab.
+  const gst = gstBreakupByRate(charged.map((l) => ({
+    amount: Number(l.amount) || 0,
     rate: itemGstRate(invoices[l.id]?.item_gst_rate ?? l.item?.gst_rate, shop?.gst_rate),
   })))
-  const billedTax = charged.reduce((a, l) => {
-    const b = bills[l.id]
-    if (!b) return a
-    return { cgst: a.cgst + Number(b.cgst_amount || 0), sgst: a.sgst + Number(b.sgst_amount || 0) }
-  }, { cgst: 0, sgst: 0 })
-  const allBilled = charged.length > 0 && charged.every((l) => bills[l.id])
-  const gst = allBilled
-    ? (billedTax.cgst + billedTax.sgst > 0
-        ? { ...billedTax, tax: round2(billedTax.cgst + billedTax.sgst), rate: estimated?.rate ?? null }
-        : null)
-    : estimated
-
-  const totalAmount = round2(
-    itemsTotal - fees.discount + fees.shipping + fees.packing + fees.other + (gst?.tax || 0),
-  )
 
   const c = (n) => money(n).replace('₹', currency)
   const isGroup = lines.length > 1
@@ -214,7 +198,7 @@ export default function MyOrderDetail() {
                   <p className="text-xs text-muted">
                     Quantity <span className="fig text-ink">{qty(l.quantity)}</span>
                     {' · '}Rate <span className="fig text-ink">{c(l.rate_at_order)}</span> each
-                    {lineGst > 0 && <>{' · '}GST <span className="fig text-ink">{lineGst}%</span> extra</>}
+                    {lineGst > 0 && <>{' · '}GST <span className="fig text-ink">{lineGst}%</span> included</>}
                   </p>
                   {isGroup && <p className="mt-1"><OrderStatusBadge status={l.status} audience="buyer" /></p>}
                   {l.notes && <p className="mt-0.5 text-xs text-muted">Note: {l.notes}</p>}
@@ -247,12 +231,6 @@ export default function MyOrderDetail() {
           {fees.shipping > 0 && <Charge label="Shipping fee" value={c(fees.shipping)} />}
           {fees.packing > 0 && <Charge label="Packing & handling" value={c(fees.packing)} />}
           {fees.other > 0 && <Charge label="Other charges" value={c(fees.other)} />}
-          {gst && (
-            <>
-              <Charge label={`CGST${gst.rate ? ` @ ${round2(gst.rate / 2)}%` : ''}`} value={c(gst.cgst)} />
-              <Charge label={`SGST${gst.rate ? ` @ ${round2(gst.rate / 2)}%` : ''}`} value={c(gst.sgst)} />
-            </>
-          )}
         </dl>
 
         <div className="mt-3 flex items-center justify-between border-t border-line pt-3 text-sm">
@@ -262,10 +240,10 @@ export default function MyOrderDetail() {
 
         {gst && (
           <p className="mt-1 text-xs text-muted">
-            GST <span className="fig">{c(gst.tax)}</span>
-            {gst.rate ? <> at <span className="fig">{gst.rate}%</span></> : ' (across the rates above)'}
-            {' '}is charged on top of the item prices.
-            {!allBilled && ' The shop confirms the final figure when it accepts the order.'}
+            Includes GST <span className="fig">{c(gst.tax)}</span>
+            {' '}(CGST <span className="fig">{c(gst.cgst)}</span> + SGST <span className="fig">{c(gst.sgst)}</span>)
+            {gst.rate ? <> at <span className="fig">{gst.rate}%</span></> : ' across the rates above'} —
+            already inside the item prices, not added on top.
           </p>
         )}
         {!hasFees && groupStatus === 'pending' && (

@@ -1,6 +1,6 @@
 import { Fragment } from 'react'
 import { money, qty, dateTime } from '../lib/format'
-import { gstOnTopByRate, itemGstRate } from '../lib/helpers'
+import { gstBreakupByRate, itemGstRate } from '../lib/helpers'
 
 // Counter-sale receipt for a walk-in bill (POS). Multi-item, grouped by bill_id.
 // Hidden on screen (.print-slip); the browser's native print shows only this
@@ -9,8 +9,8 @@ import { gstOnTopByRate, itemGstRate } from '../lib/helpers'
 //
 // When the shop is GST-registered (gstin + gst_rate>0) the slip reads as a TAX
 // INVOICE: it prints the real gap-free invoice number, the seller/buyer GSTINs,
-// each line's HSN/SAC, and the CGST/SGST charged ON TOP of the line amounts
-// (same model as the A5 invoice — migrations 009/016/037). Otherwise it stays a
+// each line's HSN/SAC, and the CGST/SGST break-up backed out of the tax-inclusive
+// total (same model as the A5 invoice — migrations 009/016). Otherwise it stays a
 // plain CASH MEMO. For a full-page copy use the "Tax Invoice (A5)" button.
 const PAYMENT_LABEL = { cash: 'Cash', upi: 'UPI', udhaar: 'Udhaar (credit)' }
 
@@ -22,19 +22,15 @@ export default function CounterReceipt({ bill, shop }) {
   const m = (n) => money(n).replace('₹', currency)
 
   // Each line is taxed at its own product's slab (034), falling back to the shop
-  // default; the tax is added on top of the line amounts (037) and grouped by
+  // default; the tax is backed out of the inclusive line amounts and grouped by
   // slab, so a bill mixing 12% and 18% goods prints one pair of rows per slab.
   const gst = shop?.gstin
-    ? gstOnTopByRate(bill.lines.map((l) => ({
+    ? gstBreakupByRate(bill.lines.map((l) => ({
         amount: l.amount, rate: itemGstRate(l.gst_rate, shop?.gst_rate),
       })))
     : null
   const isTax = !!gst
   const anyHsn = bill.lines.some((l) => l.hsn_sac)
-  // The goods total is what the lines add up to; GST is charged over it, so the
-  // payable is the two together. create_counter_sale (037) books the same figure.
-  const goods = bill.lines.reduce((s, l) => s + Number(l.amount || 0), 0)
-  const grand = Math.round((goods + Number(gst?.tax || 0)) * 100) / 100
 
   return (
     <div className="print-slip">
@@ -94,12 +90,12 @@ export default function CounterReceipt({ bill, shop }) {
             ))}
           </>
         )}
-        <Line label="Total amount" value={<span className="fig text-base font-bold">{m(grand)}</span>} />
+        <Line label="Total amount" value={<span className="fig text-base font-bold">{m(bill.total)}</span>} />
         <Line label="Payment" value={PAYMENT_LABEL[bill.payment_type] || '—'} />
         {bill.payment_type === 'cash' && bill.tendered != null && (
           <>
             <Line label="Cash given" value={<span className="fig">{m(bill.tendered)}</span>} />
-            <Line label="Change" value={<span className="fig">{m(Math.max(0, bill.tendered - grand))}</span>} />
+            <Line label="Change" value={<span className="fig">{m(Math.max(0, bill.tendered - bill.total))}</span>} />
           </>
         )}
         {bill.payment_type === 'udhaar' && (

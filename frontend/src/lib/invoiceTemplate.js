@@ -11,14 +11,13 @@
 // Golden Rule #4: this is buyer-facing. Callers build `lines` from buyer figures
 // only (rate_charged / amount) — never purchase_rate or profit.
 //
-// GST model (migration 037): a selling rate is the PRE-TAX price and GST is
-// charged ON TOP of it — the same direction a supplier bills the shop (036).
-// Each line shows its rate and taxable amount; CGST + SGST (intra-state, split
-// in half) are added below, and the grand total is goods − discount + charges +
-// tax. Golden Rule #5 still holds: the locked sale amount is the GOODS money and
-// is never recomputed here, the tax simply rides on top of it.
+// GST model (Golden Rule #5): the sale amount is LOCKED and is what the buyer
+// pays, so it is the tax-INCLUSIVE grand total. Like the reference bill, each
+// line shows the inclusive Rate (MRP) and a taxable Amount, with the tax backed
+// out into CGST + SGST (intra-state, split in half). The grand total therefore
+// always equals the locked sale amount — editing the invoice never changes it.
 
-import { round2, gstOnTopByRate, itemGstRate } from './helpers'
+import { round2, gstBreakupByRate, itemGstRate } from './helpers'
 
 // ---------------------------------------------------------------------------
 // Number → Indian-system words, for "Amount Chargeable (in words)".
@@ -73,12 +72,14 @@ export function amountInWords(amount, currencyWord = 'INR') {
 // ---------------------------------------------------------------------------
 export function buildInvoiceModel({ shop, buyer, consignee, invoice, lines, bill, gstRate }) {
   const registered = !!shop?.gstin
-  // Per-line: the rate is pre-tax, so qty × rate IS the taxable value and the
-  // tax is added below at THAT product's rate — a bill can mix 5% cards with
-  // 18% boxes.
+  // Per-line: inclusive line total, then the taxable portion backed out of it at
+  // THAT product's rate — a bill can mix 5% cards with 18% boxes.
   const rows = lines.map((ln, i) => {
     const lineRate = registered ? itemGstRate(ln.gstRate, gstRate) : 0
-    const amount = round2(Number(ln.qty) * Number(ln.rate))
+    const inclusive = round2(Number(ln.qty) * Number(ln.rate))
+    const taxable = lineRate > 0 ? round2(inclusive / (1 + lineRate / 100)) : inclusive
+    // "Disc. %" on the reference bill is the GST-extraction fraction (MRP→taxable).
+    const discPct = lineRate > 0 ? round2((1 - 1 / (1 + lineRate / 100)) * 100) : 0
     return {
       sl: i + 1,
       name: ln.name || '—',
@@ -87,9 +88,9 @@ export function buildInvoiceModel({ shop, buyer, consignee, invoice, lines, bill
       qty: Number(ln.qty),
       rate: Number(ln.rate),
       gstRate: lineRate,
-      discPct: 0,
-      taxable: amount,
-      amount,
+      discPct,
+      taxable,
+      amount: inclusive,
     }
   })
   const hasGst = rows.some((r) => r.gstRate > 0)
@@ -97,17 +98,21 @@ export function buildInvoiceModel({ shop, buyer, consignee, invoice, lines, bill
   // the buyer can see why two lines were taxed differently.
   const multiRate = new Set(rows.map((r) => r.gstRate)).size > 1
 
-  // Product subtotal, pre-tax (rate × qty).
+  // Product subtotal (gross rate × qty). GST is inclusive and is backed out of
+  // THIS subtotal only — bill adjustments below are pass-through, no tax on top.
   const itemsTotal = round2(rows.reduce((s, r) => s + r.amount, 0))
+  const gst = hasGst
+    ? gstBreakupByRate(rows.map((r) => ({ amount: r.amount, rate: r.gstRate })))
+    : null
 
   // Bill adjustments (023): the discount is a real margin loss shown as its own
   // negative line; shipping / packing / other are pass-through additions. Each is
-  // optional and only printed when non-zero.
+  // optional and only printed when non-zero. The grand total is the subtotal less
+  // discount plus charges — exactly the buyer's payable held in order_bills.
   const b = bill || {}
-  const discount = round2(Number(b.discount_amount) || 0)
   const adjustments = []
-  if (discount > 0)
-    adjustments.push({ label: 'Less : Discount', amount: -discount })
+  if (Number(b.discount_amount) > 0)
+    adjustments.push({ label: 'Less : Discount', amount: -round2(b.discount_amount) })
   if (Number(b.shipping_fee) > 0)
     adjustments.push({ label: 'Add : Shipping', amount: round2(b.shipping_fee) })
   if (Number(b.packing_fee) > 0)
@@ -115,28 +120,7 @@ export function buildInvoiceModel({ shop, buyer, consignee, invoice, lines, bill
   if (Number(b.other_charge) > 0)
     adjustments.push({ label: 'Add : Other charges', amount: round2(b.other_charge) })
   const adjTotal = round2(adjustments.reduce((s, a) => s + a.amount, 0))
-
-  // GST on top (037), charged on the goods NET OF DISCOUNT — a discount is a
-  // genuine reduction in the price of the goods, so the tax follows it down.
-  // Shipping / packing / other stay pass-through and are never taxed.
-  // The discount is spread across the slabs in proportion to their value, which
-  // is what a single-line bill (the shopfront case) reduces to exactly.
-  const taxedShare = itemsTotal > 0 ? Math.max(0, itemsTotal - discount) / itemsTotal : 0
-  const gst = hasGst
-    ? gstOnTopByRate(rows.map((r) => ({ amount: round2(r.amount * taxedShare), rate: r.gstRate })))
-    : null
-
-  // When the bill carries the tax the shop actually charged (037), THAT is what
-  // prints — an invoice must foot to the books, never to a fresh calculation
-  // that a later rate change could shift.
-  const billed = b.cgst_amount != null || b.sgst_amount != null
-  const cgst = billed ? round2(Number(b.cgst_amount) || 0) : round2(gst?.cgst || 0)
-  const sgst = billed ? round2(Number(b.sgst_amount) || 0) : round2(gst?.sgst || 0)
-  const taxTotal = round2(cgst + sgst)
-
-  const grandTotal = Number(b.grand_total) > 0
-    ? round2(Number(b.grand_total))
-    : round2(itemsTotal + adjTotal + taxTotal)
+  const grandTotal = round2(itemsTotal + adjTotal)
 
   // HSN-wise tax summary — only rows that carry an HSN/SAC code (optional).
   // Grouped by HSN *and* rate: the same code can only ever carry one slab, but
@@ -182,9 +166,6 @@ export function buildInvoiceModel({ shop, buyer, consignee, invoice, lines, bill
     hsnSummary,
     adjustments,
     itemsTotal,
-    cgst,
-    sgst,
-    taxTotal,
     grandTotal,
     notes: invoice?.notes,
     words: amountInWords(grandTotal),
@@ -243,7 +224,7 @@ function metaGrid(m) {
 
 function itemRows(m) {
   const c = m.currency
-  const cols = m.anyHsn ? 7 : 6
+  const cols = m.anyHsn ? 8 : 7
   const body = m.rows.map((r) => `
     <tr>
       <td class="c">${r.sl}</td>
@@ -254,13 +235,14 @@ function itemRows(m) {
       <td class="r nowrap">${r.qty} pcs</td>
       <td class="r">${fmt(r.rate, c)}</td>
       <td class="c">pcs</td>
-      <td class="r">${fmt(r.amount, c)}</td>
+      ${m.gst ? `<td class="r">${r.discPct}%</td>` : ''}
+      <td class="r">${fmt(m.gst ? r.taxable : r.amount, c)}</td>
     </tr>`).join('')
 
   // Tax lines + grand total, echoing the reference's in-table block. One
   // CGST/SGST pair per GST slab on the bill (a 12% line and an 18% line each get
   // their own, Tally-style).
-  const pad = `${m.anyHsn ? '<td></td>' : ''}<td></td><td></td><td></td>`
+  const pad = `${m.anyHsn ? '<td></td>' : ''}<td></td><td></td><td></td>${m.gst ? '<td></td>' : ''}`
   const taxBlock = m.gst
     ? m.gst.groups.map((g) => `
     <tr class="tax">
@@ -278,7 +260,7 @@ function itemRows(m) {
   const adjBlock = (m.adjustments || []).map((a) => `
     <tr class="tax">
       <td></td><td class="desc r">${esc(a.label)}</td>
-      ${pad}
+      ${m.anyHsn ? '<td></td>' : ''}<td></td><td></td><td></td>${m.gst ? '<td></td>' : ''}
       <td class="r">${a.amount < 0 ? `(${fmt(-a.amount, c)})` : fmt(a.amount, c)}</td>
     </tr>`).join('')
 
@@ -290,13 +272,14 @@ function itemRows(m) {
           <th class="c">Sl</th><th>Description of Goods</th>
           ${m.anyHsn ? '<th class="c">HSN/SAC</th>' : ''}
           <th class="r">Quantity</th><th class="r">Rate</th><th class="c">per</th>
+          ${m.gst ? '<th class="r">Disc. %</th>' : ''}
           <th class="r">Amount</th>
         </tr>
       </thead>
       <tbody>
         ${body}
-        ${adjBlock}
         ${taxBlock}
+        ${adjBlock}
         <tr class="spacer"><td colspan="${cols}"></td></tr>
       </tbody>
       <tfoot>
@@ -304,6 +287,7 @@ function itemRows(m) {
           <td></td><td class="r">Total</td>
           ${m.anyHsn ? '<td></td>' : ''}
           <td class="r nowrap">${totalQty} pcs</td><td></td><td></td>
+          ${m.gst ? '<td></td>' : ''}
           <td class="r"><b>${fmt(m.grandTotal, c)}</b></td>
         </tr>
       </tfoot>
