@@ -3,7 +3,7 @@ import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
   IconLayoutDashboard, IconShoppingCartPlus, IconBoxSeam, IconClipboardList,
   IconReceipt2, IconCoin, IconCash, IconUsers, IconChartBar, IconSettings,
-  IconPackage, IconMenu2, IconX, IconLogout, IconCashRegister,
+  IconPackage, IconMenu2, IconX, IconLogout, IconCashRegister, IconHistory,
 } from '@tabler/icons-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -47,6 +47,7 @@ const NAV = [
     group: 'Stock',
     items: [
       { to: '/owner/purchase', label: 'Purchase Entry', icon: IconShoppingCartPlus },
+      { to: '/owner/purchases', label: 'Purchase History', icon: IconHistory },
       { to: '/owner/inventory', label: 'Inventory', icon: IconBoxSeam },
       { to: '/owner/stock', label: 'Stock Inquiry', icon: IconClipboardList },
     ],
@@ -79,6 +80,7 @@ const NAV = [
 const TITLES = {
   '/owner': 'Dashboard',
   '/owner/purchase': 'Purchase Entry',
+  '/owner/purchases': 'Purchase History',
   '/owner/inventory': 'Inventory',
   '/owner/stock': 'Stock Inquiry',
   '/owner/counter-sale': 'Counter Sale',
