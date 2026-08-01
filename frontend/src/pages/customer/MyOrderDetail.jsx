@@ -7,6 +7,7 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
+import { round2, itemGstRate, gstBreakupByRate } from '../../lib/helpers'
 import { buildInvoiceModel, viewInvoice, printInvoice } from '../../lib/invoiceTemplate'
 import { Button, OrderStatusBadge, Spinner } from '../../components/ui'
 
@@ -73,7 +74,7 @@ export default function MyOrderDetail() {
       const byId = {}
       if (itemIds.length) {
         const { data: items } = await supabase
-          .from('shopfront_items').select('id, name, photo_url').in('id', itemIds)
+          .from('shopfront_items').select('id, name, photo_url, gst_rate').in('id', itemIds)
         for (const it of items ?? []) byId[it.id] = it
       }
       const withItem = rows.map((r) => ({ ...r, item: byId[r.item_id] || null }))
@@ -108,7 +109,38 @@ export default function MyOrderDetail() {
   if (err) return <Empty>{err}</Empty>
   if (!order) return <div className="grid place-items-center py-20 text-muted"><Spinner /></div>
 
-  const totalAmount = lines.reduce((s, l) => s + (Number(l.amount) || 0), 0)
+  // A rejected line is never charged (the notice below says so), so it stays out
+  // of every figure here.
+  const charged = lines.filter((l) => l.status !== 'rejected')
+  const itemsTotal = round2(charged.reduce((s, l) => s + (Number(l.amount) || 0), 0))
+
+  // Shipping / packing / other are set by the shop at approval (023) and only
+  // exist from then on, so a pending order shows items and GST alone. Summing
+  // the parts rather than grand_total keeps the maths right when some lines are
+  // approved and some are not.
+  const fees = charged.reduce((a, l) => {
+    const b = bills[l.id]
+    if (!b) return a
+    return {
+      discount: a.discount + Number(b.discount_amount || 0),
+      shipping: a.shipping + Number(b.shipping_fee || 0),
+      packing:  a.packing  + Number(b.packing_fee || 0),
+      other:    a.other    + Number(b.other_charge || 0),
+    }
+  }, { discount: 0, shipping: 0, packing: 0, other: 0 })
+  const hasFees = fees.discount > 0 || fees.shipping > 0 || fees.packing > 0 || fees.other > 0
+  const totalAmount = round2(itemsTotal - fees.discount + fees.shipping + fees.packing + fees.other)
+
+  // Rates are tax-INCLUSIVE (Golden Rule #5), so GST is shown as what is already
+  // inside the item total — never added on top. Charges are pass-through and
+  // carry no tax, matching the printed invoice. An approved line uses the rate
+  // locked on its invoice; a pending one uses the product's current slab.
+  const gst = gstBreakupByRate(charged.map((l) => ({
+    amount: Number(l.amount) || 0,
+    rate: itemGstRate(invoices[l.id]?.item_gst_rate ?? l.item?.gst_rate, shop?.gst_rate),
+  })))
+
+  const c = (n) => money(n).replace('₹', currency)
   const isGroup = lines.length > 1
   // Group status = least-progressed line, so the timeline reflects what's left.
   const groupStatus = lines.reduce(
@@ -141,6 +173,7 @@ export default function MyOrderDetail() {
         <ul className="mt-4 divide-y divide-line">
           {lines.map((l) => {
             const inv = invoices[l.id]
+            const lineGst = itemGstRate(inv?.item_gst_rate ?? l.item?.gst_rate, shop?.gst_rate)
             const model = inv && buildInvoiceModel({
               shop,
               buyer: {
@@ -160,10 +193,14 @@ export default function MyOrderDetail() {
                 <Thumb url={l.item?.photo_url} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium text-ink">{l.item?.name || l.item_name || 'Item'}</p>
+                  {/* Every number carries its label (SPEC §3) — a bare "200 × ₹18"
+                      leaves the buyer to work out which figure is which. */}
                   <p className="text-xs text-muted">
-                    <span className="fig">{qty(l.quantity)}</span> × <span className="fig">{money(l.rate_at_order).replace('₹', currency)}</span>
-                    {isGroup && <span className="ml-2"><OrderStatusBadge status={l.status} audience="buyer" /></span>}
+                    Quantity <span className="fig text-ink">{qty(l.quantity)}</span>
+                    {' · '}Rate <span className="fig text-ink">{c(l.rate_at_order)}</span> each
+                    {lineGst > 0 && <>{' · '}GST <span className="fig text-ink">{lineGst}%</span> included</>}
                   </p>
+                  {isGroup && <p className="mt-1"><OrderStatusBadge status={l.status} audience="buyer" /></p>}
                   {l.notes && <p className="mt-0.5 text-xs text-muted">Note: {l.notes}</p>}
                   {model && (
                     <div className="mt-1.5 flex flex-wrap items-center gap-3">
@@ -186,10 +223,34 @@ export default function MyOrderDetail() {
           })}
         </ul>
 
+        {/* Amount details — what makes up the total, so the buyer never has to
+            ask why it differs from the item prices (SPEC §3: no dead ends). */}
+        <dl className="mt-3 space-y-1.5 border-t border-line pt-3 text-sm">
+          <Charge label={`Items (${charged.length} ${charged.length === 1 ? 'item' : 'items'})`} value={c(itemsTotal)} />
+          {fees.discount > 0 && <Charge label="Discount" value={`− ${c(fees.discount)}`} good />}
+          {fees.shipping > 0 && <Charge label="Shipping fee" value={c(fees.shipping)} />}
+          {fees.packing > 0 && <Charge label="Packing & handling" value={c(fees.packing)} />}
+          {fees.other > 0 && <Charge label="Other charges" value={c(fees.other)} />}
+        </dl>
+
         <div className="mt-3 flex items-center justify-between border-t border-line pt-3 text-sm">
-          <span className="text-muted">Total amount</span>
-          <span className="fig text-lg font-bold">{money(totalAmount).replace('₹', currency)}</span>
+          <span className="font-semibold">Total amount</span>
+          <span className="fig text-lg font-bold">{c(totalAmount)}</span>
         </div>
+
+        {gst && (
+          <p className="mt-1 text-xs text-muted">
+            Includes GST <span className="fig">{c(gst.tax)}</span>
+            {' '}(CGST <span className="fig">{c(gst.cgst)}</span> + SGST <span className="fig">{c(gst.sgst)}</span>)
+            {gst.rate ? <> at <span className="fig">{gst.rate}%</span></> : ' across the rates above'} —
+            already inside the item prices, not added on top.
+          </p>
+        )}
+        {!hasFees && groupStatus === 'pending' && (
+          <p className="mt-1 text-xs text-muted">
+            Any shipping or packing fee is added when the shop confirms this order.
+          </p>
+        )}
       </div>
 
       {/* Status */}
@@ -237,6 +298,15 @@ export default function MyOrderDetail() {
           </ol>
         </div>
       )}
+    </div>
+  )
+}
+
+function Charge({ label, value, good }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <dt className="text-muted">{label}</dt>
+      <dd className={`fig ${good ? 'text-profit' : 'text-ink'}`}>{value}</dd>
     </div>
   )
 }

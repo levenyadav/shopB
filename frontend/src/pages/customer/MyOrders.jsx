@@ -37,7 +37,21 @@ export default function MyOrders() {
           .in('id', ids)
         for (const it of items ?? []) byId[it.id] = it
       }
-      const withItem = (rows ?? []).map((o) => ({ ...o, item: byId[o.item_id] || null }))
+      // Shipping / packing / other (023), so a card's total is the same figure
+      // the order's own page shows. Buyer-safe view — it carries no cost data.
+      const billable = (rows ?? []).filter((o) => o.status !== 'pending' && o.status !== 'rejected')
+      const billById = {}
+      if (billable.length) {
+        const { data: bls } = await supabase
+          .from('customer_bills')
+          .select('order_id, discount_amount, shipping_fee, packing_fee, other_charge')
+          .in('order_id', billable.map((o) => o.id))
+        for (const b of bls ?? []) billById[b.order_id] = b
+      }
+
+      const withItem = (rows ?? []).map((o) => ({
+        ...o, item: byId[o.item_id] || null, bill: billById[o.id] || null,
+      }))
       if (active) setOrders(groupOrders(withItem))
     }
     load()
@@ -112,8 +126,15 @@ function groupOrders(rows) {
       groups.push(g)
     }
     g.lines.push(o)
-    g.totalAmount += Number(o.amount) || 0
-    g.totalQty += Number(o.quantity) || 0
+    // A rejected line is never charged, so it adds nothing to the total. Fees
+    // only exist once the shop has approved and billed the line (023).
+    if (o.status !== 'rejected') {
+      const b = o.bill
+      g.totalAmount += (Number(o.amount) || 0)
+        - Number(b?.discount_amount || 0) + Number(b?.shipping_fee || 0)
+        + Number(b?.packing_fee || 0) + Number(b?.other_charge || 0)
+      g.totalQty += Number(o.quantity) || 0
+    }
     // Show the least-progressed status so the buyer sees the group as still open.
     if (STATUS_RANK.indexOf(o.status) < STATUS_RANK.indexOf(g.status)) g.status = o.status
   }
