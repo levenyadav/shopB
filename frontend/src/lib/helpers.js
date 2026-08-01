@@ -90,9 +90,6 @@ export function gstBreakup(amountInclusive, ratePct) {
   return { rate, taxable, cgst, sgst, tax, total: amount }
 }
 
-// The Indian GST slabs a product can sit in, for the rate picker on Purchase
-// Entry / Inventory. '' means "leave it to the shop default" (items.gst_rate NULL).
-export const GST_SLABS = [0, 3, 5, 12, 18, 28]
 
 // Which GST rate a product is taxed at (migration 034). An item may sit in its
 // own slab (5 / 12 / 18 / 28 %); when it doesn't say, the shop's single default
@@ -137,6 +134,27 @@ export function gstBreakupByRate(lines) {
     tax: sum('tax'),
     total: sum('total'),
   }
+}
+
+// A product's GST is stored as ONE combined rate (items.gst_rate, migration
+// 034) because that is what a slab is — 18% GST is 9% CGST + 9% SGST, always
+// half each intra-state. These two convert between that single stored rate and
+// the CGST/SGST pair the owner reads off a supplier's bill and types in.
+//
+// splitGstRate halves the stored rate for display; combineGstRate adds the two
+// halves back into the rate to store. Both are strings-in/strings-out friendly:
+// blank in means blank out, which is what "use the shop default" looks like.
+export function splitGstRate(rate) {
+  if (rate === null || rate === undefined || rate === '') return { cgst: '', sgst: '' }
+  const half = round2(Number(rate) / 2)
+  return { cgst: String(half), sgst: String(round2(Number(rate) - half)) }
+}
+
+export function combineGstRate(cgst, sgst) {
+  const c = cgst === '' || cgst === null || cgst === undefined ? null : Number(cgst)
+  const s = sgst === '' || sgst === null || sgst === undefined ? null : Number(sgst)
+  if (c === null && s === null) return null      // neither given → shop default
+  return round2((c || 0) + (s || 0))
 }
 
 // ---------------------------------------------------------------------------

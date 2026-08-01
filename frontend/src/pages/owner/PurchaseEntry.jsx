@@ -10,7 +10,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { money, qty } from '../../lib/format'
 import {
-  round2, isDuplicateCompanyNo, GST_SLABS, itemGstRate,
+  round2, isDuplicateCompanyNo, itemGstRate, combineGstRate,
   purchaseBillTotals, suggestPurchaseGst,
 } from '../../lib/helpers'
 import { Button, Field, Select, Textarea, Spinner, StockBadge, TagsInput, ImagesInput, Badge } from '../../components/ui'
@@ -58,7 +58,10 @@ const BLANK_NEW = {
   mode: 'new',
   name: '', company_no: '', category_id: '', location: '',
   quantity: '', purchase_rate: '', dealer_rate: '', rate: '',
-  gst_rate: '', hsn_sac: '',   // '' gst_rate = use the shop's default (migration 034)
+  // GST is entered as the CGST/SGST pair the owner reads off the bill, and
+  // stored as their sum in items.gst_rate (migration 034). Both blank = use the
+  // shop's default rate.
+  cgst_rate: '', sgst_rate: '', hsn_sac: '',
   low_stock_threshold: '10', moq: '1', barcode: '', notes: '',
   description: '', tags: [], images: [],
   made_to_order: false, is_active: true,
@@ -117,7 +120,7 @@ function BillEntry() {
     lines.filter((l) => !isListingOnly(l)).map((l) => ({
       amount: lineCost(l),
       rate: itemGstRate(
-        l.mode === 'new' ? l.gst_rate : l.item?.gst_rate,
+        l.mode === 'new' ? combineGstRate(l.cgst_rate, l.sgst_rate) : l.item?.gst_rate,
         shop?.gst_rate,
       ),
     })),
@@ -198,7 +201,8 @@ function BillEntry() {
               dealer_rate: round2(line.dealer_rate),
               rate: round2(line.rate),
               // Blank = no product rate; the shop's default GST rate applies.
-              gst_rate: line.gst_rate === '' ? null : round2(line.gst_rate),
+              // CGST + SGST are two halves of one slab; the sum is what is stored.
+              gst_rate: combineGstRate(line.cgst_rate, line.sgst_rate),
               hsn_sac: line.hsn_sac.trim() || null,
               low_stock_threshold: round2(line.low_stock_threshold || 10),
               moq: round2(line.moq || 1),
@@ -776,6 +780,8 @@ function ExistingItemFields({ line, setVal, errors, shopId, supplierId }) {
 function NewProductFields({ line, set, setVal, errors, shopId, onUseExisting }) {
   const { categories, shop } = useShop()
   const shopGstRate = Number(shop?.gst_rate || 0)
+  // null = neither half filled in, so this product follows the shop default.
+  const combinedGst = combineGstRate(line.cgst_rate, line.sgst_rate)
   const [more, setMore] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
   const [scanBusy, setScanBusy] = useState(false)
@@ -914,20 +920,27 @@ function NewProductFields({ line, set, setVal, errors, shopId, onUseExisting }) 
 
       {/* Tax details for THIS product. Settings holds one default GST rate, but
           cards, boxes and gift items don't all sit in the same slab — set it here
-          and this product's invoices are taxed at its own rate. The HSN/SAC code
-          travels with the slab and prints on the tax invoice beside it. */}
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Select label="GST rate" value={line.gst_rate} onChange={set('gst_rate')}
-                hint={`Leave on the shop default (${shopGstRate}%) unless this product is taxed differently`}>
-          <option value="">Shop default — {shopGstRate}%</option>
-          {GST_SLABS.map((g) => (
-            <option key={g} value={String(g)}>{g}% {g === 0 ? '(exempt / nil-rated)' : ''}</option>
-          ))}
-        </Select>
+          and this product's invoices are taxed at its own rate. Entered as the
+          CGST/SGST pair the bill prints; the two are summed into the one slab
+          that is stored (migration 034). The HSN/SAC code travels with the slab
+          and prints on the tax invoice beside it. */}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Field label="CGST %" type="number" min="0" max="50" step="0.01" inputMode="decimal"
+               placeholder={String(round2(shopGstRate / 2))}
+               value={line.cgst_rate} onChange={set('cgst_rate')} />
+        <Field label="SGST %" type="number" min="0" max="50" step="0.01" inputMode="decimal"
+               placeholder={String(round2(shopGstRate - round2(shopGstRate / 2)))}
+               value={line.sgst_rate} onChange={set('sgst_rate')} />
         <Field label="HSN / SAC code" placeholder="e.g. 4817"
                value={line.hsn_sac} onChange={set('hsn_sac')}
-               hint="Optional. Printed on the tax invoice and its HSN-wise tax summary." />
+               hint="Optional. Printed on the tax invoice." />
       </div>
+      <p className="-mt-2 text-xs text-muted">
+        {combinedGst === null
+          ? `Leave both blank to use the shop default — ${shopGstRate}% (${round2(shopGstRate / 2)}% + ${round2(shopGstRate - round2(shopGstRate / 2))}%).`
+          : <>This product is taxed at <span className="fig font-semibold text-ink">{combinedGst}%</span> GST
+             {combinedGst === 0 && ' — exempt / nil-rated'}.</>}
+      </p>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Min order qty (MOQ)" type="number" min="1" inputMode="decimal"

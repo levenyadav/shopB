@@ -8,7 +8,7 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty } from '../../lib/format'
-import { round2, stockValue, isDuplicateCompanyNo, GST_SLABS } from '../../lib/helpers'
+import { round2, stockValue, isDuplicateCompanyNo, splitGstRate, combineGstRate } from '../../lib/helpers'
 import { printBarcodeLabels, barcodeValue, DEFAULT_LABEL_OPTS } from '../../lib/barcodeLabel'
 import { Button, Field, Select, Textarea, StockBadge, Badge, Spinner, TagsInput, ImagesInput } from '../../components/ui'
 
@@ -671,8 +671,12 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
     moq: String(item.moq ?? 1),
     barcode: item.barcode || '',
     hsn_sac: item.hsn_sac || '',
-    // '' = no product rate; the shop's default GST rate applies (034).
-    gst_rate: item.gst_rate == null ? '' : String(round2(item.gst_rate)),
+    // Stored as one slab (034), edited as the CGST/SGST halves the bill prints.
+    // Both blank = no product rate, so the shop's default GST rate applies.
+    ...(() => {
+      const { cgst, sgst } = splitGstRate(item.gst_rate)
+      return { cgst_rate: cgst, sgst_rate: sgst }
+    })(),
     description: item.description || '',
     tags: item.tags || [],
     images: item.images || [],
@@ -742,7 +746,7 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
           moq: round2(f.moq || 1),
           barcode: f.barcode.trim() || null,
           hsn_sac: f.hsn_sac.trim() || null,
-          gst_rate: f.gst_rate === '' ? null : round2(f.gst_rate),
+          gst_rate: combineGstRate(f.cgst_rate, f.sgst_rate),
           photo_url,
           description: f.description.trim() || null,
           tags: f.tags,
@@ -856,17 +860,22 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
           <Field label="HSN / SAC code" value={f.hsn_sac} onChange={set('hsn_sac')}
                  hint="Optional. Printed on the tax invoice." />
         </div>
+        {/* Per-product GST (034). Settings holds one default rate; this overrides
+            it for products in a different slab. Entered as the CGST/SGST halves
+            the bill prints, stored as their sum. */}
         <div className="grid gap-4 sm:grid-cols-2">
-          {/* Per-product GST slab (034). Settings holds one default rate; this
-              overrides it for products in a different slab. */}
-          <Select label="GST rate" value={f.gst_rate} onChange={set('gst_rate')}
-                  hint={`Used on this product's invoices instead of the shop default (${shopGstRate}%)`}>
-            <option value="">Shop default — {shopGstRate}%</option>
-            {GST_SLABS.map((g) => (
-              <option key={g} value={String(g)}>{g}% {g === 0 ? '(exempt / nil-rated)' : ''}</option>
-            ))}
-          </Select>
+          <Field label="CGST %" type="number" min="0" max="50" step="0.01" inputMode="decimal"
+                 placeholder={String(round2(shopGstRate / 2))}
+                 value={f.cgst_rate} onChange={set('cgst_rate')} />
+          <Field label="SGST %" type="number" min="0" max="50" step="0.01" inputMode="decimal"
+                 placeholder={String(round2(shopGstRate - round2(shopGstRate / 2)))}
+                 value={f.sgst_rate} onChange={set('sgst_rate')} />
         </div>
+        <p className="-mt-2 text-xs text-muted">
+          {combineGstRate(f.cgst_rate, f.sgst_rate) === null
+            ? `Leave both blank to use the shop default — ${shopGstRate}%.`
+            : <>Taxed at <span className="fig font-semibold text-ink">{combineGstRate(f.cgst_rate, f.sgst_rate)}%</span> GST on this product's invoices.</>}
+        </p>
 
         <Textarea
           label="Description" rows={3} value={f.description}
