@@ -67,7 +67,13 @@ comment on column public.order_bills.gst_rate is
 
 -- Buyer-safe view gains the tax columns so a buyer can see what they were
 -- charged. Still no cost/profit anywhere in here.
-create or replace view public.customer_bills
+--
+-- Dropped and rebuilt rather than replaced: CREATE OR REPLACE VIEW can only add
+-- columns at the END of the list, and these belong beside the other bill money.
+-- Nothing depends on this view but the app, so dropping it is safe; the grant
+-- below is re-issued because DROP takes the old one with it.
+drop view if exists public.customer_bills;
+create view public.customer_bills
 with (security_invoker = false) as
 select
   b.order_id, b.sale_id, b.subtotal, b.discount_amount, b.shipping_fee,
