@@ -93,12 +93,21 @@ function BillEntry() {
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState(null)
   const [showSupplier, setShowSupplier] = useState(false)
+  // CGST/SGST work themselves out from each product's GST slab. The owner only
+  // takes over when the supplier's bill disagrees (their rounding rarely lands
+  // to the rupee) — typing in either box flips this on and the auto-fill stops.
+  const [gstManual, setGstManual] = useState(false)
 
   const supplier = suppliers.find((s) => s.id === bill.supplier_id) || null
 
   const setBillField = (k) => (e) => {
     setBill((b) => ({ ...b, [k]: e.target.value }))
     setErrors((er) => ({ ...er, [k]: undefined }))
+  }
+
+  const setGstField = (k) => (e) => {
+    setGstManual(true)
+    setBillField(k)(e)
   }
 
   // Only stocked lines carry money. A Make-to-Order line lists the product but
@@ -113,9 +122,9 @@ function BillEntry() {
     goods: goodsTotal, postage: bill.postage, cgst: bill.cgst, sgst: bill.sgst,
   })
 
-  // What the tax WOULD be at each product's own GST slab. Offered as a one-tap
-  // fill, never forced: the supplier's own rounding rarely matches to the rupee,
-  // so what their bill says wins.
+  // The tax at each product's own GST slab. This is what the CGST/SGST boxes
+  // hold unless the owner has typed over them: the rates are already on the
+  // products, so making them re-key the tax is asking twice for one answer.
   const suggestedGst = suggestPurchaseGst(
     lines.filter((l) => !isListingOnly(l)).map((l) => ({
       amount: lineCost(l),
@@ -125,12 +134,27 @@ function BillEntry() {
       ),
     })),
   )
-  const gstFilled = round2(bill.cgst || 0) === (suggestedGst?.cgst ?? -1)
-                 && round2(bill.sgst || 0) === (suggestedGst?.sgst ?? -1)
 
-  function applySuggestedGst() {
-    if (!suggestedGst) return
-    setBill((b) => ({ ...b, cgst: String(suggestedGst.cgst), sgst: String(suggestedGst.sgst) }))
+  // Keep the boxes on the auto figure as lines are added, edited or removed.
+  // bill.cgst/sgst stay the single source of truth — totals and the save path
+  // read them either way, so nothing downstream cares which mode we're in.
+  const autoCgst = suggestedGst ? String(suggestedGst.cgst) : ''
+  const autoSgst = suggestedGst ? String(suggestedGst.sgst) : ''
+  useEffect(() => {
+    if (gstManual) return
+    setBill((b) => (b.cgst === autoCgst && b.sgst === autoSgst
+      ? b
+      : { ...b, cgst: autoCgst, sgst: autoSgst }))
+  }, [gstManual, autoCgst, autoSgst])
+
+  // Typed figures that happen to equal the auto one aren't worth an "undo" link.
+  const gstDiffers = gstManual
+    && (round2(bill.cgst || 0) !== (suggestedGst?.cgst ?? 0)
+     || round2(bill.sgst || 0) !== (suggestedGst?.sgst ?? 0))
+
+  function backToAutoGst() {
+    setGstManual(false)
+    setBill((b) => ({ ...b, cgst: autoCgst, sgst: autoSgst }))
   }
 
   function upsertLine(line) {
@@ -312,6 +336,7 @@ function BillEntry() {
       setBill({ supplier_id: '', invoice_no: '', invoice_date: today(), postage: '', cgst: '', sgst: '' })
       setLines([])
       setErrors({})
+      setGstManual(false)
     } catch (err) {
       setTopError(err.message || 'Could not save this bill. Please try again.')
     } finally {
@@ -404,26 +429,36 @@ function BillEntry() {
         {lines.length > 0 && (
           <Section
             title="Postage & tax on this bill"
-            hint="What the supplier charged on top of the goods. Leave blank if the bill has none."
+            hint="Postage is typed off the bill. CGST and SGST work themselves out from the products' GST rates."
           >
             <div className="grid gap-4 sm:grid-cols-3">
               <Field label="Postage / freight" prefix="₹" type="number" min="0" step="0.01"
                      inputMode="decimal" value={bill.postage} onChange={setBillField('postage')}
                      hint="Courier, transport, packing" />
               <Field label="CGST" prefix="₹" type="number" min="0" step="0.01"
-                     inputMode="decimal" value={bill.cgst} onChange={setBillField('cgst')} />
+                     inputMode="decimal" value={bill.cgst} onChange={setGstField('cgst')}
+                     hint={gstManual ? 'Typed by you' : 'Auto — from product GST'} />
               <Field label="SGST" prefix="₹" type="number" min="0" step="0.01"
-                     inputMode="decimal" value={bill.sgst} onChange={setBillField('sgst')} />
+                     inputMode="decimal" value={bill.sgst} onChange={setGstField('sgst')}
+                     hint={gstManual ? 'Typed by you' : 'Auto — from product GST'} />
             </div>
 
-            {suggestedGst && !gstFilled && (
+            {gstDiffers ? (
               <button
-                type="button" onClick={applySuggestedGst}
+                type="button" onClick={backToAutoGst}
                 className="inline-flex items-center gap-1.5 text-sm font-medium text-peacock hover:underline"
               >
                 <IconSparkles size={16} />
-                Fill {money(suggestedGst.cgst)} + {money(suggestedGst.sgst)} from these products' GST rates
+                Go back to the auto figure
+                {suggestedGst && <> — {money(suggestedGst.cgst)} + {money(suggestedGst.sgst)}</>}
               </button>
+            ) : (
+              <p className="inline-flex items-center gap-1.5 text-sm text-muted">
+                <IconSparkles size={16} className="text-peacock" />
+                {suggestedGst
+                  ? `Worked out from each product's GST rate. Type over it if the supplier's bill says something different.`
+                  : `These products are nil-rated, so there is no GST on this bill. Type an amount if the supplier charged some.`}
+              </p>
             )}
 
             <p className="text-xs text-muted">
