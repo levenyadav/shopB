@@ -103,15 +103,8 @@ export default function Login() {
         </div>
         <div className="pl-12 max-w-md">
           <h1 className="font-[var(--font-display)] text-4xl leading-tight font-extrabold text-ink">
-            Your shop's khata,<br />now on your phone.
+            Khattri Card Pratham
           </h1>
-          <p className="mt-4 text-muted text-lg">
-            Stock, sales, udhaar and supplier dues — kept in one register.
-            Simple to run on the counter, strong underneath in the books.
-          </p>
-        </div>
-        <div className="pl-12 text-sm text-muted">
-          <span className="fig">₹</span> Every figure has a name. Nothing is hidden, nothing is lost.
         </div>
       </aside>
 
