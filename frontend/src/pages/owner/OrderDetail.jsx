@@ -8,7 +8,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
-import { lineProfit, round2, toE164India } from '../../lib/helpers'
+import { lineProfit, round2, toE164India, shippingFeeFor } from '../../lib/helpers'
 import {
   Button, Textarea, Field, OrderStatusBadge, InProcessBadge, IN_PROCESS_STATUSES, Badge, Spinner,
 } from '../../components/ui'
@@ -45,7 +45,7 @@ export default function OrderDetail() {
     const { data, error } = await supabase
       .from('orders')
       .select(
-        'id, shop_id, quantity, rate_at_order, amount, status, notes, rejection_reason, buyer_type, ' +
+        'id, shop_id, quantity, rate_at_order, amount, status, notes, rejection_reason, buyer_type, order_group_id, ' +
           'created_at, item_no, item_name, item:items(id, name, photo_url, location, purchase_rate, category_id, quantity, made_to_order, company_no, ' +
           'supplier:suppliers(id, name, contact_person, phone)), ' +
           'buyer:profiles!orders_buyer_id_fkey(id, full_name, phone, balance_due)',
@@ -233,6 +233,31 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
   const [err, setErr] = useState('')
   const [rejecting, setRejecting] = useState(false)
 
+  // Dealer orders carry a flat shipping & handling fee, pre-filled here so the
+  // bill matches the figure the dealer was already shown on their order page.
+  // It is one fee per ORDER, not per line: a cart is approved line by line, so
+  // we only pre-fill when no sibling line of the group has been charged yet.
+  // Always editable — the owner has the last word (pickup, waiver, bulk run).
+  const dealerFee = shippingFeeFor(order.buyer_type)
+  useEffect(() => {
+    if (!dealerFee) return
+    let active = true
+    async function prefill() {
+      if (order.order_group_id) {
+        const { data } = await supabase
+          .from('order_bills')
+          .select('id')
+          .eq('order_group_id', order.order_group_id)
+          .gt('shipping_fee', 0)
+          .limit(1)
+        if (data?.length) return   // a sibling already carries the fee
+      }
+      if (active) setShipping(String(dealerFee))
+    }
+    prefill()
+    return () => { active = false }
+  }, [order.id, order.order_group_id, dealerFee])
+
   const cf = (n) => money(n).replace('₹', currency)
   // Cost is the item's known purchase rate for both stock and made-to-order items
   // (set in Purchase Entry / Inventory). A made-to-order item with no cost set is
@@ -309,7 +334,9 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
         placeholder="0"
         value={shipping}
         onChange={(e) => setShipping(e.target.value)}
-        hint="Added on top of the item total and printed on the buyer's bill. Leave empty for pickup / no shipping."
+        hint={dealerFee
+          ? `Dealer orders carry a flat ${cf(dealerFee)} — already shown to the dealer on their order page. Change it or clear it for pickup / no shipping.`
+          : "Added on top of the item total and printed on the buyer's bill. Leave empty for pickup / no shipping."}
       />
 
       <div>

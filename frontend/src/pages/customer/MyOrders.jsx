@@ -4,6 +4,7 @@ import { IconPhoto, IconReceipt2 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
+import { shippingFeeFor } from '../../lib/helpers'
 import { OrderStatusBadge, Spinner } from '../../components/ui'
 
 // SPEC §6.3 / §10.2 — buyer's own order list, newest first. RLS (orders_buyer_
@@ -23,7 +24,7 @@ export default function MyOrders() {
       // now out of stock / inactive aren't in the view → neutral fallback below.
       const { data: rows, error } = await supabase
         .from('orders')
-        .select('id, item_id, item_name, quantity, amount, status, notes, created_at, order_group_id')
+        .select('id, item_id, item_name, quantity, amount, status, notes, buyer_type, created_at, order_group_id')
         .order('created_at', { ascending: false })
       if (!active) return
       if (error) { setErr(error.message); return }
@@ -121,7 +122,10 @@ function groupOrders(rows) {
     const key = o.order_group_id || o.id
     let g = byKey.get(key)
     if (!g) {
-      g = { id: o.id, created_at: o.created_at, lines: [], totalAmount: 0, totalQty: 0, status: o.status }
+      g = {
+        id: o.id, created_at: o.created_at, lines: [], totalAmount: 0, totalQty: 0,
+        status: o.status, buyerType: o.buyer_type, booked: 0, awaitingBill: false,
+      }
       byKey.set(key, g)
       groups.push(g)
     }
@@ -130,13 +134,20 @@ function groupOrders(rows) {
     // only exist once the shop has approved and billed the line (023).
     if (o.status !== 'rejected') {
       const b = o.bill
-      g.totalAmount += (Number(o.amount) || 0)
-        - Number(b?.discount_amount || 0) + Number(b?.shipping_fee || 0)
-        + Number(b?.packing_fee || 0) + Number(b?.other_charge || 0)
+      const fees = Number(b?.shipping_fee || 0) + Number(b?.packing_fee || 0) + Number(b?.other_charge || 0)
+      g.booked += fees
+      if (!b) g.awaitingBill = true
+      g.totalAmount += (Number(o.amount) || 0) - Number(b?.discount_amount || 0) + fees
       g.totalQty += Number(o.quantity) || 0
     }
     // Show the least-progressed status so the buyer sees the group as still open.
     if (STATUS_RANK.indexOf(o.status) < STATUS_RANK.indexOf(g.status)) g.status = o.status
+  }
+  // A dealer's flat shipping & handling isn't billed until the shop confirms, so
+  // add the expected fee here too — the card total must equal the figure the
+  // order's own page shows (MyOrderDetail applies the identical rule).
+  for (const g of groups) {
+    if (g.booked === 0 && g.awaitingBill) g.totalAmount += shippingFeeFor(g.buyerType)
   }
   return groups
 }

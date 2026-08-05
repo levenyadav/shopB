@@ -7,7 +7,7 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
-import { round2, itemGstRate, gstBreakupByRate } from '../../lib/helpers'
+import { round2, itemGstRate, gstBreakupByRate, shippingFeeFor } from '../../lib/helpers'
 import { buildInvoiceModel, viewInvoice, printInvoice } from '../../lib/invoiceTemplate'
 import { Button, OrderStatusBadge, Spinner } from '../../components/ui'
 
@@ -47,7 +47,7 @@ export default function MyOrderDetail() {
       const { data, error } = await supabase
         .from('orders')
         .select(
-          'id, item_id, quantity, rate_at_order, amount, status, notes, ' +
+          'id, item_id, quantity, rate_at_order, amount, status, notes, buyer_type, ' +
             'rejection_reason, created_at, updated_at, order_group_id, packed_by_name',
         )
         .eq('id', id)
@@ -62,7 +62,7 @@ export default function MyOrderDetail() {
       if (data.order_group_id) {
         const { data: sibs } = await supabase
           .from('orders')
-          .select('id, item_id, item_name, quantity, rate_at_order, amount, status, notes, rejection_reason, created_at, order_group_id, packed_by_name')
+          .select('id, item_id, item_name, quantity, rate_at_order, amount, status, notes, buyer_type, rejection_reason, created_at, order_group_id, packed_by_name')
           .eq('order_group_id', data.order_group_id)
           .order('created_at')
         if (sibs?.length) rows = sibs
@@ -114,22 +114,32 @@ export default function MyOrderDetail() {
   const charged = lines.filter((l) => l.status !== 'rejected')
   const itemsTotal = round2(charged.reduce((s, l) => s + (Number(l.amount) || 0), 0))
 
-  // Shipping / packing / other are set by the shop at approval (023) and only
-  // exist from then on, so a pending order shows items and GST alone. Summing
-  // the parts rather than grand_total keeps the maths right when some lines are
-  // approved and some are not.
+  // Charges are set by the shop at approval (023). Shipping, packing and other
+  // are all pass-through money with no profit and no GST, so the buyer sees them
+  // as ONE "Shipping & handling" line rather than three near-identical rows.
+  // Summing the parts rather than grand_total keeps the maths right when some
+  // lines are approved and some are not.
   const fees = charged.reduce((a, l) => {
     const b = bills[l.id]
     if (!b) return a
     return {
       discount: a.discount + Number(b.discount_amount || 0),
-      shipping: a.shipping + Number(b.shipping_fee || 0),
-      packing:  a.packing  + Number(b.packing_fee || 0),
-      other:    a.other    + Number(b.other_charge || 0),
+      handling: a.handling + Number(b.shipping_fee || 0)
+                           + Number(b.packing_fee || 0)
+                           + Number(b.other_charge || 0),
     }
-  }, { discount: 0, shipping: 0, packing: 0, other: 0 })
-  const hasFees = fees.discount > 0 || fees.shipping > 0 || fees.packing > 0 || fees.other > 0
-  const totalAmount = round2(itemsTotal - fees.discount + fees.shipping + fees.packing + fees.other)
+  }, { discount: 0, handling: 0 })
+
+  // Dealers pay a flat shipping & handling fee per order. Until the shop
+  // confirms there is no bill row to read, so we show the fee the dealer will be
+  // charged — no surprise at the end (SPEC §3). Once anything is booked, the
+  // booked figure wins, so this never double-counts or contradicts the invoice.
+  const awaitingBill = charged.some((l) => !bills[l.id])
+  const expectedHandling = awaitingBill ? shippingFeeFor(lines[0].buyer_type) : 0
+  const handling = round2(fees.handling > 0 ? fees.handling : expectedHandling)
+  const handlingIsEstimate = fees.handling === 0 && handling > 0
+
+  const totalAmount = round2(itemsTotal - fees.discount + handling)
 
   // Rates are tax-INCLUSIVE (Golden Rule #5), so GST is shown as what is already
   // inside the item total — never added on top. Charges are pass-through and
@@ -228,9 +238,12 @@ export default function MyOrderDetail() {
         <dl className="mt-3 space-y-1.5 border-t border-line pt-3 text-sm">
           <Charge label={`Items (${charged.length} ${charged.length === 1 ? 'item' : 'items'})`} value={c(itemsTotal)} />
           {fees.discount > 0 && <Charge label="Discount" value={`− ${c(fees.discount)}`} good />}
-          {fees.shipping > 0 && <Charge label="Shipping fee" value={c(fees.shipping)} />}
-          {fees.packing > 0 && <Charge label="Packing & handling" value={c(fees.packing)} />}
-          {fees.other > 0 && <Charge label="Other charges" value={c(fees.other)} />}
+          {handling > 0 && (
+            <Charge
+              label={handlingIsEstimate ? 'Shipping & handling (on confirmation)' : 'Shipping & handling'}
+              value={c(handling)}
+            />
+          )}
         </dl>
 
         <div className="mt-3 flex items-center justify-between border-t border-line pt-3 text-sm">
@@ -246,9 +259,11 @@ export default function MyOrderDetail() {
             already inside the item prices, not added on top.
           </p>
         )}
-        {!hasFees && groupStatus === 'pending' && (
+        {groupStatus === 'pending' && (
           <p className="mt-1 text-xs text-muted">
-            Any shipping or packing fee is added when the shop confirms this order.
+            {handlingIsEstimate
+              ? 'Shipping & handling is confirmed by the shop along with your order.'
+              : 'Any shipping or handling fee is added when the shop confirms this order.'}
           </p>
         )}
       </div>

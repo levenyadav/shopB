@@ -65,6 +65,18 @@ export function rateForBuyer(item, buyerType) {
   return buyerType === 'dealer' ? Number(item.dealer_rate) : Number(item.rate)
 }
 
+// Flat shipping & handling charged on dealer orders; customers pay none. It is
+// ONE fee per order, not per line — a cart of five items is still ₹100 — so the
+// approval screen only pre-fills it on the first line of a group to be approved.
+// Pass-through money: it carries no profit (Golden Rule #6) and no GST.
+// A shop that wants this configurable can use charge_rules (migration 023)
+// instead; this constant is the single source of truth until then.
+export const DEALER_SHIPPING_FEE = 100
+
+export function shippingFeeFor(buyerType) {
+  return buyerType === 'dealer' ? DEALER_SHIPPING_FEE : 0
+}
+
 // SPEC §12.3 — profit on a line.
 export function lineProfit(rateCharged, purchaseRate, quantity) {
   return round2((Number(rateCharged) - Number(purchaseRate)) * Number(quantity))
