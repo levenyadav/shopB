@@ -92,16 +92,28 @@ export default function PurchaseHistory() {
            + `Fix: run migration 036 on the database. (${chargesErr.message})`)
     }
 
-    const { data, error } = await supabase
+    const COLUMNS =
+      'id, quantity, purchase_rate, total_cost, notes, created_at, ' +
+      'invoice_no, invoice_date, purchase_group_id, supplier_id, item_no, item_name, ' +
+      'item:items(name, item_no, photo_url), ' +
+      'supplier:suppliers(id, name, phone), ' +
+      'entered_by:profiles(full_name)'
+
+    // A line taken off a bill by an edit is soft-deleted (migration 039): it is
+    // kept for audit but is worth no stock and no money, so it must never be
+    // counted here. A database still short of 039 has no such lines, so the
+    // fallback query loses nothing.
+    let { data, error } = await supabase
       .from('purchases')
-      .select(
-        'id, quantity, purchase_rate, total_cost, notes, created_at, ' +
-          'invoice_no, invoice_date, purchase_group_id, supplier_id, item_no, item_name, ' +
-          'item:items(name, item_no, photo_url), ' +
-          'supplier:suppliers(id, name, phone), ' +
-          'entered_by:profiles(full_name)',
-      )
+      .select(COLUMNS)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false })
+    if (error && /deleted_at/.test(error.message || '')) {
+      ;({ data, error } = await supabase
+        .from('purchases')
+        .select(COLUMNS)
+        .order('created_at', { ascending: false }))
+    }
     if (error) { setErr(error.message); return }
     setPurchases((data ?? []).map((p) => ({ ...p, charges: charges.get(p.purchase_group_id) || null })))
   }

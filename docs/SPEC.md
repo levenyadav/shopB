@@ -222,6 +222,29 @@ balance.
 Note the direction differs from a customer invoice: a sale amount is tax-**inclusive**
 and tax is backed out of it, while a supplier adds tax **on top** of the goods value.
 
+**Correcting an entered bill (migration 039):**
+A bill that was keyed in wrong — a mistyped quantity, the wrong cost rate, a product
+missed off the bottom of the paper invoice, a line that belongs to another bill — is
+corrected from Purchase Bill Detail. **Owner only, any bill, however old.** Staff may
+enter a bill but never correct one: a correction moves the supplier's balance and
+changes cost rates.
+
+Everything the correction touches still moves through triggers (Golden Rule #10) and
+nothing rewrites history (Golden Rule #9):
+
+| | Behaviour |
+|---|---|
+| Write path | One RPC, `edit_purchase_bill`, one transaction — a half-corrected bill is impossible |
+| Stock & balance | The new `on_purchase_update` / `on_purchase_delete` triggers unwind and re-apply exactly what the INSERT did |
+| Ledger | The original entry stands. One **correction entry** is appended for the difference — debit when the bill grew, credit when it shrank |
+| Negative stock | Refused, naming the item and the shortfall: an edit may not erase goods that have already been sold |
+| Removing a line | **Soft delete** (`purchases.deleted_at`). The row is kept so the bill stays auditable and so the ledger's `reference_id` — which points at the bill's first line — never dangles. It counts for no stock and no money |
+| Cost rate | A corrected rate is written back to `items.purchase_rate`, so profit on **future** sales uses it. Sales already made keep the cost they were booked with |
+| Supplier | Cannot be changed. Moving a bill between two parties is two transactions, not an edit |
+| Legacy bills | A pre-033 ungrouped bill is given a `purchase_group_id` on its first edit, so it can hold several lines and carry postage/GST like any other |
+
+Every read of `purchases` that totals anything must filter `deleted_at is null`.
+
 ---
 
 ### 6.2 Module 2 — Inventory (All Stock)
@@ -1102,6 +1125,7 @@ These small serverless functions handle tasks that need server-side logic.
 | Udhaar | Udhaar adds to buyer's running balance. Cleared by Payment Entry |
 | Supplier balance | Purchase adds to supplier balance. Cleared by Payment Out entry |
 | Ledger | Append-only. Auto-written by triggers. Never manually edited |
+| Bill correction | Owner may correct an entered purchase bill (§6.1). Never rewrites the ledger — appends one correction entry for the difference. Refused if it would take stock negative |
 | Returns | Not in Phase 1. Planned for Phase 7. Rule to be decided before building |
 | Supplier login | No supplier login in Phase 1. Suppliers are records only |
 | Stock threshold | Set per item. Not a system-wide number |
