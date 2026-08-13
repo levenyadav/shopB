@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   IconArrowLeft, IconPrinter, IconEye, IconTag, IconTruck, IconUser, IconPhone, IconMapPin,
-  IconPlus, IconX, IconDeviceFloppy, IconPencil, IconTrash, IconAlertTriangle,
+  IconPlus, IconX, IconDeviceFloppy, IconPencil, IconAlertTriangle, IconPackage,
+  IconSearch, IconSparkles,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
@@ -10,7 +11,13 @@ import { useAuth } from '../../context/AuthContext'
 import { money, qty, dateTime, dateShort } from '../../lib/format'
 import { round2, purchaseBillTotals, suggestPurchaseGst } from '../../lib/helpers'
 import { buildPurchaseBillModel, viewPurchaseBill, printPurchaseBill } from '../../lib/purchaseBillTemplate'
-import { Badge, Spinner, Button, PhotoThumb, Field, StockBadge } from '../../components/ui'
+import { Badge, Spinner, Button, PhotoThumb, Field } from '../../components/ui'
+// The same bill-building UI Purchase Entry uses, so correcting a bill offers
+// exactly the options entering one does.
+import {
+  BLANK_NEW, lineCost, LinesTable, LineEditor, BillCharges,
+  Section, Row, createProductFromLine,
+} from '../../components/purchase'
 
 // SPEC §6.1 / §6.7.1 — one supplier bill, in full. Reached from the supplier's
 // ledger (the `purchase` entry links straight here) and from Purchase History.
@@ -53,7 +60,8 @@ export default function PurchaseBillDetail() {
         'id, shop_id, item_id, supplier_id, quantity, purchase_rate, total_cost, notes, created_at, ' +
         'invoice_no, invoice_date, purchase_group_id, ' +
         'item_no, item_name, ' +
-        'item:items(id, name, item_no, photo_url, hsn_sac, gst_rate), ' +
+        'item:items(id, name, item_no, photo_url, hsn_sac, gst_rate, ' +
+          'quantity, purchase_rate, low_stock_threshold), ' +
         'supplier:suppliers(id, name, phone, contact_person, address), ' +
         'entered_by:profiles(full_name)'
 
@@ -293,7 +301,10 @@ export default function PurchaseBillDetail() {
           afterwards recovers nothing by itself. This puts that one missing
           insert back, so the trigger books it exactly as it would have on the
           day (Golden Rule #10 — the app never moves the balance itself). */}
-      {!hasCharges && bill.group && !bill.chargesErr && (
+      {/* Only where a bill cannot be corrected outright: once 039 is on the
+          database, Edit bill does this and more, and two buttons for one job
+          would break "one clear primary action" (SPEC §3). */}
+      {!hasCharges && bill.group && !bill.chargesErr && !bill.editable && (
         <BackfillCharges bill={bill} currency={currency} onSaved={() => setReload((n) => n + 1)} />
       )}
 
@@ -366,144 +377,137 @@ export default function PurchaseBillDetail() {
 }
 
 // ---------------------------------------------------------------------------
-// Correcting a bill. One screen, everything editable at once (SPEC §3 — two
-// screens maximum for any owner task): the lines, the products on it, the bill
-// number and date, and the postage / GST.
+// Correcting a bill.
 //
-// Nothing is written until Save, and Save is ONE call to edit_purchase_bill
-// (migration 039), which applies the whole correction in a single transaction.
-// A half-corrected bill is therefore impossible, and the stock and balance moves
-// stay where they belong — in triggers, not here.
+// This is Purchase Entry's bill screen, in edit clothes: the same line table,
+// the same line editor in both its modes (restock an existing item / create a
+// new product outright), the same postage + auto-GST block, the same totals.
+// All of it comes from components/purchase, so the two screens offer the same
+// options and can never drift apart.
+//
+// What differs is the save. Nothing is written until Save, and Save is ONE call
+// to edit_purchase_bill (migration 039), which applies the whole correction in a
+// single transaction: a half-corrected bill is impossible, and stock and balance
+// moves stay where they belong — in triggers, not here.
 //
 // The screen refuses in advance what the database would refuse: an edit that
 // takes an item below zero stock, because those pcs have already been sold. The
 // database is still the one enforcing it (039), but the owner should see it
 // while typing, not after pressing Save.
 // ---------------------------------------------------------------------------
-let draftKey = 0
-const nextKey = () => `new-${++draftKey}`
-
 function BillEditor({ bill, currency, onCancel, onSaved }) {
   const c = (n) => money(n).replace('₹', currency)
 
+  // A bill line becomes a Purchase Entry line, plus `rowId` — the purchases row
+  // it came from. Lines added here have no rowId until the RPC creates them.
   const [lines, setLines] = useState(() =>
     bill.lines.map((l) => ({
-      key: l.id,
-      id: l.id,
-      item_id: l.item_id || l.item?.id || null,
-      name: l.item_name || l.item?.name || 'Item',
-      item_no: l.item_no || l.item?.item_no || '',
-      photo_url: l.item?.photo_url || null,
-      gst_rate: l.item?.gst_rate ?? null,
+      mode: 'existing',
+      rowId: l.id,
+      // A product deleted from the catalogue (migration 028 detaches it) keeps
+      // its name so the bill still reads properly, but has no id — which is what
+      // marks the line uneditable below.
+      item: l.item
+        ? { ...l.item, name: l.item.name || l.item_name, item_no: l.item.item_no || l.item_no }
+        : { id: null, name: l.item_name || 'Deleted product', item_no: l.item_no || '' },
       quantity: String(l.quantity ?? ''),
       purchase_rate: String(l.purchase_rate ?? ''),
       notes: l.notes || '',
     })),
   )
   const [head, setHead] = useState({
-    invoice_no: bill.invoice_no || '',
     // Already a YYYY-MM-DD date (not a timestamp), which is exactly what a date
     // input wants — parsing it through Date would shift it a day in some zones.
+    invoice_no: bill.invoice_no || '',
     invoice_date: bill.invoice_date ? String(bill.invoice_date).slice(0, 10) : '',
     postage: bill.postage ? String(bill.postage) : '',
     cgst: bill.cgst ? String(bill.cgst) : '',
     sgst: bill.sgst ? String(bill.sgst) : '',
-    notes: bill.notes || '',
   })
-  const [adding, setAdding] = useState(false)
-  const [stock, setStock] = useState(null)     // item_id → { quantity, name, purchase_rate }
+  const [editing, setEditing] = useState(null)   // { line, index } while the dialog is open
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
 
   const setHeadVal = (k) => (e) => { setHead((h) => ({ ...h, [k]: e.target.value })); setErr('') }
-  const setLine = (key, k, v) => {
-    setLines((ls) => ls.map((l) => (l.key === key ? { ...l, [k]: v } : l)))
+
+  function upsertLine(line) {
+    setLines((ls) => {
+      if (editing?.index == null) return [...ls, line]
+      const next = [...ls]
+      // Editing a line keeps the purchases row it belongs to, so the correction
+      // updates that row instead of removing it and adding a different one.
+      next[editing.index] = { ...line, rowId: ls[editing.index].rowId }
+      return next
+    })
+    setEditing(null)
     setErr('')
   }
 
-  // What is on the shelf right now, for every product this bill touches. Needed
-  // to answer "can this line be cut?" before the owner presses Save.
-  const itemIds = useMemo(
-    () => [...new Set(lines.map((l) => l.item_id).filter(Boolean))].sort().join(','),
-    [lines],
-  )
-  useEffect(() => {
-    let active = true
-    const ids = itemIds ? itemIds.split(',') : []
-    if (!ids.length) { setStock({}); return }
-    supabase
-      .from('items')
-      .select('id, name, quantity, purchase_rate, low_stock_threshold')
-      .in('id', ids)
-      .then(({ data, error }) => {
-        if (!active) return
-        if (error) { setErr(`Could not read current stock: ${error.message}`); return }
-        const map = {}
-        for (const it of data || []) map[it.id] = it
-        setStock(map)
-      })
-    return () => { active = false }
-  }, [itemIds])
-
-  // Totals, live.
-  const goods = round2(lines.reduce((a, l) => a + lineTotal(l), 0))
-  const totals = purchaseBillTotals({ goods, postage: head.postage, cgst: head.cgst, sgst: head.sgst })
+  const goods = round2(lines.reduce((sum, l) => sum + lineCost(l), 0))
+  const totals = purchaseBillTotals({
+    goods, postage: head.postage, cgst: head.cgst, sgst: head.sgst,
+  })
   const oldTotal = round2(bill.grand)
   const difference = round2(totals.grand - oldTotal)
 
-  const suggested = suggestPurchaseGst(lines.map((l) => ({ amount: lineTotal(l), rate: l.gst_rate })))
+  // What is on the shelf right now, for every product this bill touches — both
+  // the ones still on it and the ones being taken off.
+  const onHand = useMemo(() => {
+    const m = new Map()
+    for (const l of bill.lines) if (l.item?.id) m.set(l.item.id, l.item)
+    for (const l of lines) if (l.item?.id && !m.has(l.item.id)) m.set(l.item.id, l.item)
+    return m
+  }, [bill.lines, lines])
 
   // Net change per product across the whole edit — the same sum migration 039
   // does — so moving pcs between two lines of one product is never wrongly
   // refused, and a genuine shortfall is named before Save.
   const shortfalls = useMemo(() => {
-    if (!stock) return []
     const was = new Map()
     for (const l of bill.lines) {
-      const k = l.item_id || l.item?.id
+      const k = l.item?.id
       if (k) was.set(k, (was.get(k) || 0) + Number(l.quantity || 0))
     }
     const now = new Map()
     for (const l of lines) {
-      if (l.item_id) now.set(l.item_id, (now.get(l.item_id) || 0) + Number(l.quantity || 0))
+      const k = l.item?.id
+      if (k) now.set(k, (now.get(k) || 0) + Number(l.quantity || 0))
     }
     const out = []
     for (const [itemId, before] of was) {
-      const after = now.get(itemId) || 0
-      const delta = round2(after - before)
-      const onHand = Number(stock[itemId]?.quantity ?? 0)
-      if (delta < 0 && round2(onHand + delta) < 0) {
-        out.push({
-          name: stock[itemId]?.name || bill.lines.find((l) => (l.item_id || l.item?.id) === itemId)?.item_name || 'this item',
-          short: round2(-(onHand + delta)),
-        })
+      const delta = round2((now.get(itemId) || 0) - before)
+      const stock = Number(onHand.get(itemId)?.quantity ?? 0)
+      if (delta < 0 && round2(stock + delta) < 0) {
+        out.push({ id: itemId, name: onHand.get(itemId)?.name || 'this item', short: round2(-(stock + delta)) })
       }
     }
     return out
-  }, [lines, stock, bill.lines])
+  }, [lines, bill.lines, onHand])
 
-  // Cost rates the correction will push onto the catalogue (owner's rule: the
-  // corrected cost becomes the product's cost, so future profit uses it).
+  // Cost rates the correction will push onto the catalogue: a corrected cost
+  // becomes the product's cost, so future profit uses it (SPEC §6.1).
   const costChanges = useMemo(() => {
-    if (!stock) return []
     const seen = new Map()
     for (const l of lines) {
-      if (!l.item_id || l.purchase_rate === '') continue
+      if (l.mode !== 'existing' || !l.item?.id || l.purchase_rate === '') continue
       const rate = round2(l.purchase_rate)
-      const was = stock[l.item_id]?.purchase_rate
+      const was = l.item.purchase_rate
       if (was != null && round2(was) !== rate) {
-        seen.set(l.item_id, { id: l.item_id, name: stock[l.item_id]?.name || l.name, from: round2(was), to: rate })
+        seen.set(l.item.id, { id: l.item.id, name: l.item.name, from: round2(was), to: rate })
       }
     }
     return [...seen.values()]
-  }, [lines, stock])
+  }, [lines])
+
+  const orphans = lines.filter((l) => !l.item?.id)
 
   function validate() {
-    if (!lines.length) return 'A bill must have at least one product. Add one, or press Cancel to leave the bill as it is.'
-    for (const l of lines) {
-      if (!l.item_id) return `"${l.name}" is not linked to a product, so it can't be edited. Remove the line and add the product again.`
-      if (l.quantity === '' || !(Number(l.quantity) > 0)) return `Enter how many pcs of "${l.name}" this bill was for.`
-      if (l.purchase_rate === '' || Number(l.purchase_rate) < 0) return `Enter the cost rate for "${l.name}".`
+    if (!lines.length) {
+      return 'A bill must have at least one product. Add one, or press Cancel to leave the bill as it was.'
+    }
+    if (orphans.length) {
+      return `"${orphans[0].item.name}" was deleted from your catalogue, so this bill can't be corrected. `
+           + `Remove that line first, or add the product back to Inventory.`
     }
     if (shortfalls.length) {
       return `Not enough stock for this change: ${shortfalls
@@ -519,308 +523,218 @@ function BillEditor({ bill, currency, onCancel, onSaved }) {
     if (problem) { setErr(problem); return }
     setSaving(true); setErr('')
 
-    const { data, error } = await supabase.rpc('edit_purchase_bill', {
-      p_bill_id: bill.lines[0].id,
-      p_lines: lines.map((l) => ({
-        id: l.id || null,
-        item_id: l.item_id,
-        quantity: round2(l.quantity),
-        purchase_rate: round2(l.purchase_rate),
-        notes: l.notes?.trim() || null,
-      })),
-      p_invoice_no: head.invoice_no.trim() || null,
-      p_invoice_date: head.invoice_date || null,
-      p_postage: totals.postage,
-      p_cgst: totals.cgst,
-      p_sgst: totals.sgst,
-      p_notes: head.notes.trim() || null,
-    })
-    setSaving(false)
-    if (error) { setErr(`Could not save this correction: ${error.message}`); return }
-    onSaved({
-      old_total: Number(data?.old_total ?? oldTotal),
-      new_total: Number(data?.new_total ?? totals.grand),
-      difference: Number(data?.difference ?? difference),
-    })
+    const createdItems = []
+    try {
+      // A product added to the bill from scratch needs its catalogue row first,
+      // with NO opening stock — the stock arrives through the purchase line the
+      // RPC writes below (Golden Rule #1), exactly as in Purchase Entry.
+      const payload = []
+      for (const l of lines) {
+        let item = l.item
+        if (l.mode === 'new') {
+          item = await createProductFromLine({
+            shopId: bill.shopId, supplierId: bill.supplierId, line: l,
+          })
+          createdItems.push(item.item_no)
+        }
+        payload.push({
+          id: l.rowId || null,
+          item_id: item.id,
+          quantity: round2(l.quantity),
+          purchase_rate: round2(l.purchase_rate),
+          notes: l.notes?.trim() || null,
+        })
+      }
+
+      const { data, error } = await supabase.rpc('edit_purchase_bill', {
+        p_bill_id: bill.lines[0].id,
+        p_lines: payload,
+        p_invoice_no: head.invoice_no.trim() || null,
+        p_invoice_date: head.invoice_date || null,
+        p_postage: totals.postage,
+        p_cgst: totals.cgst,
+        p_sgst: totals.sgst,
+        p_notes: null,   // no bill-note field here; 039 keeps the existing note
+      })
+      if (error) {
+        throw new Error(
+          createdItems.length
+            ? `New products (${createdItems.join(', ')}) were added to your catalogue, but the correction `
+              + `was not saved: ${error.message}. They are sitting at 0 stock — the bill is unchanged.`
+            : `Could not save this correction: ${error.message}`,
+        )
+      }
+
+      onSaved({
+        old_total: Number(data?.old_total ?? oldTotal),
+        new_total: Number(data?.new_total ?? totals.grand),
+        difference: Number(data?.difference ?? difference),
+      })
+    } catch (e2) {
+      setErr(e2.message || 'Could not save this correction. Please try again.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
-    <form onSubmit={save} className="mx-auto max-w-3xl space-y-5">
+    <div className="mx-auto max-w-3xl">
       <button type="button" onClick={onCancel}
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-ink">
+              className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-ink">
         <IconArrowLeft size={17} /> Back to the bill
       </button>
 
-      <div className="rounded-lg border border-line bg-card p-5">
-        <h2 className="text-xl font-bold">Edit purchase bill</h2>
-        <p className="mt-1 text-sm text-muted">
-          Make this match the supplier’s paper bill. Stock and{' '}
-          {bill.supplier?.name || 'the supplier'}’s balance are corrected by the difference when you save.
-        </p>
+      <form onSubmit={save} className="space-y-6">
+        {err && (
+          <p className="rounded-lg border border-dues/30 bg-dues/10 px-4 py-3 text-sm text-dues">{err}</p>
+        )}
 
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <Field label="Bill no." value={head.invoice_no} onChange={setHeadVal('invoice_no')}
-                 placeholder="As printed on the supplier's bill" />
-          <Field label="Bill date" type="date" value={head.invoice_date} onChange={setHeadVal('invoice_date')} />
-        </div>
+        {/* ---- Bill header ---- */}
+        <Section title="Supplier bill" hint="Make this match the supplier's paper bill.">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <p className="mb-1.5 text-sm font-medium text-ink">Company / Supplier</p>
+              <p className="rounded-lg border border-line bg-paper-2 px-4 py-2.5 font-medium">
+                {bill.supplier?.name || '—'}
+              </p>
+              {/* Moving a bill between two suppliers takes money off one party
+                  and puts it on another — two transactions, not an edit. */}
+              <p className="mt-1.5 text-xs text-muted">
+                A bill can’t be moved to another supplier. Remove these lines and enter it under the right one.
+              </p>
+            </div>
+            <Field label="Bill date" type="date" value={head.invoice_date}
+                   onChange={setHeadVal('invoice_date')} hint="The date printed on the bill" />
+          </div>
+          <Field label="Bill / Invoice No. (optional)" placeholder="e.g. 4521"
+                 value={head.invoice_no} onChange={setHeadVal('invoice_no')}
+                 hint="The supplier's own bill number — so you can find this purchase again" />
+        </Section>
 
-        {/* Supplier is fixed. Moving a bill between two suppliers is not an edit;
-            it takes money off one party and puts it on another. */}
-        <p className="mt-3 text-xs text-muted">
-          Supplier: <span className="font-medium text-ink">{bill.supplier?.name || '—'}</span> — a bill can’t be
-          moved to another supplier. Remove these lines and enter it under the right one.
-        </p>
-      </div>
-
-      {/* Lines */}
-      <div className="overflow-hidden rounded-lg border border-line bg-card">
-        <div className="border-b border-line bg-paper-2 px-5 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted">
-          Items on this bill
-        </div>
-        <ul className="divide-y divide-line">
-          {lines.map((l) => {
-            const onHand = stock?.[l.item_id]
-            return (
-              <li key={l.key} className="px-5 py-4">
-                <div className="flex items-start gap-3">
-                  <PhotoThumb url={l.photo_url} size="h-12 w-12" />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-ink">{l.name}</p>
-                    <p className="text-xs text-muted">
-                      {l.item_no && <span className="fig">{l.item_no}</span>}
-                      {onHand && (
-                        <>
-                          {l.item_no && ' · '}
-                          <span className="fig">{qty(onHand.quantity)}</span> in stock now
-                        </>
-                      )}
-                      {!l.id && <> · <Badge tone="peacock">added</Badge></>}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => { setLines((ls) => ls.filter((x) => x.key !== l.key)); setErr('') }}
-                    className="shrink-0 rounded p-1.5 text-muted hover:bg-dues/10 hover:text-dues"
-                    title="Take this product off the bill"
-                  >
-                    <IconTrash size={18} />
-                  </button>
-                </div>
-                <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                  <Field label="Quantity (pcs)" inputMode="decimal" value={l.quantity}
-                         onChange={(e) => setLine(l.key, 'quantity', e.target.value)} />
-                  <Field label="Cost rate" prefix={currency} inputMode="decimal" value={l.purchase_rate}
-                         onChange={(e) => setLine(l.key, 'purchase_rate', e.target.value)} />
-                  <div>
-                    <p className="mb-1.5 text-sm font-medium text-ink">Line total</p>
-                    <p className="fig py-2 text-lg font-semibold">{c(lineTotal(l))}</p>
-                  </div>
-                </div>
-              </li>
-            )
-          })}
-          {!lines.length && (
-            <li className="px-5 py-8 text-center text-sm text-muted">
-              Every product has been taken off this bill. Add one back, or press Cancel to leave the bill as it was.
-            </li>
-          )}
-        </ul>
-
-        <div className="border-t border-line px-5 py-3">
-          {adding ? (
-            <AddLine
-              shopId={bill.shopId}
-              supplierId={bill.supplierId}
-              currency={currency}
-              onCancel={() => setAdding(false)}
-              onAdd={(item) => {
-                setLines((ls) => [...ls, {
-                  key: nextKey(), id: null, item_id: item.id, name: item.name,
-                  item_no: item.item_no, photo_url: item.photo_url || null,
-                  gst_rate: item.gst_rate ?? null,
-                  quantity: '', purchase_rate: String(item.purchase_rate ?? ''), notes: '',
-                }])
-                setAdding(false); setErr('')
-              }}
-            />
+        {/* ---- Line items ---- */}
+        <Section
+          title="Products on this bill"
+          hint="Change a quantity or cost rate, take a product off, or add one that was missed."
+        >
+          {lines.length === 0 ? (
+            <div className="rounded-lg border-2 border-dashed border-line bg-paper-2 px-6 py-8 text-center">
+              <IconPackage size={28} className="mx-auto text-muted" />
+              <p className="mt-2 font-semibold">Every product has been taken off</p>
+              <p className="mt-0.5 text-sm text-muted">
+                Add one back, or press Cancel to leave the bill as it was.
+              </p>
+            </div>
           ) : (
-            <Button variant="ghost" onClick={() => setAdding(true)}>
-              <IconPlus size={18} /> Add product to this bill
-            </Button>
+            <LinesTable
+              lines={lines}
+              onEdit={(i) => setEditing({ line: lines[i], index: i })}
+              onRemove={(i) => { setLines((ls) => ls.filter((_, idx) => idx !== i)); setErr('') }}
+            />
           )}
-        </div>
-      </div>
 
-      {/* Postage / GST */}
-      <div className="rounded-lg border border-line bg-card p-5">
-        <h3 className="font-semibold text-ink">Postage &amp; GST on this bill</h3>
-        <p className="text-xs text-muted">
-          Postage is pass-through and GST is claimable input credit — neither is part of a product’s cost.
-        </p>
-        <div className="mt-4 grid gap-4 sm:grid-cols-3">
-          <Field label="Postage / freight" prefix={currency} inputMode="decimal"
-                 value={head.postage} onChange={setHeadVal('postage')} placeholder="0" />
-          <Field label="CGST" prefix={currency} inputMode="decimal"
-                 value={head.cgst} onChange={setHeadVal('cgst')} placeholder="0" />
-          <Field label="SGST" prefix={currency} inputMode="decimal"
-                 value={head.sgst} onChange={setHeadVal('sgst')} placeholder="0" />
+          <div className="flex flex-wrap gap-3">
+            <Button
+              variant="ghost"
+              onClick={() => setEditing({
+                line: { mode: 'existing', item: null, quantity: '', purchase_rate: '', notes: '' },
+                index: null,
+              })}
+            >
+              <IconSearch size={18} /> Add existing item
+            </Button>
+            <Button variant="ghost" onClick={() => setEditing({ line: { ...BLANK_NEW }, index: null })}>
+              <IconSparkles size={18} /> Add new product
+            </Button>
+          </div>
+        </Section>
+
+        {/* ---- Postage & tax (migration 036) ---- */}
+        {lines.length > 0 && (
+          <BillCharges
+            lines={lines}
+            value={{ postage: head.postage, cgst: head.cgst, sgst: head.sgst }}
+            onChange={(v) => setHead((h) => ({ ...h, ...v }))}
+          />
+        )}
+
+        {/* ---- What saving will do ---- */}
+        <div className="rounded-lg border border-line bg-card p-5 sm:p-6">
+          <dl className="space-y-1.5 text-sm">
+            <Row label={`Goods (${lines.length} product${lines.length === 1 ? '' : 's'})`} value={c(totals.goods)} />
+            {totals.postage > 0 && <Row label="Postage / freight" value={c(totals.postage)} />}
+            {totals.cgst > 0 && <Row label="CGST" value={c(totals.cgst)} />}
+            {totals.sgst > 0 && <Row label="SGST" value={c(totals.sgst)} />}
+          </dl>
+          <div className="mt-3 flex flex-wrap items-baseline justify-between gap-2 border-t border-line pt-3">
+            <span className="font-semibold">New bill total</span>
+            <span className="fig text-2xl font-bold text-dues">{c(totals.grand)}</span>
+          </div>
+          <div className="mt-1 flex flex-wrap items-baseline justify-between gap-2 text-sm text-muted">
+            <span>Was</span>
+            <span className="fig">{c(oldTotal)}</span>
+          </div>
+          <p className="mt-2 text-sm">
+            {difference === 0
+              ? <span className="text-muted">The total is unchanged, so nothing moves on the supplier’s balance.</span>
+              : <>
+                  <span className="fig font-semibold">{c(Math.abs(difference))}</span>{' '}
+                  {difference > 0 ? 'will be added to' : 'will come off'}{' '}
+                  {bill.supplier?.name || 'this supplier'}’s balance due, as one correction entry in their ledger.
+                </>}
+          </p>
         </div>
-        {suggested && (
-          <button
-            type="button"
-            onClick={() => setHead((h) => ({ ...h, cgst: String(suggested.cgst), sgst: String(suggested.sgst) }))}
-            className="mt-3 text-xs font-medium text-peacock hover:underline"
-          >
-            Fill {c(suggested.cgst)} + {c(suggested.sgst)} from these products’ GST rates
+
+        {costChanges.length > 0 && (
+          <div className="rounded-lg bg-saffron/10 px-5 py-4 text-sm">
+            <p className="font-semibold text-ink">This also changes what these products cost you:</p>
+            <ul className="mt-1 space-y-0.5">
+              {costChanges.map((ch) => (
+                <li key={ch.id}>
+                  {ch.name}: <span className="fig">{c(ch.from)}</span> → <span className="fig">{c(ch.to)}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1.5 text-xs text-muted">
+              Profit on future sales uses the new cost. Sales already made keep the cost they were booked with.
+            </p>
+          </div>
+        )}
+
+        {shortfalls.length > 0 && (
+          <div className="flex gap-2 rounded-lg bg-dues/10 px-5 py-4 text-sm text-dues">
+            <IconAlertTriangle size={18} className="mt-0.5 shrink-0" />
+            <p>
+              Not enough stock for this change:{' '}
+              {shortfalls.map((s) => `${s.name} (short by ${qty(s.short)} pcs)`).join(', ')}. Those pcs have
+              already been sold. Fix: put the quantity back up, or leave the line on the bill.
+            </p>
+          </div>
+        )}
+
+        <div className="flex items-center gap-3">
+          <Button type="submit" disabled={saving || !lines.length || shortfalls.length > 0} className="px-6">
+            {saving ? <><Spinner /> Saving…</> : 'Save corrections'}
+          </Button>
+          <button type="button" onClick={onCancel} className="text-sm font-medium text-muted hover:text-ink">
+            Cancel
           </button>
-        )}
-      </div>
+        </div>
+      </form>
 
-      {/* What saving will do */}
-      <div className="space-y-1 rounded-lg border border-line bg-paper-2 px-5 py-4 text-sm">
-        <Charge label="Goods total" value={c(totals.goods)} />
-        {totals.postage > 0 && <Charge label="Postage / freight" value={c(totals.postage)} />}
-        {totals.cgst > 0 && <Charge label="CGST" value={c(totals.cgst)} />}
-        {totals.sgst > 0 && <Charge label="SGST" value={c(totals.sgst)} />}
-        <div className="flex items-baseline justify-between gap-3 border-t border-line pt-1.5 font-semibold">
-          <span>New bill total</span>
-          <span className="fig">{c(totals.grand)}</span>
-        </div>
-        <div className="flex items-baseline justify-between gap-3 text-muted">
-          <span>Was</span>
-          <span className="fig">{c(oldTotal)}</span>
-        </div>
-        <p className="pt-2 text-xs text-ink">
-          {difference === 0
-            ? 'The total is unchanged, so nothing moves on the supplier’s balance.'
-            : <>
-                <span className="fig font-semibold">{c(Math.abs(difference))}</span>{' '}
-                {difference > 0 ? 'will be added to' : 'will come off'}{' '}
-                {bill.supplier?.name || 'the supplier'}’s balance, as one correction entry in their ledger.
-              </>}
-        </p>
-      </div>
-
-      {costChanges.length > 0 && (
-        <div className="rounded-lg bg-saffron/10 px-5 py-4 text-xs text-ink">
-          <p className="font-semibold">This also changes what these products cost you:</p>
-          <ul className="mt-1 space-y-0.5">
-            {costChanges.map((ch) => (
-              <li key={ch.id}>
-                {ch.name}: <span className="fig">{c(ch.from)}</span> → <span className="fig">{c(ch.to)}</span>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-1.5 text-muted">
-            Profit on future sales uses the new cost. Sales already made keep the cost they were booked with.
-          </p>
-        </div>
+      {editing && (
+        <LineEditor
+          key={editing.index ?? 'new'}
+          initial={editing.line}
+          shopId={bill.shopId}
+          supplierId={bill.supplierId}
+          // A Make-to-Order product buys nothing, so it would add nothing to a
+          // bill — there is no such thing as a listing-only correction.
+          allowMadeToOrder={false}
+          submitLabel={editing.index == null ? 'Add to bill' : 'Save line'}
+          onClose={() => setEditing(null)}
+          onSave={upsertLine}
+        />
       )}
-
-      {shortfalls.length > 0 && (
-        <div className="flex gap-2 rounded-lg bg-dues/10 px-5 py-4 text-sm text-dues">
-          <IconAlertTriangle size={18} className="mt-0.5 shrink-0" />
-          <p>
-            Not enough stock for this change:{' '}
-            {shortfalls.map((s) => `${s.name} (short by ${qty(s.short)} pcs)`).join(', ')}. Those pcs have
-            already been sold. Fix: put the quantity back up, or leave the line on the bill.
-          </p>
-        </div>
-      )}
-
-      {err && <p className="rounded-lg bg-dues/10 px-4 py-3 text-sm text-dues">{err}</p>}
-
-      <div className="flex flex-wrap gap-3">
-        <Button type="submit" disabled={saving || !lines.length || shortfalls.length > 0}>
-          {saving ? <Spinner /> : <IconDeviceFloppy size={18} />} Save corrections
-        </Button>
-        <Button variant="ghost" onClick={onCancel}>Cancel</Button>
-      </div>
-    </form>
-  )
-}
-
-function lineTotal(l) {
-  return round2(Number(l.quantity || 0) * Number(l.purchase_rate || 0))
-}
-
-// Pick a product to add to the bill. Only real catalogue items: a bill correction
-// is not the place to create a product — that is Purchase Entry's job, where the
-// full catalogue form lives.
-function AddLine({ shopId, supplierId, currency, onAdd, onCancel }) {
-  const [search, setSearch] = useState('')
-  const [items, setItems] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [onlyThisSupplier, setOnlyThisSupplier] = useState(true)
-
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    // Make-to-Order items hold no stock, so they are never bought on a bill.
-    let q = supabase
-      .from('items')
-      .select('id, item_no, name, company_no, quantity, purchase_rate, low_stock_threshold, photo_url, gst_rate, discontinued')
-      .eq('shop_id', shopId)
-      .eq('made_to_order', false)
-      .order('name')
-      .limit(50)
-    if (onlyThisSupplier && supplierId) q = q.eq('supplier_id', supplierId)
-    const term = search.trim()
-    if (term) q = q.or(`name.ilike.%${term}%,item_no.ilike.%${term}%,company_no.ilike.%${term}%`)
-    q.then(({ data }) => { if (!cancelled) { setItems(data || []); setLoading(false) } })
-    return () => { cancelled = true }
-  }, [search, shopId, supplierId, onlyThisSupplier])
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-semibold text-ink">Which product was missed off this bill?</p>
-        <button type="button" onClick={onCancel} className="text-muted hover:text-ink"><IconX size={18} /></button>
-      </div>
-
-      <Field label="Find the product" placeholder="Search by name, item no. or company no."
-             value={search} onChange={(e) => setSearch(e.target.value)} autoFocus />
-
-      {supplierId && (
-        <label className="flex items-center gap-2 text-sm text-muted">
-          <input type="checkbox" checked={onlyThisSupplier}
-                 onChange={(e) => setOnlyThisSupplier(e.target.checked)}
-                 className="h-4 w-4 rounded border-line" />
-          Only show products from this supplier
-        </label>
-      )}
-
-      <div className="max-h-64 overflow-y-auto rounded-lg border border-line">
-        {loading ? (
-          <div className="grid place-items-center py-8 text-muted"><Spinner /></div>
-        ) : items.length === 0 ? (
-          <p className="px-4 py-6 text-center text-sm text-muted">
-            No matching products. Uncheck the supplier filter, or add the product from Purchase Entry first.
-          </p>
-        ) : (
-          <ul className="divide-y divide-line">
-            {items.map((it) => (
-              <li key={it.id}>
-                <button type="button" onClick={() => onAdd(it)}
-                        className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left hover:bg-paper-2">
-                  <span className="min-w-0">
-                    <span className="font-medium">{it.name}</span>
-                    {it.discontinued && <Badge tone="dues">discontinued</Badge>}
-                    <span className="fig block text-xs text-muted">
-                      {it.item_no}{it.company_no ? ` · ${it.company_no}` : ''} · cost{' '}
-                      {money(it.purchase_rate).replace('₹', currency)}
-                    </span>
-                  </span>
-                  <span className="flex shrink-0 items-center gap-2 text-sm text-muted">
-                    <span className="fig">{qty(it.quantity)}</span>
-                    <StockBadge quantity={it.quantity} threshold={it.low_stock_threshold} />
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
     </div>
   )
 }

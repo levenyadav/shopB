@@ -135,6 +135,10 @@ begin
 end $$;
 set app.test_uid = '22222222-2222-2222-2222-222222222222';
 
+-- A note already on the bill must survive a correction: the screen that edits a
+-- bill has no bill-note field, so it sends none.
+update public.purchase_bills set notes = 'paper bill in the red file';
+
 -- ── TEST 3: a real edit — modify, reduce, add a product, change charges ───
 do $$
 declare v_a uuid; v_b uuid; v_res jsonb;
@@ -184,6 +188,8 @@ do $$ begin
   -- charges row corrected in place, not duplicated
   perform pg_temp.assert_eq('charges rows', (select count(*) from public.purchase_bills), 1);
   perform pg_temp.assert_eq('charges grand total', (select grand_total from public.purchase_bills), 2780);
+  perform pg_temp.assert_txt('bill note replaced when one is passed',
+    (select notes from public.purchase_bills), 'corrected against the paper bill');
 end $$;
 
 -- ── TEST 4: remove a line (soft delete), money and stock unwind ───────────
@@ -211,6 +217,10 @@ do $$ begin
   perform pg_temp.assert_eq('correction is a credit', (select credit from public.ledger order by created_at desc, id limit 1), 750);
   perform pg_temp.assert_eq('correction debit is zero', (select debit from public.ledger order by created_at desc, id limit 1), 0);
   perform pg_temp.assert_eq('ledger rows after removal', (select count(*) from public.ledger), 4);
+  -- The screen that corrects a bill has no bill-note field and sends none; that
+  -- must not wipe the note the bill already carries.
+  perform pg_temp.assert_txt('bill note survives an edit that passes none',
+    (select notes from public.purchase_bills), 'corrected against the paper bill');
 end $$;
 
 -- ── TEST 5: a legacy ungrouped bill can be edited ─────────────────────────

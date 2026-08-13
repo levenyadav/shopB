@@ -561,7 +561,9 @@ begin
           cgst_amount = excluded.cgst_amount,
           sgst_amount = excluded.sgst_amount,
           grand_total = excluded.grand_total,
-          notes       = excluded.notes;
+          -- The screen correcting a bill has no bill-note field, so it sends
+          -- nothing. That must not erase a note the bill already carries.
+          notes       = coalesce(excluded.notes, public.purchase_bills.notes);
   end if;
 
   -- ---- one correction entry for the whole bill ---------------------------
