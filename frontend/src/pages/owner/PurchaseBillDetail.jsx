@@ -18,6 +18,7 @@ import {
   BLANK_NEW, lineCost, LinesTable, LineEditor, BillCharges,
   Section, Row, createProductFromLine,
 } from '../../components/purchase'
+import { stockShortfalls, costRateChanges, billEditProblem } from '../../lib/purchaseEdit'
 
 // SPEC §6.1 / §6.7.1 — one supplier bill, in full. Reached from the supplier's
 // ledger (the `purchase` entry links straight here) and from Purchase History.
@@ -459,62 +460,17 @@ function BillEditor({ bill, currency, onCancel, onSaved }) {
     return m
   }, [bill.lines, lines])
 
-  // Net change per product across the whole edit — the same sum migration 039
-  // does — so moving pcs between two lines of one product is never wrongly
-  // refused, and a genuine shortfall is named before Save.
-  const shortfalls = useMemo(() => {
-    const was = new Map()
-    for (const l of bill.lines) {
-      const k = l.item?.id
-      if (k) was.set(k, (was.get(k) || 0) + Number(l.quantity || 0))
-    }
-    const now = new Map()
-    for (const l of lines) {
-      const k = l.item?.id
-      if (k) now.set(k, (now.get(k) || 0) + Number(l.quantity || 0))
-    }
-    const out = []
-    for (const [itemId, before] of was) {
-      const delta = round2((now.get(itemId) || 0) - before)
-      const stock = Number(onHand.get(itemId)?.quantity ?? 0)
-      if (delta < 0 && round2(stock + delta) < 0) {
-        out.push({ id: itemId, name: onHand.get(itemId)?.name || 'this item', short: round2(-(stock + delta)) })
-      }
-    }
-    return out
-  }, [lines, bill.lines, onHand])
-
-  // Cost rates the correction will push onto the catalogue: a corrected cost
-  // becomes the product's cost, so future profit uses it (SPEC §6.1).
-  const costChanges = useMemo(() => {
-    const seen = new Map()
-    for (const l of lines) {
-      if (l.mode !== 'existing' || !l.item?.id || l.purchase_rate === '') continue
-      const rate = round2(l.purchase_rate)
-      const was = l.item.purchase_rate
-      if (was != null && round2(was) !== rate) {
-        seen.set(l.item.id, { id: l.item.id, name: l.item.name, from: round2(was), to: rate })
-      }
-    }
-    return [...seen.values()]
-  }, [lines])
-
-  const orphans = lines.filter((l) => !l.item?.id)
+  // Net change per product across the whole edit, the cost rates this pushes
+  // onto the catalogue, and everything that blocks a save — all pure rules,
+  // tested in lib/purchaseEdit.test.mjs.
+  const shortfalls = useMemo(
+    () => stockShortfalls({ originalLines: bill.lines, lines, onHand }),
+    [bill.lines, lines, onHand],
+  )
+  const costChanges = useMemo(() => costRateChanges(lines), [lines])
 
   function validate() {
-    if (!lines.length) {
-      return 'A bill must have at least one product. Add one, or press Cancel to leave the bill as it was.'
-    }
-    if (orphans.length) {
-      return `"${orphans[0].item.name}" was deleted from your catalogue, so this bill can't be corrected. `
-           + `Remove that line first, or add the product back to Inventory.`
-    }
-    if (shortfalls.length) {
-      return `Not enough stock for this change: ${shortfalls
-        .map((s) => `${s.name} (short by ${qty(s.short)} pcs)`)
-        .join(', ')}. Those pcs have already been sold, so the bill can't be cut that far.`
-    }
-    return ''
+    return billEditProblem({ lines, shortfalls, fmtQty: qty })
   }
 
   async function save(e) {
