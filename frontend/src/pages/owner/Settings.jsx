@@ -5,7 +5,7 @@ import {
   IconPalette, IconPhoto, IconUpload, IconX,
   IconSlideshow, IconArrowUp, IconArrowDown, IconTrash,
   IconShare, IconBrandWhatsapp, IconBrandInstagram, IconBrandFacebook,
-  IconBrandYoutube, IconMapPin, IconFileText, IconTruck,
+  IconBrandYoutube, IconMapPin, IconFileText, IconTruck, IconBuildingWarehouse,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
@@ -25,6 +25,7 @@ export default function Settings() {
       <SocialLinks />
       <Pages />
       <Categories />
+      <Warehouses />
       <Staff />
     </div>
   )
@@ -904,6 +905,136 @@ function Categories() {
                 className={`rounded-lg px-2.5 py-1 text-xs font-medium ${c.is_active ? 'text-dues hover:bg-dues/10' : 'text-profit hover:bg-profit/10'}`}
               >
                 {c.is_active ? 'Deactivate' : 'Activate'}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Warehouses (043) — list all, add, rename, activate/deactivate. Same pattern
+// as Categories. Deactivating is blocked while the warehouse still holds stock:
+// Purchase Entry / Sale approval / Inventory's breakdown only offer ACTIVE
+// warehouses, so a hidden one with leftover stock would become invisible and
+// throw items.quantity (which sums every warehouse, active or not) out of
+// sync with what the owner can see and correct.
+// ---------------------------------------------------------------------------
+function Warehouses() {
+  const { shopId, refreshWarehouses } = useShop()
+  const [whs, setWhs] = useState(null)
+  const [err, setErr] = useState('')
+  const [name, setName] = useState('')
+  const [adding, setAdding] = useState(false)
+  const [editId, setEditId] = useState(null)
+  const [editName, setEditName] = useState('')
+
+  async function load() {
+    const { data, error } = await supabase
+      .from('warehouses')
+      .select('id, name, is_active')
+      .order('name')
+    if (error) setErr(error.message)
+    else setWhs(data ?? [])
+  }
+  useEffect(() => { load() }, [])
+
+  async function add(e) {
+    e.preventDefault()
+    if (!name.trim()) return
+    setAdding(true); setErr('')
+    const { error } = await supabase.from('warehouses')
+      .insert({ shop_id: shopId, name: name.trim() })
+    setAdding(false)
+    if (error) { setErr(error.message); return }
+    setName('')
+    await load(); refreshWarehouses()
+  }
+
+  async function rename(id) {
+    if (!editName.trim()) { setEditId(null); return }
+    setErr('')
+    const { error } = await supabase.from('warehouses')
+      .update({ name: editName.trim() }).eq('id', id)
+    if (error) { setErr(error.message); return }
+    setEditId(null)
+    await load(); refreshWarehouses()
+  }
+
+  async function toggle(w) {
+    setErr('')
+    if (w.is_active) {
+      const { data } = await supabase
+        .from('warehouse_stock')
+        .select('quantity')
+        .eq('warehouse_id', w.id)
+        .gt('quantity', 0)
+        .limit(1)
+      if (data?.length) {
+        setErr(`${w.name} still holds stock — correct it to 0 in Inventory (move it to another warehouse) before deactivating.`)
+        return
+      }
+    }
+    const { error } = await supabase.from('warehouses')
+      .update({ is_active: !w.is_active }).eq('id', w.id)
+    if (error) { setErr(error.message); return }
+    await load(); refreshWarehouses()
+  }
+
+  return (
+    <Card icon={IconBuildingWarehouse} title="Warehouses"
+          hint="Physical stock locations. Split an item's stock across them in Inventory, and pick one when stocking in (Purchase Entry) or approving a sale.">
+      <form onSubmit={add} className="mb-4 flex flex-wrap items-end gap-2">
+        <div className="min-w-[10rem] flex-1">
+          <Field label="New warehouse" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Godown" />
+        </div>
+        <Button type="submit" disabled={adding}>
+          {adding ? <Spinner /> : <IconPlus size={18} />} Add
+        </Button>
+      </form>
+
+      {err && <ErrLine>{err}</ErrLine>}
+
+      {whs === null ? (
+        <div className="grid place-items-center py-8 text-muted"><Spinner /></div>
+      ) : whs.length === 0 ? (
+        <p className="py-6 text-center text-sm text-muted">
+          No warehouses found — run migration 041_warehouses.sql in the Supabase SQL editor, then reload this page.
+        </p>
+      ) : (
+        <ul className="divide-y divide-line">
+          {whs.map((w) => (
+            <li key={w.id} className="flex items-center gap-3 py-2.5">
+              {editId === w.id ? (
+                <input
+                  autoFocus
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') rename(w.id); if (e.key === 'Escape') setEditId(null) }}
+                  className="flex-1 rounded-lg border border-peacock bg-card px-2.5 py-1.5 text-sm outline-none focus:ring-1 focus:ring-peacock"
+                />
+              ) : (
+                <span className={`min-w-0 flex-1 text-sm font-medium ${w.is_active ? 'text-ink' : 'text-muted line-through'}`}>{w.name}</span>
+              )}
+
+              {!w.is_active && <Badge tone="muted">Hidden</Badge>}
+
+              {editId === w.id ? (
+                <button onClick={() => rename(w.id)} className="rounded-lg p-1.5 text-profit hover:bg-paper-2" title="Save name">
+                  <IconCheck size={18} />
+                </button>
+              ) : (
+                <button onClick={() => { setEditId(w.id); setEditName(w.name) }} className="rounded-lg p-1.5 text-muted hover:bg-paper-2 hover:text-ink" title="Rename">
+                  <IconPencil size={16} />
+                </button>
+              )}
+              <button
+                onClick={() => toggle(w)}
+                className={`rounded-lg px-2.5 py-1 text-xs font-medium ${w.is_active ? 'text-dues hover:bg-dues/10' : 'text-profit hover:bg-profit/10'}`}
+              >
+                {w.is_active ? 'Deactivate' : 'Activate'}
               </button>
             </li>
           ))}
