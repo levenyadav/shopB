@@ -40,7 +40,7 @@ export default function Shopfront() {
     let active = true
     supabase
       .from('shopfront_items')
-      .select('id, name, quantity, rate, dealer_rate, low_stock_threshold, photo_url, category_id, tags, description, moq, made_to_order')
+      .select('id, name, quantity, rate, dealer_rate, low_stock_threshold, photo_url, category_id, tags, description, moq, made_to_order, company_no')
       .order('name')
       .then(({ data, error }) => {
         if (!active) return
@@ -82,7 +82,7 @@ export default function Shopfront() {
         if (hi !== null && price > hi) return false
       }
       if (needle) {
-        const hay = `${i.name} ${(i.tags || []).join(' ')} ${i.description || ''}`.toLowerCase()
+        const hay = `${i.name} ${(i.tags || []).join(' ')} ${i.description || ''} ${i.company_no || ''}`.toLowerCase()
         if (!hay.includes(needle)) return false
       }
       return true
