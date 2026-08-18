@@ -5,18 +5,18 @@
    Color, type and signature for the whole Shop Management System.
    ========================================================================== */
 @theme {
-  --color-paper:      #EFECE1;  /* app background — warm khata page         */
-  --color-paper-2:    #EAE6D8;  /* recessed paper (ledger panel)            */
+  --color-paper:      #FFF8F6;  /* app background — warm rose-white         */
+  --color-paper-2:    #FBEAE7;  /* recessed paper (ledger panel)            */
   --color-card:       #FFFFFF;  /* surfaces                                 */
-  --color-ink:        #1C2422;  /* text — deep green-black                  */
-  --color-muted:      #6E726B;  /* secondary text                          */
-  --color-line:       #E2DCCD;  /* hairlines / borders                      */
+  --color-ink:        #2B1A1A;  /* text — deep maroon-black                 */
+  --color-muted:      #8C6E6A;  /* secondary text                          */
+  --color-line:       #F1DAD6;  /* hairlines / borders                      */
 
-  --color-peacock:    #0F6E64;  /* primary — Indian craft teal              */
-  --color-peacock-700:#0B564E;  /* primary pressed                          */
-  --color-saffron:    #E0901A;  /* accent — marigold / gift ribbon          */
+  --color-peacock:    #B76E79;  /* primary — rose gold                      */
+  --color-peacock-700:#9C5560;  /* primary pressed                          */
+  --color-saffron:    #C41E3A;  /* accent — red                             */
   --color-profit:     #2E7D52;  /* ledger: money owed to the shop           */
-  --color-dues:       #C0432B;  /* ledger: dues / red margin                */
+  --color-dues:       #B0102A;  /* ledger: dues / red margin                */
 
   --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
   --font-sans:    "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
