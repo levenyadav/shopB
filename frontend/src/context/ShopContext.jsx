@@ -25,6 +25,7 @@ export function ShopProvider({ children }) {
   const [shop, setShop] = useState(null)
   const [categories, setCategories] = useState([])
   const [suppliers, setSuppliers] = useState([])
+  const [warehouses, setWarehouses] = useState([])
   const [loading, setLoading] = useState(true)
 
   const loadCategories = useCallback(async () => {
@@ -42,6 +43,19 @@ export function ShopProvider({ children }) {
       .select('id, name, contact_person, phone, address, balance_due, is_active')
       .order('name')
     setSuppliers(data ?? [])
+  }, [])
+
+  // Warehouses (041) may not exist yet on a database that hasn't run the
+  // pending migration — degrade to [] rather than breaking Purchase Entry /
+  // Sale approval / Inventory for shops still on the old schema.
+  const loadWarehouses = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('warehouses')
+      .select('id, name, is_active')
+      .eq('is_active', true)
+      .order('name')
+    if (error) { setWarehouses([]); return }
+    setWarehouses(data ?? [])
   }, [])
 
   const loadShop = useCallback(async () => {
@@ -70,14 +84,14 @@ export function ShopProvider({ children }) {
     setLoading(true)
     // shop + categories are public; suppliers only when signed in.
     const jobs = [loadShop(), loadCategories()]
-    if (session) jobs.push(loadSuppliers())
-    else setSuppliers([])
+    if (session) jobs.push(loadSuppliers(), loadWarehouses())
+    else { setSuppliers([]); setWarehouses([]) }
     Promise.all(jobs).finally(() => {
       if (active) setLoading(false)
     })
     return () => { active = false }
     // re-run when the signed-in profile (and thus shop/role) settles
-  }, [session, profile?.id, loadShop, loadCategories, loadSuppliers])
+  }, [session, profile?.id, loadShop, loadCategories, loadSuppliers, loadWarehouses])
 
   // Reflect the shop's identity into the document + installable PWA: tab title,
   // favicon / apple-touch-icon, the brand accent colour (drives --color-peacock
@@ -92,10 +106,12 @@ export function ShopProvider({ children }) {
     currency: shop?.currency_symbol || '₹',
     categories,
     suppliers,
+    warehouses,
     loading,
     refreshSuppliers: loadSuppliers,
     refreshCategories: loadCategories,
     refreshShop: loadShop,
+    refreshWarehouses: loadWarehouses,
   }
   return <ShopContext.Provider value={value}>{children}</ShopContext.Provider>
 }

@@ -673,8 +673,29 @@ function Lightbox({ url, onClose }) {
 }
 
 function EditModal({ item, categories, suppliers, onClose, onSaved }) {
-  const { shopId, shop } = useShop()
+  const { shopId, shop, warehouses } = useShop()
   const shopGstRate = Number(shop?.gst_rate || 0)
+
+  // Per-warehouse stock correction (043). items.quantity is derived from these
+  // rows by a trigger, so this screen edits warehouse_stock directly instead of
+  // items.quantity — one number per warehouse, owner corrects any of them.
+  const [whQty, setWhQty] = useState(null) // { [warehouse_id]: 'string qty' } once loaded
+  useEffect(() => {
+    if (item.made_to_order || !warehouses.length) return
+    let active = true
+    supabase
+      .from('warehouse_stock')
+      .select('warehouse_id, quantity')
+      .eq('item_id', item.id)
+      .then(({ data }) => {
+        if (!active) return
+        const byId = Object.fromEntries((data || []).map((r) => [r.warehouse_id, String(r.quantity)]))
+        setWhQty(Object.fromEntries(warehouses.map((w) => [w.id, byId[w.id] ?? '0'])))
+      })
+    return () => { active = false }
+  }, [item.id, item.made_to_order, warehouses])
+  const whTotal = whQty ? Object.values(whQty).reduce((s, v) => s + (Number(v) || 0), 0) : null
+
   const [f, setF] = useState({
     name: item.name,
     company_no: item.company_no || '',
@@ -756,7 +777,9 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
           supplier_id: f.supplier_id,
           category_id: f.category_id,
           location: f.location.trim() || null,
-          quantity: round2(f.quantity || 0),
+          // When the per-warehouse breakdown loaded, it owns quantity (a trigger
+          // derives items.quantity from warehouse_stock) — don't also set it here.
+          ...(whQty ? {} : { quantity: round2(f.quantity || 0) }),
           purchase_rate: round2(f.purchase_rate),
           dealer_rate: round2(f.dealer_rate),
           rate: round2(f.rate),
@@ -780,6 +803,19 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
         }
         throw new Error(error.message)
       }
+
+      // Per-warehouse correction (043): write the whole breakdown. The sync
+      // trigger on warehouse_stock recomputes items.quantity from these.
+      if (whQty) {
+        const rows = warehouses.map((w) => ({
+          item_id: item.id, warehouse_id: w.id, quantity: round2(whQty[w.id] || 0),
+        }))
+        const { error: whErr } = await supabase
+          .from('warehouse_stock')
+          .upsert(rows, { onConflict: 'item_id,warehouse_id' })
+        if (whErr) throw new Error(`Item details saved, but the stock correction failed: ${whErr.message}`)
+      }
+
       onSaved()
     } catch (e2) {
       setErr(e2.message)
@@ -865,8 +901,27 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
           <Field label="Min order qty (MOQ)" type="number" min="1" value={f.moq} onChange={set('moq')} hint="Least a customer can order" />
         </div>
         {!f.made_to_order && (
-          <Field label="Stock quantity" type="number" min="0" step="0.01" value={f.quantity} onChange={set('quantity')}
-                 hint="Current stock on hand — edit to correct it directly." />
+          whQty ? (
+            <div className="space-y-2 rounded-lg border border-line bg-paper-2 px-4 py-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-ink">Stock by warehouse</p>
+                <p className="fig text-sm font-semibold text-ink">{whTotal} total</p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {warehouses.map((w) => (
+                  <Field
+                    key={w.id} label={w.name} type="number" min="0" step="0.01"
+                    value={whQty[w.id] ?? '0'}
+                    onChange={(e) => setWhQty((s) => ({ ...s, [w.id]: e.target.value }))}
+                  />
+                ))}
+              </div>
+              <p className="text-xs text-muted">Edit any warehouse to correct stock directly there.</p>
+            </div>
+          ) : (
+            <Field label="Stock quantity" type="number" min="0" step="0.01" value={f.quantity} onChange={set('quantity')}
+                   hint="Current stock on hand — edit to correct it directly." />
+          )
         )}
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="Purchase Rate" prefix="₹" type="number" min="0" step="0.01" value={f.purchase_rate} onChange={set('purchase_rate')} />

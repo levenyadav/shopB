@@ -233,6 +233,30 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
   const [err, setErr] = useState('')
   const [rejecting, setRejecting] = useState(false)
 
+  // Which warehouse this sale draws from (043). A stock item must pick one that
+  // actually has enough — the RPC blocks otherwise (Golden Rule: never let a
+  // warehouse go negative). Made-to-order items skip this entirely.
+  const [stockByWarehouse, setStockByWarehouse] = useState([])
+  const [warehouseId, setWarehouseId] = useState('')
+  useEffect(() => {
+    if (madeToOrder) return
+    let active = true
+    supabase
+      .from('warehouse_stock')
+      .select('warehouse_id, quantity, warehouse:warehouses(name)')
+      .eq('item_id', item.id)
+      .then(({ data }) => {
+        if (!active || !data) return
+        const rows = data.sort((a, b) => Number(b.quantity) - Number(a.quantity))
+        setStockByWarehouse(rows)
+        const enough = rows.find((r) => Number(r.quantity) >= order.quantity)
+        setWarehouseId((enough || rows[0])?.warehouse_id || '')
+      })
+    return () => { active = false }
+  }, [item.id, madeToOrder, order.quantity])
+  const selectedStock = Number(stockByWarehouse.find((r) => r.warehouse_id === warehouseId)?.quantity ?? 0)
+  const warehouseShort = !madeToOrder && (!warehouseId || selectedStock < order.quantity)
+
   // Dealer orders carry a flat shipping & handling fee, pre-filled here so the
   // bill matches the figure the dealer was already shown on their order page.
   // It is one fee per ORDER, not per line: a cart is approved line by line, so
@@ -287,6 +311,7 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
       p_packing: 0,
       p_other: 0,
       p_notes: null,
+      p_warehouse_id: madeToOrder ? null : warehouseId,
     })
     setBusy(false)
     if (error) { setErr(error.message); return }
@@ -310,6 +335,32 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
             <span className="text-muted">
               Cost <span className="fig text-ink">{cf(costNum)}</span> each — taken from the item’s purchase rate.
             </span>
+          )}
+        </div>
+      )}
+
+      {!madeToOrder && stockByWarehouse.length > 1 && (
+        <div>
+          <p className="mb-1.5 text-sm font-medium">Which warehouse is this coming from?</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {stockByWarehouse.map((w) => (
+              <button
+                key={w.warehouse_id} type="button" onClick={() => setWarehouseId(w.warehouse_id)}
+                className={`rounded-lg border px-3 py-2.5 text-left text-sm transition ${
+                  warehouseId === w.warehouse_id ? 'border-peacock bg-peacock/10' : 'border-line bg-card hover:text-ink'
+                }`}
+              >
+                <span className="font-medium">{w.warehouse?.name || 'Warehouse'}</span>
+                <span className={`ml-2 fig ${Number(w.quantity) < order.quantity ? 'text-dues' : 'text-muted'}`}>
+                  {qty(w.quantity)} in stock
+                </span>
+              </button>
+            ))}
+          </div>
+          {warehouseShort && (
+            <p className="mt-1.5 text-xs text-dues">
+              Only {qty(selectedStock)} in this warehouse — the order needs {qty(order.quantity)}. Pick a warehouse with enough, or stock up via Purchase Entry.
+            </p>
           )}
         </div>
       )}
@@ -370,7 +421,7 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
       {err && <p className="rounded-lg bg-dues/10 px-3 py-2 text-sm text-dues">{err}</p>}
 
       <div className="flex gap-3">
-        <Button onClick={approve} disabled={busy || costMissing} className="flex-1">
+        <Button onClick={approve} disabled={busy || costMissing || warehouseShort} className="flex-1">
           {busy ? <><Spinner /> Approving…</> : <><IconCircleCheck size={18} /> Approve &amp; record sale</>}
         </Button>
         <Button variant="danger" onClick={() => setRejecting(true)} disabled={busy}>

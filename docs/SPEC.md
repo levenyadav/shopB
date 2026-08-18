@@ -550,15 +550,33 @@ UNIQUE (shop_id, name)
 Every shop is seeded with one "Main Warehouse" holding all existing stock, so
 no item is ever "unplaced".
 
-### 7.5b Table: warehouse_stock (migration 042)
+### 7.5b Table: warehouse_stock (migration 042, wired up in 043)
 
-Per-item, per-warehouse quantity. Intended to become the authoritative stock
-count (`items.quantity = SUM(warehouse_stock.quantity)` for that item), but as
-of migration 042 this is **not yet enforced** — Purchase Entry and Sale still
-write `items.quantity` directly (Golden Rules #1/#2/#10 unchanged), and
-`warehouse_stock` is only backfilled once at migration time. A later migration
-must rewire the purchase/sale triggers before this table can be treated as
-authoritative or exposed for per-warehouse fulfilment.
+Per-item, per-warehouse quantity — the real authoritative stock count as of
+migration 043. `items.quantity` is a derived total
+(`= SUM(warehouse_stock.quantity)` for that item), kept in sync automatically
+by a trigger on `warehouse_stock` itself (`sync_item_quantity_from_warehouse_stock`,
+043) — no code path should ever write `items.quantity` directly any more.
+
+All stock movement goes through one function, `adjust_warehouse_stock(item_id,
+warehouse_id, delta)` (043), called from the purchase INSERT/UPDATE/DELETE
+triggers and the sale INSERT trigger. It resolves a NULL warehouse to the
+shop's "Main Warehouse" and **raises (blocking the transaction) if a
+warehouse would go negative** — this is where stock-out is blocked per
+warehouse rather than checked against the item's grand total.
+
+Warehouse selection is wired into exactly three places (by design, SPEC-level
+decision, not a technical limit):
+  * **Inventory** — owner corrects any warehouse's quantity directly.
+  * **Purchase Entry** — owner picks the destination warehouse for stock-in.
+  * **Sale approval** (`approve_order`, 043) — owner picks the source
+    warehouse; approval is blocked if it lacks enough stock.
+
+**Counter Sale is intentionally NOT wired up** — `sales.warehouse_id` stays
+NULL there, which resolves to Main Warehouse. Known limitation: if new stock
+only ever lands in a different warehouse via Purchase Entry, Main Warehouse
+can run dry and block counter sales even though total stock elsewhere is
+fine.
 
 ```
 item_id      uuid    REFERENCES items(id) NOT NULL
@@ -741,14 +759,19 @@ Every trigger listed here runs automatically in the database. The owner and staf
 
 ### 8.1 After INSERT on purchases
 ```
-1. items.quantity        += purchases.quantity
+1. adjust_warehouse_stock(item_id, purchases.warehouse_id, +purchases.quantity)
+   -> warehouse_stock.quantity += purchases.quantity (043; NULL warehouse -> Main Warehouse)
+   -> items.quantity synced from SUM(warehouse_stock.quantity) by a trigger on warehouse_stock
 2. suppliers.balance_due += purchases.total_cost
 3. INSERT INTO ledger (entry_type='purchase', party=supplier, debit=total_cost, description='Purchase: {item_name}')
 ```
 
 ### 8.2 After INSERT on sales
 ```
-1. items.quantity         -= sales.quantity
+1. IF NOT items.made_to_order:
+      adjust_warehouse_stock(item_id, sales.warehouse_id, -sales.quantity)
+      -> BLOCKS (raises) if that warehouse doesn't have enough (043)
+      -> items.quantity synced from SUM(warehouse_stock.quantity) by a trigger on warehouse_stock
 2. IF payment_type = 'udhaar':
       profiles.balance_due += sales.amount  (for buyer profile)
 3. INSERT INTO ledger (entry_type='sale', party=buyer, credit=amount, description='Sale: {item_name}')
