@@ -532,6 +532,44 @@ updated_at            timestamptz DEFAULT now()
 
 ---
 
+### 7.5a Table: warehouses (migration 041)
+
+Named stock locations for a shop (e.g. "Main Warehouse", "Godown"). Distinct
+from `items.location`, which is just a free-text rack/shelf label and cannot
+split one item's stock across places.
+
+```
+id         uuid        PRIMARY KEY default gen_random_uuid()
+shop_id    uuid        REFERENCES shops(id) NOT NULL
+name       text        NOT NULL
+is_active  boolean     DEFAULT true
+created_at timestamptz DEFAULT now()
+UNIQUE (shop_id, name)
+```
+
+Every shop is seeded with one "Main Warehouse" holding all existing stock, so
+no item is ever "unplaced".
+
+### 7.5b Table: warehouse_stock (migration 042)
+
+Per-item, per-warehouse quantity. Intended to become the authoritative stock
+count (`items.quantity = SUM(warehouse_stock.quantity)` for that item), but as
+of migration 042 this is **not yet enforced** — Purchase Entry and Sale still
+write `items.quantity` directly (Golden Rules #1/#2/#10 unchanged), and
+`warehouse_stock` is only backfilled once at migration time. A later migration
+must rewire the purchase/sale triggers before this table can be treated as
+authoritative or exposed for per-warehouse fulfilment.
+
+```
+item_id      uuid    REFERENCES items(id) NOT NULL
+warehouse_id uuid    REFERENCES warehouses(id) NOT NULL
+quantity     numeric DEFAULT 0 NOT NULL
+updated_at   timestamptz DEFAULT now()
+PRIMARY KEY (item_id, warehouse_id)
+```
+
+---
+
 ### 7.6 Table: purchases
 
 Every stock-in event. One row per purchase transaction.

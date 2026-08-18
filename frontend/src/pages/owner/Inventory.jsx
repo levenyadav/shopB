@@ -24,6 +24,7 @@ export default function Inventory() {
   const [cat, setCat] = useState('')
   const [sup, setSup] = useState('')
   const [tag, setTag] = useState('')
+  const [loc, setLoc] = useState('')
   const [show, setShow] = useState('active') // active | inactive | all
   const [lowOnly, setLowOnly] = useState(false)
   const [editing, setEditing] = useState(null)
@@ -56,6 +57,16 @@ export default function Inventory() {
     return [...set].sort((a, b) => a.localeCompare(b))
   }, [items])
 
+  // Distinct locations already in use (rack labels, warehouse names, …), for the
+  // location filter dropdown — same pattern as allTags. No new column: this is
+  // the existing `location` field, just made filterable/browsable.
+  const allLocations = useMemo(() => {
+    if (!items) return []
+    const set = new Set()
+    items.forEach((i) => { if (i.location?.trim()) set.add(i.location.trim()) })
+    return [...set].sort((a, b) => a.localeCompare(b))
+  }, [items])
+
   const filtered = useMemo(() => {
     if (!items) return []
     const needle = q.trim().toLowerCase()
@@ -70,14 +81,15 @@ export default function Inventory() {
       if (cat && i.category_id !== cat) return false
       if (sup && i.supplier_id !== sup) return false
       if (tag && !(i.tags || []).includes(tag)) return false
+      if (loc && i.location !== loc) return false
       if (lowOnly && !(Number(i.quantity) < Number(i.low_stock_threshold))) return false
       if (needle) {
-        const hay = `${i.item_no} ${i.name} ${i.company_no || ''} ${i.barcode || ''} ${i.supplier?.name || ''} ${i.category?.name || ''} ${(i.tags || []).join(' ')} ${i.description || ''}`.toLowerCase()
+        const hay = `${i.item_no} ${i.name} ${i.company_no || ''} ${i.barcode || ''} ${i.supplier?.name || ''} ${i.category?.name || ''} ${(i.tags || []).join(' ')} ${i.description || ''} ${i.location || ''}`.toLowerCase()
         if (!hay.includes(needle)) return false
       }
       return true
     })
-  }, [items, q, cat, sup, tag, show, lowOnly])
+  }, [items, q, cat, sup, tag, loc, show, lowOnly])
 
   const totalValue = useMemo(
     () => (items ? items.reduce((s, i) => s + stockValue(i), 0) : 0),
@@ -123,6 +135,12 @@ export default function Inventory() {
           <Select value={tag} onChange={(e) => setTag(e.target.value)}>
             <option value="">All tags</option>
             {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
+          </Select>
+        )}
+        {allLocations.length > 0 && (
+          <Select value={loc} onChange={(e) => setLoc(e.target.value)}>
+            <option value="">All locations</option>
+            {allLocations.map((l) => <option key={l} value={l}>{l}</option>)}
           </Select>
         )}
         <div className="flex items-center gap-2">
@@ -178,7 +196,7 @@ export default function Inventory() {
                               : !i.is_active && <Badge className="ml-2" tone="muted">Inactive</Badge>}
                           </p>
                           <p className="fig text-xs text-muted">
-                            {i.item_no} · {i.supplier?.name || '—'}
+                            {i.item_no} · {i.supplier?.name || '—'}{i.location ? ` · ${i.location}` : ''}
                           </p>
                         </div>
                       </div>
