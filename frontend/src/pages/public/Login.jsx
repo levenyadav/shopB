@@ -121,9 +121,14 @@ export default function Login() {
             <IconArrowLeft size={18} /> Back to shop
           </Link>
 
-          {/* mobile brand */}
+          {/* mobile brand — logo can be image-only (Brand drops the text
+              wordmark once a logo_url is set), so name the shop explicitly
+              here too instead of relying on Brand's text fallback. */}
           <div className="md:hidden mb-8">
             <Brand shop={shop} maxWords={3} textClassName="text-xs" logoClassName="h-9" />
+            <h1 className="font-[var(--font-display)] text-xl font-extrabold text-ink mt-3">
+              {shop?.name || 'Khattri Card Pratham'}
+            </h1>
           </div>
 
           <h2 className="font-[var(--font-display)] text-2xl font-bold mb-1">
