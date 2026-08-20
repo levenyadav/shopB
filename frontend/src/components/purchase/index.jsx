@@ -58,7 +58,7 @@ async function lookupPublicProduct(code) {
 // A blank "new product" line. Mirrors the items table (SPEC §7.5).
 export const BLANK_NEW = {
   mode: 'new',
-  name: '', company_no: '', category_id: '', location: '',
+  name: '', company_no: '', category_id: '', location: '', warehouse_id: '',
   quantity: '', purchase_rate: '', dealer_rate: '', rate: '',
   // GST is entered as the CGST/SGST pair the owner reads off the bill, and
   // stored as their sum in items.gst_rate (migration 034). Both blank = use the
@@ -274,7 +274,7 @@ function ExistingItemFields({ line, setVal, errors, shopId, supplierId }) {
     // Make-to-Order items hold no stock, so they can never be restocked.
     let q = supabase
       .from('items')
-      .select('id, item_no, name, company_no, quantity, purchase_rate, low_stock_threshold, supplier_id, discontinued, gst_rate')
+      .select('id, item_no, name, company_no, quantity, purchase_rate, low_stock_threshold, supplier_id, discontinued, gst_rate, warehouse_id')
       .eq('shop_id', shopId)
       .eq('made_to_order', false)
       .order('name')
@@ -367,7 +367,7 @@ function ExistingItemFields({ line, setVal, errors, shopId, supplierId }) {
 // Purchase Entry asked for stays on screen; only the shopfront copy (description,
 // tags, gallery) folds away, since it can be filled in later from Inventory. ----
 function NewProductFields({ line, set, setVal, errors, shopId, onUseExisting, allowMadeToOrder = true }) {
-  const { categories, shop } = useShop()
+  const { categories, shop, warehouses } = useShop()
   const shopGstRate = Number(shop?.gst_rate || 0)
   // null = neither half filled in, so this product follows the shop default.
   const combinedGst = combineGstRate(line.cgst_rate, line.sgst_rate)
@@ -485,6 +485,14 @@ function NewProductFields({ line, set, setVal, errors, shopId, onUseExisting, al
         <Field label="Location / Rack No" placeholder="e.g. R1-A (display only)"
                value={line.location} onChange={set('location')} />
       </div>
+
+      {warehouses.length > 1 && (
+        <Select label="Warehouse" value={line.warehouse_id} onChange={set('warehouse_id')}
+                hint="Where this product stocks in — set once here, not on every bill">
+          <option value="">{warehouses.find((w) => w.name === 'Main Warehouse') ? 'Main Warehouse (default)' : 'Select warehouse…'}</option>
+          {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+        </Select>
+      )}
 
       {/* Make to Order — listed on the shopfront but never stocked. */}
       {allowMadeToOrder && (
@@ -816,6 +824,7 @@ export async function createProductFromLine({ shopId, supplierId, line }) {
       supplier_id: supplierId,
       category_id: line.category_id,
       location: line.location.trim() || null,
+      warehouse_id: line.warehouse_id || null,
       quantity: 0,
       purchase_rate: round2(line.purchase_rate),
       dealer_rate: round2(line.dealer_rate),

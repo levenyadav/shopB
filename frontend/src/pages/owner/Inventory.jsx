@@ -17,14 +17,14 @@ import { Button, Field, Select, Textarea, StockBadge, Badge, Spinner, TagsInput,
 // with supplier billing still goes via Purchase Entry). Total stock value
 // (owner only) sits at the top.
 export default function Inventory() {
-  const { categories, suppliers, currency, shop } = useShop()
+  const { categories, suppliers, warehouses, currency, shop } = useShop()
   const [items, setItems] = useState(null)
   const [err, setErr] = useState('')
   const [q, setQ] = useState('')
   const [cat, setCat] = useState('')
   const [sup, setSup] = useState('')
   const [tag, setTag] = useState('')
-  const [loc, setLoc] = useState('')
+  const [wh, setWh] = useState('')
   const [show, setShow] = useState('active') // active | inactive | all
   const [lowOnly, setLowOnly] = useState(false)
   const [editing, setEditing] = useState(null)
@@ -38,7 +38,7 @@ export default function Inventory() {
     const { data, error } = await supabase
       .from('items')
       .select(
-        'id, item_no, name, company_no, location, quantity, purchase_rate, dealer_rate, rate, ' +
+        'id, item_no, name, company_no, location, warehouse_id, quantity, purchase_rate, dealer_rate, rate, ' +
           'low_stock_threshold, moq, barcode, hsn_sac, gst_rate, photo_url, is_active, discontinued, discontinued_at, made_to_order, supplier_id, category_id, ' +
           'description, tags, images, ' +
           'supplier:suppliers(name), category:categories(name)',
@@ -57,16 +57,6 @@ export default function Inventory() {
     return [...set].sort((a, b) => a.localeCompare(b))
   }, [items])
 
-  // Distinct locations already in use (rack labels, warehouse names, …), for the
-  // location filter dropdown — same pattern as allTags. No new column: this is
-  // the existing `location` field, just made filterable/browsable.
-  const allLocations = useMemo(() => {
-    if (!items) return []
-    const set = new Set()
-    items.forEach((i) => { if (i.location?.trim()) set.add(i.location.trim()) })
-    return [...set].sort((a, b) => a.localeCompare(b))
-  }, [items])
-
   const filtered = useMemo(() => {
     if (!items) return []
     const needle = q.trim().toLowerCase()
@@ -81,7 +71,7 @@ export default function Inventory() {
       if (cat && i.category_id !== cat) return false
       if (sup && i.supplier_id !== sup) return false
       if (tag && !(i.tags || []).includes(tag)) return false
-      if (loc && i.location !== loc) return false
+      if (wh && i.warehouse_id !== wh) return false
       if (lowOnly && !(Number(i.quantity) < Number(i.low_stock_threshold))) return false
       if (needle) {
         const hay = `${i.item_no} ${i.name} ${i.company_no || ''} ${i.barcode || ''} ${i.supplier?.name || ''} ${i.category?.name || ''} ${(i.tags || []).join(' ')} ${i.description || ''} ${i.location || ''}`.toLowerCase()
@@ -89,7 +79,12 @@ export default function Inventory() {
       }
       return true
     })
-  }, [items, q, cat, sup, tag, loc, show, lowOnly])
+  }, [items, q, cat, sup, tag, wh, show, lowOnly])
+
+  const warehouseName = useMemo(
+    () => Object.fromEntries(warehouses.map((w) => [w.id, w.name])),
+    [warehouses],
+  )
 
   const totalValue = useMemo(
     () => (items ? items.reduce((s, i) => s + stockValue(i), 0) : 0),
@@ -137,10 +132,10 @@ export default function Inventory() {
             {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
           </Select>
         )}
-        {allLocations.length > 0 && (
-          <Select value={loc} onChange={(e) => setLoc(e.target.value)}>
-            <option value="">All locations</option>
-            {allLocations.map((l) => <option key={l} value={l}>{l}</option>)}
+        {warehouses.length > 0 && (
+          <Select value={wh} onChange={(e) => setWh(e.target.value)}>
+            <option value="">All warehouses</option>
+            {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
           </Select>
         )}
         <div className="flex items-center gap-2">
@@ -196,7 +191,9 @@ export default function Inventory() {
                               : !i.is_active && <Badge className="ml-2" tone="muted">Inactive</Badge>}
                           </p>
                           <p className="fig text-xs text-muted">
-                            {i.item_no} · {i.supplier?.name || '—'}{i.location ? ` · ${i.location}` : ''}
+                            {i.item_no} · {i.supplier?.name || '—'}
+                            {warehouseName[i.warehouse_id] ? ` · ${warehouseName[i.warehouse_id]}` : ''}
+                            {i.location ? ` · ${i.location}` : ''}
                           </p>
                         </div>
                       </div>
@@ -702,6 +699,7 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
     supplier_id: item.supplier_id,
     category_id: item.category_id,
     location: item.location || '',
+    warehouse_id: item.warehouse_id || '',
     quantity: String(item.quantity),
     purchase_rate: String(item.purchase_rate),
     dealer_rate: String(item.dealer_rate),
@@ -777,6 +775,7 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
           supplier_id: f.supplier_id,
           category_id: f.category_id,
           location: f.location.trim() || null,
+          warehouse_id: f.warehouse_id || null,
           // When the per-warehouse breakdown loaded, it owns quantity (a trigger
           // derives items.quantity from warehouse_stock) — don't also set it here.
           ...(whQty ? {} : { quantity: round2(f.quantity || 0) }),
@@ -900,6 +899,13 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
           <Field label="Low stock threshold" type="number" min="0" value={f.low_stock_threshold} onChange={set('low_stock_threshold')} />
           <Field label="Min order qty (MOQ)" type="number" min="1" value={f.moq} onChange={set('moq')} hint="Least a customer can order" />
         </div>
+        {warehouses.length > 1 && (
+          <Select label="Warehouse" value={f.warehouse_id} onChange={set('warehouse_id')}
+                  hint="Where new stock-in for this product lands by default">
+            <option value="">{warehouses.find((w) => w.name === 'Main Warehouse') ? 'Main Warehouse (default)' : 'Select warehouse…'}</option>
+            {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+          </Select>
+        )}
         {!f.made_to_order && (
           whQty ? (
             <div className="space-y-2 rounded-lg border border-line bg-paper-2 px-4 py-3">

@@ -39,11 +39,11 @@ export default function PurchaseEntry() {
 // =============================================================================
 function BillEntry() {
   const { profile } = useAuth()
-  const { shopId, shop, suppliers, warehouses, refreshSuppliers } = useShop()
+  const { shopId, shop, suppliers, refreshSuppliers } = useShop()
 
   const [bill, setBill] = useState({
     supplier_id: '', invoice_no: '', invoice_date: today(),
-    postage: '', cgst: '', sgst: '', warehouse_id: '',
+    postage: '', cgst: '', sgst: '',
   })
   const [lines, setLines] = useState([])
   const [editing, setEditing] = useState(null)  // { line, index } while the editor is open
@@ -54,15 +54,6 @@ function BillEntry() {
   const [showSupplier, setShowSupplier] = useState(false)
 
   const supplier = suppliers.find((s) => s.id === bill.supplier_id) || null
-
-  // Default to Main Warehouse (or the only one) once warehouses load, so a
-  // shop with one warehouse never has to think about this field.
-  useEffect(() => {
-    if (!bill.warehouse_id && warehouses.length) {
-      const main = warehouses.find((w) => w.name === 'Main Warehouse') || warehouses[0]
-      setBill((b) => (b.warehouse_id ? b : { ...b, warehouse_id: main.id }))
-    }
-  }, [warehouses])
 
   const setBillField = (k) => (e) => {
     setBill((b) => ({ ...b, [k]: e.target.value }))
@@ -121,12 +112,17 @@ function BillEntry() {
       const rows = []
       for (const line of lines) {
         let itemId = line.item?.id
+        // Each product carries its own warehouse (set in Inventory or when the
+        // product was created) — new lines use what was picked on this line;
+        // existing lines use the item's own assignment.
+        let warehouseId = line.item?.warehouse_id ?? null
 
         if (line.mode === 'new') {
           const item = await createProductFromLine({
             shopId, supplierId: bill.supplier_id, line,
           })
           itemId = item.id
+          warehouseId = line.warehouse_id || null
           createdItems.push(item.item_no)
         }
 
@@ -147,7 +143,7 @@ function BillEntry() {
           invoice_no,
           invoice_date,
           purchase_group_id: groupId,
-          warehouse_id: bill.warehouse_id || null,
+          warehouse_id: warehouseId,
         })
       }
 
@@ -259,12 +255,6 @@ function BillEntry() {
                    onChange={setBillField('invoice_date')}
                    hint="The date printed on the bill" />
           </div>
-          {warehouses.length > 1 && (
-            <Select label="Warehouse" value={bill.warehouse_id} onChange={setBillField('warehouse_id')}
-                    hint="Where this stock is being received">
-              {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-            </Select>
-          )}
           <Field label="Bill / Invoice No. (optional)" placeholder="e.g. 4521"
                  value={bill.invoice_no} onChange={setBillField('invoice_no')}
                  hint="The supplier's own bill number — so you can find this purchase again" />
@@ -430,10 +420,10 @@ function BillSuccess({ done, onAnother }) {
 // =============================================================================
 function RestockEntry({ itemId }) {
   const { profile } = useAuth()
-  const { shopId, warehouses } = useShop()
+  const { shopId } = useShop()
   const [item, setItem] = useState(null)
   const [loadErr, setLoadErr] = useState('')
-  const [form, setForm] = useState({ quantity: '', purchase_rate: '', invoice_no: '', invoice_date: today(), notes: '', warehouse_id: '' })
+  const [form, setForm] = useState({ quantity: '', purchase_rate: '', invoice_no: '', invoice_date: today(), notes: '' })
   const [errors, setErrors] = useState({})
   const [busy, setBusy] = useState(false)
   const [topError, setTopError] = useState('')
@@ -448,7 +438,7 @@ function RestockEntry({ itemId }) {
     supabase
       .from('items')
       .select(
-        'id, item_no, name, quantity, purchase_rate, low_stock_threshold, ' +
+        'id, item_no, name, quantity, purchase_rate, low_stock_threshold, warehouse_id, ' +
           'supplier_id, supplier:suppliers(name), category:categories(name)',
       )
       .eq('id', itemId)
@@ -462,13 +452,6 @@ function RestockEntry({ itemId }) {
         }
       })
   }, [itemId])
-
-  useEffect(() => {
-    if (!form.warehouse_id && warehouses.length) {
-      const main = warehouses.find((w) => w.name === 'Main Warehouse') || warehouses[0]
-      setForm((f) => (f.warehouse_id ? f : { ...f, warehouse_id: main.id }))
-    }
-  }, [warehouses])
 
   async function onSubmit(e) {
     e.preventDefault()
@@ -495,7 +478,7 @@ function RestockEntry({ itemId }) {
         invoice_no: form.invoice_no.trim() || null,
         invoice_date: form.invoice_date || null,
         notes: form.notes.trim() || null,
-        warehouse_id: form.warehouse_id || null,
+        warehouse_id: item.warehouse_id || null,
       })
       if (error) throw new Error(error.message)
       setDone({ item_no: item.item_no, name: item.name, quantity, total_cost })
@@ -588,12 +571,6 @@ function RestockEntry({ itemId }) {
                    hint="The supplier's own bill number" />
             <Field label="Bill date" type="date" value={form.invoice_date} onChange={set('invoice_date')} />
           </div>
-          {warehouses.length > 1 && (
-            <Select label="Warehouse" value={form.warehouse_id} onChange={set('warehouse_id')}
-                    hint="Where this stock is being received">
-              {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-            </Select>
-          )}
           {liveCost != null && (
             <p className="rounded-lg bg-paper-2 px-4 py-2.5 text-sm">
               Total purchase cost:{' '}
