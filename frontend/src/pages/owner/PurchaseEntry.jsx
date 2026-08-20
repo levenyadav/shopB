@@ -113,9 +113,9 @@ function BillEntry() {
       for (const line of lines) {
         let itemId = line.item?.id
         // Each product carries its own warehouse (set in Inventory or when the
-        // product was created) — new lines use what was picked on this line;
-        // existing lines use the item's own assignment.
-        let warehouseId = line.item?.warehouse_id ?? null
+        // product was created), but this line can override it for this one
+        // restock — falls back to the item's usual warehouse when it doesn't.
+        let warehouseId = line.warehouse_id || line.item?.warehouse_id || null
 
         if (line.mode === 'new') {
           const item = await createProductFromLine({
@@ -420,10 +420,10 @@ function BillSuccess({ done, onAnother }) {
 // =============================================================================
 function RestockEntry({ itemId }) {
   const { profile } = useAuth()
-  const { shopId } = useShop()
+  const { shopId, warehouses } = useShop()
   const [item, setItem] = useState(null)
   const [loadErr, setLoadErr] = useState('')
-  const [form, setForm] = useState({ quantity: '', purchase_rate: '', invoice_no: '', invoice_date: today(), notes: '' })
+  const [form, setForm] = useState({ quantity: '', purchase_rate: '', invoice_no: '', invoice_date: today(), notes: '', warehouse_id: '' })
   const [errors, setErrors] = useState({})
   const [busy, setBusy] = useState(false)
   const [topError, setTopError] = useState('')
@@ -448,7 +448,7 @@ function RestockEntry({ itemId }) {
         else if (!data) setLoadErr('That item could not be found.')
         else {
           setItem(data)
-          setForm((f) => ({ ...f, purchase_rate: String(data.purchase_rate) }))
+          setForm((f) => ({ ...f, purchase_rate: String(data.purchase_rate), warehouse_id: data.warehouse_id || '' }))
         }
       })
   }, [itemId])
@@ -478,7 +478,7 @@ function RestockEntry({ itemId }) {
         invoice_no: form.invoice_no.trim() || null,
         invoice_date: form.invoice_date || null,
         notes: form.notes.trim() || null,
-        warehouse_id: item.warehouse_id || null,
+        warehouse_id: form.warehouse_id || item.warehouse_id || null,
       })
       if (error) throw new Error(error.message)
       setDone({ item_no: item.item_no, name: item.name, quantity, total_cost })
@@ -571,6 +571,13 @@ function RestockEntry({ itemId }) {
                    hint="The supplier's own bill number" />
             <Field label="Bill date" type="date" value={form.invoice_date} onChange={set('invoice_date')} />
           </div>
+          {warehouses.length > 1 && (
+            <Select label="Warehouse" value={form.warehouse_id} onChange={set('warehouse_id')}
+                    hint="Where this restock lands — defaults to this product's usual warehouse">
+              <option value="">{warehouses.find((w) => w.name === 'Main Warehouse') ? 'Main Warehouse (default)' : 'Select warehouse…'}</option>
+              {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+            </Select>
+          )}
           {liveCost != null && (
             <p className="rounded-lg bg-paper-2 px-4 py-2.5 text-sm">
               Total purchase cost:{' '}

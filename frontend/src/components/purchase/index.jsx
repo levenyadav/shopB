@@ -263,6 +263,7 @@ export function LineEditor({
 
 // ---- Existing item mode: search the catalogue, then top it up ----
 function ExistingItemFields({ line, setVal, errors, shopId, supplierId }) {
+  const { warehouses } = useShop()
   const [search, setSearch] = useState('')
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
@@ -306,6 +307,14 @@ function ExistingItemFields({ line, setVal, errors, shopId, supplierId }) {
             Change
           </button>
         </div>
+        {warehouses.length > 1 && (
+          <Select label="Warehouse" value={line.warehouse_id ?? line.item.warehouse_id ?? ''}
+                  onChange={(e) => setVal('warehouse_id', e.target.value)}
+                  hint="Where this restock lands — defaults to this product's usual warehouse">
+            <option value="">{warehouses.find((w) => w.name === 'Main Warehouse') ? 'Main Warehouse (default)' : 'Select warehouse…'}</option>
+            {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+          </Select>
+        )}
       </div>
     )
   }
