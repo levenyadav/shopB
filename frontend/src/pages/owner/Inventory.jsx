@@ -200,10 +200,15 @@ export default function Inventory() {
               <tbody>
                 {filtered.map((i) => {
                   // Real stock location(s) for this item, not the stale default.
-                  const stockHere = Object.entries(whStock[i.id] || {})
-                    .filter(([, q]) => q > 0)
-                    .map(([wid, q]) => `${warehouseName[wid] || '—'} (${qty(q)})`)
-                    .join(', ')
+                  // Filtered to one warehouse, show only that warehouse's stock
+                  // here — listing every location the item also sits in reads as
+                  // if the filter isn't working.
+                  const stockHere = wh
+                    ? (Number(whStock[i.id]?.[wh]) > 0 ? `${warehouseName[wh] || '—'} (${qty(whStock[i.id][wh])})` : '')
+                    : Object.entries(whStock[i.id] || {})
+                        .filter(([, q]) => q > 0)
+                        .map(([wid, q]) => `${warehouseName[wid] || '—'} (${qty(q)})`)
+                        .join(', ')
                   // When filtered to one warehouse, show that warehouse's own
                   // quantity — the total across all warehouses is misleading here.
                   const displayQty = wh ? Number(whStock[i.id]?.[wh] || 0) : Number(i.quantity)
