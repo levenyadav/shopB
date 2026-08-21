@@ -32,20 +32,37 @@ export default function Inventory() {
   const [retiring, setRetiring] = useState(null) // item pending discontinue / reactivate confirm
   const [deleting, setDeleting] = useState(null) // discontinued item pending hard-delete confirm
   const [zoom, setZoom] = useState(null) // photo_url shown full-size in a lightbox
+  // Actual per-warehouse stock (043) — items.warehouse_id is only the product's
+  // *default landing* warehouse and is never updated by a restock's per-line
+  // override, so it goes stale the moment stock is restocked into a different
+  // warehouse. The filter and the location label below must go by where stock
+  // really sits, not by that default.
+  const [whStock, setWhStock] = useState({}) // { [item_id]: { [warehouse_id]: quantity } }
 
   async function load() {
     setErr('')
-    const { data, error } = await supabase
-      .from('items')
-      .select(
-        'id, item_no, name, company_no, location, warehouse_id, quantity, purchase_rate, dealer_rate, rate, ' +
-          'low_stock_threshold, moq, barcode, hsn_sac, gst_rate, photo_url, is_active, discontinued, discontinued_at, made_to_order, supplier_id, category_id, ' +
-          'description, tags, images, ' +
-          'supplier:suppliers(name), category:categories(name)',
-      )
-      .order('item_no')
+    const [{ data, error }, { data: wsData, error: wsErr }] = await Promise.all([
+      supabase
+        .from('items')
+        .select(
+          'id, item_no, name, company_no, location, warehouse_id, quantity, purchase_rate, dealer_rate, rate, ' +
+            'low_stock_threshold, moq, barcode, hsn_sac, gst_rate, photo_url, is_active, discontinued, discontinued_at, made_to_order, supplier_id, category_id, ' +
+            'description, tags, images, ' +
+            'supplier:suppliers(name), category:categories(name)',
+        )
+        .order('item_no'),
+      supabase.from('warehouse_stock').select('item_id, warehouse_id, quantity'),
+    ])
     if (error) setErr(error.message)
     else setItems(data ?? [])
+    if (!wsErr) {
+      const map = {}
+      ;(wsData || []).forEach((r) => {
+        if (!map[r.item_id]) map[r.item_id] = {}
+        map[r.item_id][r.warehouse_id] = Number(r.quantity)
+      })
+      setWhStock(map)
+    }
   }
   useEffect(() => { load() }, [])
 
@@ -71,7 +88,10 @@ export default function Inventory() {
       if (cat && i.category_id !== cat) return false
       if (sup && i.supplier_id !== sup) return false
       if (tag && !(i.tags || []).includes(tag)) return false
-      if (wh && i.warehouse_id !== wh) return false
+      // Filter by where stock actually sits (warehouse_stock), not by the
+      // product's default landing warehouse — a restock override can put stock
+      // somewhere else without ever touching items.warehouse_id.
+      if (wh && !(Number(whStock[i.id]?.[wh]) > 0)) return false
       if (lowOnly && !(Number(i.quantity) < Number(i.low_stock_threshold))) return false
       if (needle) {
         const hay = `${i.item_no} ${i.name} ${i.company_no || ''} ${i.barcode || ''} ${i.supplier?.name || ''} ${i.category?.name || ''} ${(i.tags || []).join(' ')} ${i.description || ''} ${i.location || ''}`.toLowerCase()
@@ -79,7 +99,7 @@ export default function Inventory() {
       }
       return true
     })
-  }, [items, q, cat, sup, tag, wh, show, lowOnly])
+  }, [items, q, cat, sup, tag, wh, show, lowOnly, whStock])
 
   const warehouseName = useMemo(
     () => Object.fromEntries(warehouses.map((w) => [w.id, w.name])),
@@ -178,7 +198,16 @@ export default function Inventory() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((i) => (
+                {filtered.map((i) => {
+                  // Real stock location(s) for this item, not the stale default.
+                  const stockHere = Object.entries(whStock[i.id] || {})
+                    .filter(([, q]) => q > 0)
+                    .map(([wid, q]) => `${warehouseName[wid] || '—'} (${qty(q)})`)
+                    .join(', ')
+                  // When filtered to one warehouse, show that warehouse's own
+                  // quantity — the total across all warehouses is misleading here.
+                  const displayQty = wh ? Number(whStock[i.id]?.[wh] || 0) : Number(i.quantity)
+                  return (
                   <tr key={i.id} className="border-t border-line hover:bg-paper-2/40">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
@@ -192,7 +221,7 @@ export default function Inventory() {
                           </p>
                           <p className="fig text-xs text-muted">
                             {i.item_no} · {i.supplier?.name || '—'}
-                            {warehouseName[i.warehouse_id] ? ` · ${warehouseName[i.warehouse_id]}` : ''}
+                            {stockHere ? ` · ${stockHere}` : ''}
                             {i.location ? ` · ${i.location}` : ''}
                           </p>
                         </div>
@@ -205,8 +234,8 @@ export default function Inventory() {
                         <Badge tone="peacock">Make to Order</Badge>
                       ) : (
                         <div className="flex items-center justify-end gap-2">
-                          <span className="fig">{qty(i.quantity)}</span>
-                          <StockBadge quantity={i.quantity} threshold={i.low_stock_threshold} />
+                          <span className="fig">{qty(displayQty)}</span>
+                          <StockBadge quantity={displayQty} threshold={i.low_stock_threshold} />
                         </div>
                       )}
                     </td>
@@ -222,7 +251,8 @@ export default function Inventory() {
                       />
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
                 {filtered.length === 0 && (
                   <tr>
                     <td colSpan={7} className="px-4 py-12 text-center text-muted">
