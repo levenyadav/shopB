@@ -6,8 +6,11 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
-import { money, qty } from '../../lib/format'
+import { money, qty, dateTime } from '../../lib/format'
 import { round2, purchaseBillTotals } from '../../lib/helpers'
+import { putBlob, getBlob, delBlob } from '../../lib/idbBlob'
+import { useFormDraft } from '../../hooks/useFormDraft'
+import { useBeforeUnload } from '../../hooks/useBeforeUnload'
 import { Button, Field, Select, Textarea, Spinner, StockBadge } from '../../components/ui'
 // The bill-building UI is shared with Purchase Bill Detail, which corrects an
 // already-entered bill (migration 039) and must offer exactly these options.
@@ -28,6 +31,62 @@ export default function PurchaseEntry() {
   return itemId ? <RestockEntry itemId={itemId} /> : <BillEntry />
 }
 
+// --- Autosave drafts (lib/formDraft + IndexedDB for line photos) --------------
+// A supplier bill can take minutes to key in — many lines, a new-product form
+// per line. A refresh, a stray back-swipe or a power cut would lose all of it,
+// so the whole { bill, lines } state is autosaved and restored automatically.
+
+const makeBlankBill = () => ({
+  supplier_id: '', invoice_no: '', invoice_date: today(),
+  postage: '', cgst: '', sgst: '',
+})
+
+function billDraftIsEmpty({ bill, lines }) {
+  return lines.length === 0
+    && !bill.supplier_id && !bill.invoice_no
+    && !bill.postage && !bill.cgst && !bill.sgst
+}
+
+// A 'new product' line can carry a photoFile (a File) and a photoPreview (a
+// blob: URL). Neither belongs in localStorage: the File is binary, the blob URL
+// is dead after a reload. Move the File to IndexedDB, keep a photoRef pointer.
+async function stashLinePhotos(lines) {
+  return Promise.all((lines || []).map(async (l) => {
+    if (l.mode !== 'new') return l
+    const { photoFile, photoPreview: _dropPreview, photoRef: oldRef, ...rest } = l
+    if (photoFile instanceof Blob) {
+      const ref = oldRef && oldRef.startsWith('photo-') ? oldRef : `photo-${crypto.randomUUID()}`
+      await putBlob(ref, photoFile)
+      return { ...rest, photoRef: ref, photoFile: null, photoPreview: '' }
+    }
+    if (oldRef) delBlob(oldRef) // photo was removed while editing — drop the blob
+    return { ...rest, photoRef: null, photoFile: null, photoPreview: '' }
+  }))
+}
+
+// Rebuild each stashed photo into a File + fresh preview URL the editor can use.
+async function rebuildLinePhotos(lines) {
+  return Promise.all((lines || []).map(async (l) => {
+    if (l.mode !== 'new' || !l.photoRef) return l
+    const blob = await getBlob(l.photoRef)
+    if (!blob) return { ...l, photoRef: null, photoFile: null, photoPreview: '' }
+    const file = new File([blob], 'photo', { type: blob.type || 'image/jpeg' })
+    return { ...l, photoFile: file, photoPreview: URL.createObjectURL(file) }
+  }))
+}
+
+function DraftBar({ at, onStartFresh }) {
+  if (!at) return null
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-peacock/30 bg-peacock/5 px-4 py-2.5 text-sm">
+      <span className="text-ink">Picked up where you left off — unsaved entry from {dateTime(at)}.</span>
+      <button type="button" onClick={onStartFresh} className="font-semibold text-peacock hover:underline">
+        Start fresh
+      </button>
+    </div>
+  )
+}
+
 
 // =============================================================================
 // Bill entry — one supplier invoice, many products (migration 033).
@@ -41,10 +100,7 @@ function BillEntry() {
   const { profile } = useAuth()
   const { shopId, shop, suppliers, refreshSuppliers } = useShop()
 
-  const [bill, setBill] = useState({
-    supplier_id: '', invoice_no: '', invoice_date: today(),
-    postage: '', cgst: '', sgst: '',
-  })
+  const [bill, setBill] = useState(makeBlankBill)
   const [lines, setLines] = useState([])
   const [editing, setEditing] = useState(null)  // { line, index } while the editor is open
   const [errors, setErrors] = useState({})
@@ -52,6 +108,28 @@ function BillEntry() {
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState(null)
   const [showSupplier, setShowSupplier] = useState(false)
+
+  // Autosave the whole bill-in-progress; restore it automatically on return.
+  const { restoredAt, clear: clearBillDraft } = useFormDraft({
+    name: 'purchaseEntry.bill',
+    value: { bill, lines },
+    isEmpty: billDraftIsEmpty,
+    serialize: async ({ bill, lines }) => ({ bill, lines: await stashLinePhotos(lines) }),
+    onRestore: async (data) => {
+      if (data.bill) setBill({ ...makeBlankBill(), ...data.bill })
+      setLines(await rebuildLinePhotos(data.lines))
+    },
+  })
+  useBeforeUnload(!busy && !done && !billDraftIsEmpty({ bill, lines }))
+
+  function startFresh() {
+    for (const l of lines) if (l.photoRef) delBlob(l.photoRef)
+    clearBillDraft()
+    setBill(makeBlankBill())
+    setLines([])
+    setErrors({})
+    setTopError('')
+  }
 
   const supplier = suppliers.find((s) => s.id === bill.supplier_id) || null
 
@@ -207,7 +285,10 @@ function BillEntry() {
         tax: billCharges.tax,
         grandTotal: rows.length ? billCharges.grand : 0,
       })
-      setBill({ supplier_id: '', invoice_no: '', invoice_date: today(), postage: '', cgst: '', sgst: '' })
+      // Bill is safely written — drop the autosaved draft and its stashed photos.
+      for (const l of lines) if (l.photoRef) delBlob(l.photoRef)
+      clearBillDraft()
+      setBill(makeBlankBill())
       setLines([])
       setErrors({})
     } catch (err) {
@@ -229,6 +310,8 @@ function BillEntry() {
       </div>
 
       <form onSubmit={onSubmit} className="space-y-6">
+        <DraftBar at={restoredAt} onStartFresh={startFresh} />
+
         {topError && (
           <p className="rounded-lg border border-dues/30 bg-dues/10 px-4 py-3 text-sm text-dues">
             {topError}
@@ -429,6 +512,15 @@ function RestockEntry({ itemId }) {
   const [topError, setTopError] = useState('')
   const [done, setDone] = useState(null)
 
+  const restockEmpty = (v) => !v.form.quantity && !v.form.invoice_no && !v.form.notes
+  const { restoredAt, clear: clearRestockDraft } = useFormDraft({
+    name: `restock.${itemId}`,
+    value: { form },
+    isEmpty: restockEmpty,
+    onRestore: (data) => { if (data.form) setForm((f) => ({ ...f, ...data.form })) },
+  })
+  useBeforeUnload(!busy && !done && !restockEmpty({ form }))
+
   const set = (k) => (e) => {
     setForm((f) => ({ ...f, [k]: e.target.value }))
     setErrors((er) => ({ ...er, [k]: undefined }))
@@ -448,7 +540,12 @@ function RestockEntry({ itemId }) {
         else if (!data) setLoadErr('That item could not be found.')
         else {
           setItem(data)
-          setForm((f) => ({ ...f, purchase_rate: String(data.purchase_rate), warehouse_id: data.warehouse_id || '' }))
+          // Defaults from the item yield to anything a restored draft already set.
+          setForm((f) => ({
+            ...f,
+            purchase_rate: f.purchase_rate || String(data.purchase_rate),
+            warehouse_id: f.warehouse_id || (data.warehouse_id || ''),
+          }))
         }
       })
   }, [itemId])
@@ -481,6 +578,7 @@ function RestockEntry({ itemId }) {
         warehouse_id: form.warehouse_id || item.warehouse_id || null,
       })
       if (error) throw new Error(error.message)
+      clearRestockDraft()
       setDone({ item_no: item.item_no, name: item.name, quantity, total_cost })
     } catch (err) {
       setTopError(err.message || 'Could not save. Please try again.')
@@ -540,6 +638,20 @@ function RestockEntry({ itemId }) {
         ← Stock Inquiry
       </Link>
       <form onSubmit={onSubmit} className="space-y-6">
+        <DraftBar
+          at={restoredAt}
+          onStartFresh={() => {
+            clearRestockDraft()
+            setForm({
+              quantity: '', purchase_rate: item ? String(item.purchase_rate) : '',
+              invoice_no: '', invoice_date: today(), notes: '',
+              warehouse_id: item?.warehouse_id || '',
+            })
+            setErrors({})
+            setTopError('')
+          }}
+        />
+
         {topError && (
           <p className="rounded-lg border border-dues/30 bg-dues/10 px-4 py-3 text-sm text-dues">{topError}</p>
         )}
