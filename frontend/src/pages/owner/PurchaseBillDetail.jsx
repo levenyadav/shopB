@@ -715,7 +715,7 @@ function BackfillCharges({ bill, currency, onSaved }) {
   // (migration 034) imply. A hint only — the owner types what the paper bill says.
   const suggested = suggestPurchaseGst(bill.lines.map((l) => ({
     amount: Number(l.total_cost || 0), rate: l.item?.gst_rate,
-  })))
+  })), form.postage)
 
   async function save(e) {
     e.preventDefault()

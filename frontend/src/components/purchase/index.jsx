@@ -742,6 +742,7 @@ export function BillCharges({ lines, value, onChange }) {
         shop?.gst_rate,
       ),
     })),
+    value.postage,
   )
   const autoCgst = suggested ? String(suggested.cgst) : ''
   const autoSgst = suggested ? String(suggested.sgst) : ''

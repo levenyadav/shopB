@@ -192,12 +192,21 @@ export function purchaseBillTotals({ goods, postage, cgst, sgst }) {
 // total splits in half (intra-state). Only a SUGGESTION — the owner types what
 // the supplier's bill actually says, because a supplier's own rounding rarely
 // lands to the rupee. `lines` = [{ amount, rate }].
-export function suggestPurchaseGst(lines) {
+//
+// Postage/freight charged by the supplier on the same bill is part of the
+// taxable value (CGST Act §15(2)(c)) — the supplier taxes goods + freight, not
+// goods alone. It carries no slab of its own, so it is apportioned across the
+// taxed lines by value and taxed at each line's own rate. (It still never lands
+// in product cost — see purchaseBillTotals; this is the tax base only.)
+export function suggestPurchaseGst(lines, postage = 0) {
+  const rows = (lines || []).filter((ln) => Number(ln.rate || 0) > 0)
+  const goodsTotal = rows.reduce((s, ln) => s + Number(ln.amount || 0), 0)
+  const p = round2(postage || 0)
   let tax = 0
-  for (const ln of lines || []) {
-    const rate = Number(ln.rate || 0)
-    if (rate <= 0) continue
-    tax += Number(ln.amount || 0) * (rate / 100)
+  for (const ln of rows) {
+    const amount = Number(ln.amount || 0)
+    const freightShare = goodsTotal > 0 ? (amount / goodsTotal) * p : 0
+    tax += (amount + freightShare) * (Number(ln.rate) / 100)
   }
   tax = round2(tax)
   if (tax <= 0) return null
