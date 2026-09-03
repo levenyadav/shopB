@@ -46,6 +46,8 @@ export function Button({ variant = 'primary', className = '', type = 'button', .
 }
 
 export function Field({ label, hint, error, prefix, suffix, className = '', ...props }) {
+  // A one-character prefix (₹) needs a little room; a short word ("KCP") needs more.
+  const widePrefix = typeof prefix === 'string' && prefix.trim().length > 1
   return (
     <label className="block">
       {label && (
@@ -57,7 +59,7 @@ export function Field({ label, hint, error, prefix, suffix, className = '', ...p
         )}
         <input
           className={`ring-focus w-full rounded-md border bg-card px-3 py-2.5 text-ink
-            ${prefix ? 'pl-7' : ''} ${suffix ? 'pr-9' : ''}
+            ${prefix ? (widePrefix ? 'pl-12' : 'pl-7') : ''} ${suffix ? 'pr-9' : ''}
             ${error ? 'border-dues' : 'border-line'} ${className}`}
           {...props}
         />

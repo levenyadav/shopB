@@ -72,6 +72,17 @@ export const BLANK_NEW = {
 
 export const today = () => new Date().toISOString().slice(0, 10)
 
+// This shop brands every product it stocks "KCP …". The owner types only the
+// distinctive part of the name; the prefix is shown in the Product name field
+// and folded into the stored name on save, so it never has to be typed and
+// can't accidentally be entered twice.
+export const NAME_PREFIX = 'KCP'
+export function withNamePrefix(name) {
+  const n = (name || '').trim()
+  if (!n) return ''
+  return new RegExp(`^${NAME_PREFIX}\\b`, 'i').test(n) ? n : `${NAME_PREFIX} ${n}`
+}
+
 // A Make-to-Order product is listed, never stocked — so it never becomes a
 // purchases row and contributes nothing to the bill total.
 export function isListingOnly(line) {
@@ -79,7 +90,7 @@ export function isListingOnly(line) {
 }
 
 export function lineName(line) {
-  return line.mode === 'new' ? line.name : line.item?.name || ''
+  return line.mode === 'new' ? withNamePrefix(line.name) : line.item?.name || ''
 }
 
 export function lineCost(line) {
@@ -390,7 +401,7 @@ function NewProductFields({ line, set, setVal, errors, shopId, onUseExisting, al
   // item that already carries this exact name in the shop (case-insensitive).
   // Nudge the owner to add it as an existing line rather than a second row.
   async function checkName() {
-    const name = line.name.trim()
+    const name = withNamePrefix(line.name)
     if (!name) { setNameInfo(null); return }
     const { data } = await supabase
       .from('items')
@@ -461,8 +472,10 @@ function NewProductFields({ line, set, setVal, errors, shopId, onUseExisting, al
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Product name" placeholder="e.g. Wedding Card – Royal Red"
-               value={line.name} onChange={set('name')} onBlur={checkName} error={errors.name} autoFocus />
+        <Field label="Product name" prefix={NAME_PREFIX} placeholder="e.g. Wedding Card – Royal Red"
+               value={line.name} onChange={set('name')} onBlur={checkName} error={errors.name}
+               hint={`Saved as "${withNamePrefix(line.name) || NAME_PREFIX + ' …'}" — "${NAME_PREFIX}" is added automatically.`}
+               autoFocus />
         <Field label="Company No." placeholder="e.g. 1420 (design / article no.)"
                value={line.company_no} onChange={set('company_no')} error={errors.company_no}
                hint="The company's own design number — used to re-order" />
@@ -829,7 +842,7 @@ export async function createProductFromLine({ shopId, supplierId, line }) {
     .from('items')
     .insert({
       shop_id: shopId,
-      name: line.name.trim(),
+      name: withNamePrefix(line.name),
       company_no: line.company_no.trim() || null,
       supplier_id: supplierId,
       category_id: line.category_id,
@@ -858,11 +871,11 @@ export async function createProductFromLine({ shopId, supplierId, line }) {
   if (error) {
     if (isDuplicateCompanyNo(error)) {
       throw new Error(
-        `Company No. "${line.company_no}" on "${line.name}" is already used by another item. ` +
+        `Company No. "${line.company_no}" on "${withNamePrefix(line.name)}" is already used by another item. ` +
           `Edit that line and use a different number, or leave it blank.`,
       )
     }
-    throw new Error(`Could not add "${line.name}": ${error.message}`)
+    throw new Error(`Could not add "${withNamePrefix(line.name)}": ${error.message}`)
   }
   return data
 }
