@@ -551,7 +551,7 @@ function DeleteModal({ item, onClose, onDone }) {
   )
 }
 
-// Asks how many label copies to print, then sends a 3-per-row, 3cm × 2cm sheet
+// Asks how many label copies to print, then sends a 3-per-row, 3.3cm × 2cm sheet
 // to the printer. Defaults to 3 copies — one full row on a terminal label roll.
 function PrintBarcodeModal({ item, currency, shopName, onClose }) {
   const [copies, setCopies] = useState('3')
@@ -620,7 +620,7 @@ function PrintBarcodeModal({ item, currency, shopName, onClose }) {
         )}
 
         <p className="flex items-center gap-1.5 text-xs text-muted">
-          <IconPrinter size={14} /> Labels print 3 to a row, each 3 × 2 cm.
+          <IconPrinter size={14} /> Labels print 3 to a row, each 3.3 × 2 cm.
         </p>
 
         <div className="flex justify-end gap-3 pt-1">

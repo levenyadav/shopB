@@ -1,22 +1,22 @@
 import JsBarcode from 'jsbarcode'
 
 // Barcode label printing (SPEC §6.2 — Inventory). Renders real Code128 barcodes
-// and prints them as 38mm × 25mm labels, laid out 3-per-row for a thermal label
+// and prints them as 33mm × 20mm labels, laid out 3-per-row for a thermal label
 // printer. Prints via a hidden iframe so no popup-blocker gets in the way.
 //
 // Geometry MUST match the physical die-cut roll and the TSC TTP-244 Pro driver
-// (media = Gap sensor, left/top margin 0). Roll spec:
-//   Label 38mm × 25mm · Horizontal gap 2mm · Vertical gap 2.5mm · 3 columns
-//   Total media width = 38 + 2 + 38 + 2 + 38 = 118mm
+// (media = Gap sensor, left/top margin 0). Roll spec (measured):
+//   Label 33mm × 20mm · Horizontal gap ~0.1mm · Vertical gap ~2.7mm · 3 columns
+//   Total media width = 33 + 0.1 + 33 + 0.1 + 33 = 99.2mm
 // If the cell size / gaps here don't match the roll, content drifts across the
 // row and down the columns (each label creeps off its sticker) — do not change
 // these numbers unless the physical stock changes.
-const LABEL_W = '38mm'   // physical label width
-const LABEL_H = '25mm'   // physical label height
-const COL_GAP = '2mm'    // horizontal gap, column → column
-const ROW_GAP = '2.5mm'  // vertical gap, row → row
-const COLS = 3           // labels across the roll
-const SHEET_W = '118mm'  // 38·3 + 2·2 — the full media width
+const LABEL_W = '33mm'    // physical label width
+const LABEL_H = '20mm'    // physical label height
+const COL_GAP = '0.1mm'   // horizontal gap, column → column
+const ROW_GAP = '2.7mm'   // vertical gap, row → row
+const COLS = 3            // labels across the roll
+const SHEET_W = '99.2mm'  // 33·3 + 0.1·2 — the full media width
 
 // What we encode: the item's barcode if set, else its Item No as a fallback so
 // every item is printable. Code128 handles alphanumeric Item Nos fine.
@@ -34,6 +34,15 @@ function barcodeSvg(value) {
     displayValue: false, // we print our own, smaller code text below
     margin: 0,
   })
+  // JsBarcode sets a viewBox but leaves the default preserveAspectRatio
+  // ("xMidYMid meet"), which locks the aspect ratio and letterboxes the
+  // barcode inside .bc instead of filling it — the printed bars end up
+  // smaller than the cell and don't reach the label edges. "none" stretches
+  // both axes independently to fill the cell exactly; this is safe for
+  // Code128 because a scanner only reads relative bar widths along one axis
+  // — uniform horizontal scaling preserves those ratios, and vertical
+  // stretch only changes bar height, which never affects decodability.
+  svg.setAttribute('preserveAspectRatio', 'none')
   return new XMLSerializer().serializeToString(svg)
 }
 
