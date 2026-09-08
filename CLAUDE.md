@@ -23,8 +23,11 @@ These come from SPEC §16 and the data model. Violating one corrupts the books.
    rates, and sees the ledger. **Exception — Counter Sale (POS, walk-in):** owner
    OR staff may finalize a walk-in bill directly; ringing it up at the counter IS
    the approval. Counter sales are written atomically via the
-   `create_counter_sale` RPC (`source='counter'`), reuse the same sale trigger,
-   and skip the pack queue. Staff still cannot approve shopfront orders, see
+   `create_counter_sale` RPC (`source='counter'`) and reuse the same sale
+   trigger. Since migration 049 a counter bill goes through the **same pack
+   queue** as a shopfront order (order → `approved`, `pending_pack` fulfilment
+   row) — it is not delivered until staff pack and hand it over. Staff still
+   cannot approve shopfront orders, see
    Reports profit, or read the ledger — cost/profit on counter sales are filled
    server-side so staff never read `purchase_rate`.
 4. **Three-tier pricing:** `purchase_rate` (cost, internal only — never shown to

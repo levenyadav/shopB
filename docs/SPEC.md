@@ -330,12 +330,16 @@ shopfront order needed. (Routes `/owner/counter-sale`, `/staff/counter-sale`.)
   `create_counter_sale(p_buyer_id, p_buyer_type, p_payment_type, p_lines)` RPC —
   one transaction creates one `orders`+`sales` row per line (`source='counter'`,
   shared `bill_id`). The existing sale trigger drops stock, books the
-  ledger/udhaar, and writes a **completed** fulfilment row (counter sales skip the
-  pack queue). A half-rung bill can never be left behind
+  ledger/udhaar, sets the order `approved` and opens a `pending_pack` fulfilment
+  row. A half-rung bill can never be left behind
 - Cost price + profit are computed **server-side** (trigger) so the staff client
   never reads `purchase_rate`
 - Prints a multi-item **Cash Memo** receipt (grouped by `bill_id`)
-- Counter orders never appear in the owner's pending-orders queue
+- Since **049** counter bills go through the **same Fulfilment board** as
+  shopfront orders (pack → hand over). Ringing up the bill IS the approval
+  (staff may do it), so counter orders never sit in the owner's *pending*
+  queue — but they do appear in Order Management, already `approved`, and on the
+  staff "Waiting to pack" list
 
 ---
 
@@ -671,10 +675,12 @@ created_at        timestamptz DEFAULT now()
 **On INSERT trigger fires:**
 - `items.quantity` -= sale.quantity
 - If payment_type = 'udhaar': `profiles.balance_due` += sale.amount (for buyer)
-- If `source='counter'`: `purchase_rate`/`profit` filled server-side; order set
-  `picked_up` and fulfilment created **completed** (skips pack queue)
+- If `source='counter'`: `purchase_rate`/`profit` filled server-side (trigger),
+  and the ledger line reads "Counter sale: …"
 - New row inserted into `ledger`
-- `orders.status` updated to 'approved'
+- `orders.status` updated to 'approved' and a `pending_pack` fulfilment row
+  opened — for **both** sources since **049** (before 049 a counter sale went
+  straight to `picked_up` with a completed fulfilment row)
 
 ---
 

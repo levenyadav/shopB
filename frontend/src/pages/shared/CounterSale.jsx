@@ -17,7 +17,9 @@ import { buildInvoiceModel, printInvoice } from '../../lib/invoiceTemplate'
 // POS / Counter Sale (SPEC §6.5a — walk-in billing). Owner OR staff ring up a
 // walk-in on the spot: scan/search items into a cart, pick or quick-add a named
 // buyer, take payment, and finalize via the atomic create_counter_sale RPC (one
-// transaction → stock drops, ledger/udhaar booked, fulfilment auto-completed).
+// transaction → stock drops, ledger/udhaar booked, order 'approved' and a
+// 'pending_pack' fulfilment job opened — the bill still goes through the pack
+// queue (049), same as a shopfront order.
 const PAYMENTS = [['cash', 'Cash'], ['upi', 'UPI'], ['udhaar', 'Udhaar (credit)']]
 
 // Commas and parentheses are PostgREST's `.or()` grammar; a search term that
@@ -484,6 +486,7 @@ function ReceiptScreen({ bill, shop, currency, onNew, home, navigate }) {
         <p className="mt-1 text-sm text-muted">
           Bill <span className="fig">{ref}</span> · {bill.lines.length} item{bill.lines.length === 1 ? '' : 's'} · <span className="fig font-semibold text-ink">{m(bill.total)}</span>
         </p>
+        <p className="mt-1 text-xs text-muted">Added to the pack queue — pack &amp; hand over from Fulfilment.</p>
         {bill.payment_type === 'cash' && bill.tendered != null && (
           <p className="mt-1 fig text-sm">Change due: <span className="font-semibold">{m(Math.max(0, bill.tendered - bill.total))}</span></p>
         )}

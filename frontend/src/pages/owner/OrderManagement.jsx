@@ -28,11 +28,13 @@ export default function OrderManagement() {
     const { data, error } = await supabase
       .from('orders')
       .select(
-        'id, quantity, amount, status, buyer_type, created_at, ' +
+        'id, quantity, amount, status, buyer_type, source, created_at, ' +
           'item_no, item_name, ' +
           'item:items(name, photo_url, made_to_order), buyer:profiles!orders_buyer_id_fkey(full_name, phone)',
       )
-      .eq('source', 'shopfront') // counter (POS) sales are complete on creation — not order-queue work
+      // Both origins land here now: shopfront orders wait for approval; counter
+      // bills arrive already 'approved' (staff rang them up) and move straight
+      // into the pack queue — 049.
       .order('created_at', { ascending: false })
     if (error) setErr(error.message)
     else setOrders(data ?? [])
@@ -157,6 +159,7 @@ export default function OrderManagement() {
                   <p className="flex items-center gap-1.5 truncate font-medium text-ink">
                     <span className="truncate">{o.item?.name || o.item_name || 'Item'}</span>
                     {o.item?.made_to_order && <Badge tone="peacock">Make to order</Badge>}
+                    {o.source === 'counter' && <Badge tone="saffron">Counter</Badge>}
                   </p>
                   <p className="truncate text-xs text-muted">
                     {o.buyer?.full_name || 'Buyer'}
