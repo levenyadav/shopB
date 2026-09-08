@@ -14,9 +14,10 @@ import JsBarcode from 'jsbarcode'
 const LABEL_W = '33mm'    // physical label width
 const LABEL_H = '20mm'    // physical label height
 const COL_GAP = '0.1mm'   // horizontal gap, column → column
-const ROW_GAP = '2.7mm'   // vertical gap, row → row
 const COLS = 3            // labels across the roll
 const SHEET_W = '99.2mm'  // 33·3 + 0.1·2 — the full media width
+// Vertical die gap is ~2.7mm — NOT set in CSS. Each row prints as its own
+// one-label-tall page and the printer's gap sensor advances that gap itself.
 
 // What we encode: the item's barcode if set, else its Item No as a fallback so
 // every item is printable. Code128 handles alphanumeric Item Nos fine.
@@ -88,39 +89,47 @@ export const DEFAULT_LABEL_OPTS = {
   rate: 'customer', // 'none' | 'customer' | 'dealer'
 }
 
-// Print an array of items as labels (pass the same item N times for N copies).
-// shopName is printed across the top of every label as store branding.
-// `labelOpts` selects what each label shows (see DEFAULT_LABEL_OPTS).
-export function printBarcodeLabels(items, { currency = '₹', shopName = '', labelOpts } = {}) {
-  const opts = { ...DEFAULT_LABEL_OPTS, ...labelOpts }
-  const printable = items.filter((it) => barcodeValue(it))
-  if (!printable.length) {
-    window.alert('This item has no barcode or Item No yet, so there is nothing to print. Add a barcode in Edit first.')
-    return
+// Chunk a flat list of label cells into rows of COLS. Each row prints as its own
+// page (see the @page rule) so one physical label pitch = one printed page — the
+// TSC gap sensor then advances the ~2.7mm die gap itself. That's why there is no
+// CSS row-gap: adding it here would double-count the gap and drift every row
+// down the roll.
+function rowsHtml(cells) {
+  const rows = []
+  for (let i = 0; i < cells.length; i += COLS) {
+    rows.push(`<div class="row">${cells.slice(i, i + COLS).join('')}</div>`)
   }
+  return rows.join('')
+}
 
-  const cells = printable.map((it) => labelHtml(it, currency, shopName, opts)).join('')
-  const html = `<!doctype html>
+// Build the full printable HTML document for a set of items. Shared by
+// printBarcodeLabels (hidden iframe) and previewBarcodeLabels (visible tab) so
+// what you preview is byte-for-byte what prints.
+function buildLabelsHtml(printable, currency, shopName, opts) {
+  const cells = printable.map((it) => labelHtml(it, currency, shopName, opts))
+  return `<!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
     <title>Barcode labels</title>
     <style>
-      /* Zero page margin — the roll's own left/top margin is 0; any page margin
-         here would shove every label off its sticker. */
-      @page { size: ${SHEET_W} auto; margin: 0; }
+      /* Pin the page to exactly one label row: full media width × one label
+         height, zero margin. Height is fixed (not "auto") so the printer can't
+         pad each row out to a default form length — that padding was the blank
+         band under every label. The gap sensor feeds the die gap between rows. */
+      @page { size: ${SHEET_W} ${LABEL_H}; margin: 0; }
       * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       html, body { margin: 0; padding: 0; }
       body { font-family: Arial, Helvetica, sans-serif; color: #000; }
-      /* Grid (not flex-wrap) so the 3 fixed columns never collapse on rounding.
-         column-gap = horizontal die gap, row-gap = vertical die gap. */
-      .sheet {
-        display: grid;
-        grid-template-columns: repeat(${COLS}, ${LABEL_W});
-        column-gap: ${COL_GAP};
-        row-gap: ${ROW_GAP};
+      /* One .row = one page = 3 labels across. column-gap = horizontal die gap. */
+      .row {
+        display: flex;
         width: ${SHEET_W};
+        height: ${LABEL_H};
+        column-gap: ${COL_GAP};
+        break-inside: avoid; page-break-inside: avoid;
       }
+      .row:not(:last-child) { break-after: page; page-break-after: always; }
       .label {
         width: ${LABEL_W}; height: ${LABEL_H}; padding: 1.5mm;
         display: flex; flex-direction: column; align-items: center; justify-content: space-between;
@@ -142,26 +151,61 @@ export function printBarcodeLabels(items, { currency = '₹', shopName = '', lab
       .price { font-size: 7pt; font-weight: 700; white-space: nowrap; }
     </style>
   </head>
-  <body><div class="sheet">${cells}</div></body>
+  <body>${rowsHtml(cells)}</body>
 </html>`
+}
 
-  const iframe = document.createElement('iframe')
-  iframe.setAttribute('aria-hidden', 'true')
-  Object.assign(iframe.style, {
-    position: 'fixed', right: '0', bottom: '0', width: '0', height: '0', border: '0',
+// Shared front end for both entry points: filter to printable items, warn if
+// none, else build the HTML and hand it to `sink`.
+function withLabelsHtml(items, { currency = '₹', shopName = '', labelOpts } = {}, sink) {
+  const opts = { ...DEFAULT_LABEL_OPTS, ...labelOpts }
+  const printable = items.filter((it) => barcodeValue(it))
+  if (!printable.length) {
+    window.alert('This item has no barcode or Item No yet, so there is nothing to print. Add a barcode in Edit first.')
+    return
+  }
+  sink(buildLabelsHtml(printable, currency, shopName, opts))
+}
+
+// Print an array of items as labels (pass the same item N times for N copies).
+// shopName is printed across the top of every label as store branding.
+// `labelOpts` selects what each label shows (see DEFAULT_LABEL_OPTS).
+export function printBarcodeLabels(items, opts = {}) {
+  withLabelsHtml(items, opts, (html) => {
+    const iframe = document.createElement('iframe')
+    iframe.setAttribute('aria-hidden', 'true')
+    Object.assign(iframe.style, {
+      position: 'fixed', right: '0', bottom: '0', width: '0', height: '0', border: '0',
+    })
+    document.body.appendChild(iframe)
+
+    const doc = iframe.contentWindow.document
+    doc.open()
+    doc.write(html)
+    doc.close()
+
+    // Give the iframe a tick to lay out the SVGs before printing, then clean up.
+    const cleanup = () => setTimeout(() => iframe.remove(), 1000)
+    setTimeout(() => {
+      iframe.contentWindow.focus()
+      iframe.contentWindow.print()
+      cleanup()
+    }, 150)
   })
-  document.body.appendChild(iframe)
+}
 
-  const doc = iframe.contentWindow.document
-  doc.open()
-  doc.write(html)
-  doc.close()
-
-  // Give the iframe a tick to lay out the SVGs before printing, then clean up.
-  const cleanup = () => setTimeout(() => iframe.remove(), 1000)
-  setTimeout(() => {
-    iframe.contentWindow.focus()
-    iframe.contentWindow.print()
-    cleanup()
-  }, 150)
+// Open the exact same label sheet in a visible tab (no auto-print) so you can
+// eyeball the layout — and Ctrl+P → Save as PDF to check sizing — before
+// sending a roll through the printer.
+export function previewBarcodeLabels(items, opts = {}) {
+  withLabelsHtml(items, opts, (html) => {
+    const win = window.open('', '_blank')
+    if (!win) {
+      window.alert('Your browser blocked the preview window. Allow pop-ups for this site and try again.')
+      return
+    }
+    win.document.open()
+    win.document.write(html)
+    win.document.close()
+  })
 }
