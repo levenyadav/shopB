@@ -167,17 +167,20 @@ export function printBarcodeLabels(items, { currency = '₹', shopName = '', lab
       .label--text .code { font-weight: 700; }
       .label--text .price { font-weight: 800; line-height: 1; }
 
-      .label--text.t2 .shop, .label--text.t2 .nm { font-size: 7pt; }
+      .label--text.t2 .shop { font-size: 7pt; }
+      .label--text.t2 .nm { font-size: 9pt; }
       .label--text.t2 .code { font-size: 12pt; }
-      .label--text.t2 .price { font-size: 21pt; }
+      .label--text.t2 .price { font-size: 18pt; }
 
-      .label--text.t3 .shop, .label--text.t3 .nm { font-size: 6.5pt; }
+      .label--text.t3 .shop { font-size: 6.5pt; }
+      .label--text.t3 .nm { font-size: 8pt; }
       .label--text.t3 .code { font-size: 11pt; }
-      .label--text.t3 .price { font-size: 17pt; }
+      .label--text.t3 .price { font-size: 15pt; }
 
-      .label--text.t4 .shop, .label--text.t4 .nm { font-size: 6pt; }
+      .label--text.t4 .shop { font-size: 6pt; }
+      .label--text.t4 .nm { font-size: 7pt; }
       .label--text.t4 .code { font-size: 9pt; }
-      .label--text.t4 .price { font-size: 14pt; }
+      .label--text.t4 .price { font-size: 13pt; }
     </style>
   </head>
   <body><div class="sheet">${cells}</div></body>
