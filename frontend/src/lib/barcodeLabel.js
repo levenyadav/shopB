@@ -65,17 +65,25 @@ function rateText(item, currency, rate) {
 function labelHtml(item, currency, shopName, opts) {
   const value = barcodeValue(item)
   const price = rateText(item, currency, opts.rate)
+  const showShop = opts.company && !!shopName
+  const showName = opts.itemName && !!item.name
   const showBarcode = opts.barcode && value
   const showCode = opts.code && value
-  const showMeta = showCode || price
-  // With no barcode there's a whole label of empty space — switch to a
-  // text-only layout that centres the content and prints it large so the code
-  // and price are readable across a counter.
-  const cls = showBarcode ? 'label' : 'label label--text'
+  const showMeta = showCode || !!price
+
+  // With no barcode there's a whole label of empty space — centre the text and
+  // print it large. The exact type sizes step down with how many lines are on
+  // (t2 / t3 / t4) so the tallest combination still fits 20mm without clipping.
+  let cls = 'label'
+  if (!showBarcode) {
+    const lines = (showShop ? 1 : 0) + (showName ? 1 : 0) + (showCode ? 1 : 0) + (price ? 1 : 0)
+    cls = `label label--text ${lines >= 4 ? 't4' : lines === 3 ? 't3' : 't2'}`
+  }
+
   return `
     <div class="${cls}">
-      ${opts.company && shopName ? `<div class="shop">${escapeHtml(shopName)}</div>` : ''}
-      ${opts.itemName ? `<div class="nm">${escapeHtml(item.name || '')}</div>` : ''}
+      ${showShop ? `<div class="shop">${escapeHtml(shopName)}</div>` : ''}
+      ${showName ? `<div class="nm">${escapeHtml(item.name)}</div>` : ''}
       ${showBarcode ? `<div class="bc">${barcodeSvg(value)}</div>` : ''}
       ${showMeta ? `<div class="meta">
         <span class="code">${showCode ? escapeHtml(value) : ''}</span>
@@ -148,14 +156,28 @@ export function printBarcodeLabels(items, { currency = '₹', shopName = '', lab
       .price { font-size: 7pt; font-weight: 700; white-space: nowrap; }
 
       /* Text-only label (barcode turned off): centre everything and go big so
-         the code and price read across a counter. Shop name may wrap to two
-         lines here rather than truncate — there's room without the barcode. */
-      .label--text { justify-content: center; gap: 1.4mm; }
-      .label--text .shop { font-size: 7pt; white-space: normal; line-height: 1.05; }
-      .label--text .nm { font-size: 7.5pt; font-weight: 700; }
-      .label--text .meta { flex-direction: column; align-items: center; gap: 0.6mm; }
-      .label--text .code { font-size: 12pt; font-weight: 700; letter-spacing: 0.4px; }
-      .label--text .price { font-size: 18pt; font-weight: 800; line-height: 1; }
+         the code and price read across a counter. Every line stays on ONE row
+         (ellipsis if too long) and the type sizes step down by line count
+         (t2/t3/t4) so nothing is ever clipped by the 20mm label height. */
+      .label--text { justify-content: center; gap: 1mm; }
+      .label--text .shop,
+      .label--text .nm,
+      .label--text .code { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; }
+      .label--text .meta { flex-direction: column; align-items: center; gap: 0.5mm; }
+      .label--text .code { font-weight: 700; }
+      .label--text .price { font-weight: 800; line-height: 1; }
+
+      .label--text.t2 .shop, .label--text.t2 .nm { font-size: 7pt; }
+      .label--text.t2 .code { font-size: 12pt; }
+      .label--text.t2 .price { font-size: 21pt; }
+
+      .label--text.t3 .shop, .label--text.t3 .nm { font-size: 6.5pt; }
+      .label--text.t3 .code { font-size: 11pt; }
+      .label--text.t3 .price { font-size: 17pt; }
+
+      .label--text.t4 .shop, .label--text.t4 .nm { font-size: 6pt; }
+      .label--text.t4 .code { font-size: 9pt; }
+      .label--text.t4 .price { font-size: 14pt; }
     </style>
   </head>
   <body><div class="sheet">${cells}</div></body>
