@@ -65,13 +65,18 @@ function rateText(item, currency, rate) {
 function labelHtml(item, currency, shopName, opts) {
   const value = barcodeValue(item)
   const price = rateText(item, currency, opts.rate)
+  const showBarcode = opts.barcode && value
   const showCode = opts.code && value
   const showMeta = showCode || price
+  // With no barcode there's a whole label of empty space — switch to a
+  // text-only layout that centres the content and prints it large so the code
+  // and price are readable across a counter.
+  const cls = showBarcode ? 'label' : 'label label--text'
   return `
-    <div class="label">
+    <div class="${cls}">
       ${opts.company && shopName ? `<div class="shop">${escapeHtml(shopName)}</div>` : ''}
       ${opts.itemName ? `<div class="nm">${escapeHtml(item.name || '')}</div>` : ''}
-      ${opts.barcode ? `<div class="bc">${barcodeSvg(value)}</div>` : ''}
+      ${showBarcode ? `<div class="bc">${barcodeSvg(value)}</div>` : ''}
       ${showMeta ? `<div class="meta">
         <span class="code">${showCode ? escapeHtml(value) : ''}</span>
         <span class="price">${escapeHtml(price)}</span>
@@ -79,10 +84,11 @@ function labelHtml(item, currency, shopName, opts) {
     </div>`
 }
 
-// Default label contents — item name off per shop preference, retail rate shown.
+// Default label contents — everything on, retail rate shown. Each can be
+// unticked per print in the "What's on the label?" panel.
 export const DEFAULT_LABEL_OPTS = {
   company: true,
-  itemName: false,
+  itemName: true,
   barcode: true,
   code: true,
   rate: 'customer', // 'none' | 'customer' | 'dealer'
@@ -140,6 +146,16 @@ export function printBarcodeLabels(items, { currency = '₹', shopName = '', lab
       .meta { width: 100%; display: flex; align-items: baseline; justify-content: space-between; gap: 1mm; }
       .code { font-size: 6pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .price { font-size: 7pt; font-weight: 700; white-space: nowrap; }
+
+      /* Text-only label (barcode turned off): centre everything and go big so
+         the code and price read across a counter. Shop name may wrap to two
+         lines here rather than truncate — there's room without the barcode. */
+      .label--text { justify-content: center; gap: 1.4mm; }
+      .label--text .shop { font-size: 7pt; white-space: normal; line-height: 1.05; }
+      .label--text .nm { font-size: 7.5pt; font-weight: 700; }
+      .label--text .meta { flex-direction: column; align-items: center; gap: 0.6mm; }
+      .label--text .code { font-size: 12pt; font-weight: 700; letter-spacing: 0.4px; }
+      .label--text .price { font-size: 18pt; font-weight: 800; line-height: 1; }
     </style>
   </head>
   <body><div class="sheet">${cells}</div></body>
