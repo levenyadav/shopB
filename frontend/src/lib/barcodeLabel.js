@@ -1,4 +1,5 @@
 import JsBarcode from 'jsbarcode'
+import { jsPDF } from 'jspdf'
 
 // Barcode label printing (SPEC §6.2 — Inventory). Renders real Code128 barcodes
 // and prints them as 33mm × 20mm labels, laid out 3-per-row for a thermal label
@@ -155,16 +156,23 @@ function buildLabelsHtml(printable, currency, shopName, opts) {
 </html>`
 }
 
-// Shared front end for both entry points: filter to printable items, warn if
+// Items that actually have something to encode, or null (after telling the user
+// why) if none do.
+function printableOrWarn(items) {
+  const list = items.filter((it) => barcodeValue(it))
+  if (!list.length) {
+    window.alert('This item has no barcode or Item No yet, so there is nothing to print. Add a barcode in Edit first.')
+    return null
+  }
+  return list
+}
+
+// Shared front end for the HTML entry points: filter to printable items, warn if
 // none, else build the HTML and hand it to `sink`.
 function withLabelsHtml(items, { currency = '₹', shopName = '', labelOpts } = {}, sink) {
   const opts = { ...DEFAULT_LABEL_OPTS, ...labelOpts }
-  const printable = items.filter((it) => barcodeValue(it))
-  if (!printable.length) {
-    window.alert('This item has no barcode or Item No yet, so there is nothing to print. Add a barcode in Edit first.')
-    return
-  }
-  sink(buildLabelsHtml(printable, currency, shopName, opts))
+  const printable = printableOrWarn(items)
+  if (printable) sink(buildLabelsHtml(printable, currency, shopName, opts))
 }
 
 // Print an array of items as labels (pass the same item N times for N copies).
@@ -208,4 +216,97 @@ export function previewBarcodeLabels(items, opts = {}) {
     win.document.write(html)
     win.document.close()
   })
+}
+
+// ---------------------------------------------------------------------------
+// PDF output — the reliable path for dedicated label printers (e.g. TSC
+// TTP-244 Pro). Browser "Print" hands the job to the OS print dialog, which
+// keeps overriding the page size with A4/Letter, rotating to fit, and stamping
+// its own header/footer (date, URL, page number) onto the labels. A real PDF
+// has none of that: the page IS 99.2mm × 20mm, so any viewer prints it 1:1.
+// Open it and print at "Actual size" / 100%, paper = the 33×20 label stock.
+// ---------------------------------------------------------------------------
+
+// Same intent as barcodeSvg but onto a canvas, so jsPDF can embed it as an
+// image. Stretched to the label cell on placement (see addImage below) — the
+// horizontal scaling stays uniform, which is all a Code128 scanner needs.
+function barcodePng(value) {
+  const canvas = document.createElement('canvas')
+  JsBarcode(canvas, value, {
+    format: 'CODE128', width: 2, height: 120, displayValue: false, margin: 0,
+  })
+  return canvas.toDataURL('image/png')
+}
+
+// mm geometry, matching the CSS constants above.
+const PDF = { LABEL_W: 33, LABEL_H: 20, COL_GAP: 0.1, SHEET_W: 99.2, PAD: 1.5 }
+
+// Draw one label with its top-left corner at (x, 0) on the current page.
+function drawLabel(doc, x, item, currency, shopName, opts) {
+  const value = barcodeValue(item)
+  const innerX = x + PDF.PAD
+  const innerW = PDF.LABEL_W - PDF.PAD * 2
+  const cx = x + PDF.LABEL_W / 2
+
+  const sym = currency === '₹' ? 'Rs ' : currency
+  const priceField = opts.rate === 'customer' ? 'rate' : opts.rate === 'dealer' ? 'dealer_rate' : null
+  const price = priceField && item[priceField] != null ? `${sym}${item[priceField]}` : ''
+  const showCode = opts.code && value
+
+  const fit = (s, w) => doc.splitTextToSize(String(s || ''), w)[0] || ''
+
+  let top = PDF.PAD
+  if (opts.company && shopName) {
+    doc.setFont('helvetica', 'bold').setFontSize(5)
+    doc.text(fit(shopName.toUpperCase(), innerW), cx, top + 1.5, { align: 'center' })
+    top += 3
+  }
+  if (opts.itemName && item.name) {
+    doc.setFont('helvetica', 'normal').setFontSize(5)
+    doc.text(fit(item.name, innerW), cx, top + 1.5, { align: 'center' })
+    top += 3
+  }
+
+  const bottom = showCode || price ? PDF.LABEL_H - PDF.PAD - 3 : PDF.LABEL_H - PDF.PAD
+  if (opts.barcode && value) {
+    doc.addImage(barcodePng(value), 'PNG', innerX, top + 0.5, innerW, Math.max(2, bottom - top - 0.5), undefined, 'FAST')
+  }
+
+  if (showCode || price) {
+    const baseY = PDF.LABEL_H - PDF.PAD - 0.3
+    if (showCode) {
+      doc.setFont('helvetica', 'normal').setFontSize(5)
+      doc.text(fit(value, innerW - 10), innerX, baseY)
+    }
+    if (price) {
+      doc.setFont('helvetica', 'bold').setFontSize(6.5)
+      doc.text(price, x + PDF.LABEL_W - PDF.PAD, baseY, { align: 'right' })
+    }
+  }
+}
+
+// Build a jsPDF doc: one page per row of 3 labels, each page exactly one label
+// pitch (99.2mm × 20mm). Pass the same item N times for N copies.
+export function buildLabelsPdf(items, { currency = '₹', shopName = '', labelOpts } = {}) {
+  const opts = { ...DEFAULT_LABEL_OPTS, ...labelOpts }
+  const printable = printableOrWarn(items)
+  if (!printable) return null
+
+  // orientation:'landscape' is required — with the default 'portrait', jsPDF
+  // swaps a wide format to portrait (20mm × 99.2mm) and the row prints sideways.
+  const doc = new jsPDF({ unit: 'mm', orientation: 'landscape', format: [PDF.SHEET_W, PDF.LABEL_H] })
+  printable.forEach((item, i) => {
+    const col = i % COLS
+    if (i > 0 && col === 0) doc.addPage([PDF.SHEET_W, PDF.LABEL_H], 'landscape')
+    drawLabel(doc, col * (PDF.LABEL_W + PDF.COL_GAP), item, currency, shopName, opts)
+  })
+  return doc
+}
+
+// Generate and download the label sheet as a PDF.
+export function downloadBarcodeLabelsPdf(items, opts = {}) {
+  const doc = buildLabelsPdf(items, opts)
+  if (!doc) return
+  const first = barcodeValue(items[0]) || 'labels'
+  doc.save(`barcode-${first}.pdf`)
 }
