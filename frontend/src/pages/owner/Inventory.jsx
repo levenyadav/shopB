@@ -3,13 +3,13 @@ import { Link } from 'react-router-dom'
 import {
   IconSearch, IconPlus, IconPencil, IconPhoto, IconX, IconCircleCheck, IconCamera,
   IconDotsVertical, IconBarcode, IconPrinter, IconArchive, IconArchiveOff, IconAlertTriangle,
-  IconTrash, IconEye, IconDownload,
+  IconTrash, IconEye,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty } from '../../lib/format'
 import { round2, stockValue, isDuplicateCompanyNo, splitGstRate, combineGstRate } from '../../lib/helpers'
-import { printBarcodeLabels, previewBarcodeLabels, downloadBarcodeLabelsPdf, barcodeValue, DEFAULT_LABEL_OPTS } from '../../lib/barcodeLabel'
+import { printBarcodeLabels, previewBarcodeLabels, barcodeValue, DEFAULT_LABEL_OPTS } from '../../lib/barcodeLabel'
 import { Button, Field, Select, Textarea, StockBadge, Badge, Spinner, TagsInput, ImagesInput } from '../../components/ui'
 
 // SPEC §6.2 — Inventory master list. Owner sees all items, searches/filters,
@@ -569,18 +569,11 @@ function PrintBarcodeModal({ item, currency, shopName, onClose }) {
     onClose()
   }
 
-  // Opens the label sheet in a tab without printing — quick layout check.
+  // Opens the label sheet in a tab without printing — check the layout, or
+  // Ctrl+P → Save as PDF (paper 99.2mm, scale 100%) to verify sizing.
   function doPreview() {
     const n = copyCount()
     previewBarcodeLabels(Array.from({ length: n }, () => item), { currency, shopName, labelOpts: opts })
-  }
-
-  // Downloads a real 99.2×20mm-per-row PDF. Most reliable on label printers:
-  // no browser print dialog to override the page size or add header/footer.
-  function doPdf() {
-    const n = copyCount()
-    downloadBarcodeLabelsPdf(Array.from({ length: n }, () => item), { currency, shopName, labelOpts: opts })
-    onClose()
   }
 
   return (
@@ -635,23 +628,18 @@ function PrintBarcodeModal({ item, currency, shopName, onClose }) {
           </>
         )}
 
-        <p className="text-xs text-muted">
-          Labels are 3 to a row, each 3.3 × 2 cm. On a label printer (TSC etc.) use
-          <span className="font-medium text-ink"> Save PDF</span> and print that at 100% — it
-          avoids the browser resizing the page. <span className="font-medium text-ink">Print</span>{' '}
-          works for an ordinary printer.
+        <p className="flex items-center gap-1.5 text-xs text-muted">
+          <IconPrinter size={14} /> Labels print 3 to a row, each 3.3 × 2 cm. Use Preview to check
+          the layout before running a roll.
         </p>
 
-        <div className="flex flex-wrap justify-end gap-2 pt-1">
+        <div className="flex justify-end gap-3 pt-1">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
           <Button variant="ghost" onClick={doPreview} disabled={!value}>
             <IconEye size={18} /> Preview
           </Button>
-          <Button variant="ghost" onClick={doPrint} disabled={!value}>
+          <Button onClick={doPrint} disabled={!value}>
             <IconPrinter size={18} /> Print
-          </Button>
-          <Button onClick={doPdf} disabled={!value}>
-            <IconDownload size={18} /> Save PDF
           </Button>
         </div>
       </div>
