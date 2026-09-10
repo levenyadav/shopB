@@ -159,7 +159,7 @@ export function printBarcodeLabels(items, { currency = '₹', shopName = '', lab
          the code and price read across a counter. Every line stays on ONE row
          (ellipsis if too long) and the type sizes step down by line count
          (t2/t3/t4) so nothing is ever clipped by the 20mm label height. */
-      .label--text { justify-content: center; gap: 1mm; }
+      .label--text { justify-content: center; gap: 0.8mm; }
       .label--text .shop,
       .label--text .nm,
       .label--text .code { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; }
@@ -168,19 +168,19 @@ export function printBarcodeLabels(items, { currency = '₹', shopName = '', lab
       .label--text .price { font-weight: 800; line-height: 1; }
 
       .label--text.t2 .shop { font-size: 7pt; }
-      .label--text.t2 .nm { font-size: 9pt; }
+      .label--text.t2 .nm { font-size: 11pt; }
       .label--text.t2 .code { font-size: 12pt; }
-      .label--text.t2 .price { font-size: 18pt; }
+      .label--text.t2 .price { font-size: 15pt; }
 
       .label--text.t3 .shop { font-size: 6.5pt; }
-      .label--text.t3 .nm { font-size: 8pt; }
-      .label--text.t3 .code { font-size: 11pt; }
-      .label--text.t3 .price { font-size: 15pt; }
+      .label--text.t3 .nm { font-size: 10pt; }
+      .label--text.t3 .code { font-size: 10pt; }
+      .label--text.t3 .price { font-size: 13pt; }
 
       .label--text.t4 .shop { font-size: 6pt; }
-      .label--text.t4 .nm { font-size: 7pt; }
-      .label--text.t4 .code { font-size: 9pt; }
-      .label--text.t4 .price { font-size: 13pt; }
+      .label--text.t4 .nm { font-size: 9pt; }
+      .label--text.t4 .code { font-size: 8.5pt; }
+      .label--text.t4 .price { font-size: 11pt; }
     </style>
   </head>
   <body><div class="sheet">${cells}</div></body>
