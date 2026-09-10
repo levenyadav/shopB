@@ -3,13 +3,13 @@ import { Link } from 'react-router-dom'
 import {
   IconSearch, IconPlus, IconPencil, IconPhoto, IconX, IconCircleCheck, IconCamera,
   IconDotsVertical, IconBarcode, IconPrinter, IconArchive, IconArchiveOff, IconAlertTriangle,
-  IconTrash, IconEye,
+  IconTrash,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty } from '../../lib/format'
 import { round2, stockValue, isDuplicateCompanyNo, splitGstRate, combineGstRate } from '../../lib/helpers'
-import { printBarcodeLabels, previewBarcodeLabels, barcodeValue, DEFAULT_LABEL_OPTS } from '../../lib/barcodeLabel'
+import { printBarcodeLabels, barcodeValue, DEFAULT_LABEL_OPTS } from '../../lib/barcodeLabel'
 import { Button, Field, Select, Textarea, StockBadge, Badge, Spinner, TagsInput, ImagesInput } from '../../components/ui'
 
 // SPEC §6.2 — Inventory master list. Owner sees all items, searches/filters,
@@ -561,19 +561,10 @@ function PrintBarcodeModal({ item, currency, shopName, onClose }) {
   const toggle = (key) => (e) => setOpts((o) => ({ ...o, [key]: e.target.checked }))
   const setRate = (rate) => () => setOpts((o) => ({ ...o, rate }))
 
-  const copyCount = () => Math.max(1, Math.min(100, Math.floor(Number(copies) || 0)))
-
   function doPrint() {
-    const n = copyCount()
+    const n = Math.max(1, Math.min(100, Math.floor(Number(copies) || 0)))
     printBarcodeLabels(Array.from({ length: n }, () => item), { currency, shopName, labelOpts: opts })
     onClose()
-  }
-
-  // Opens the label sheet in a tab without printing — check the layout, or
-  // Ctrl+P → Save as PDF (paper 99.2mm, scale 100%) to verify sizing.
-  function doPreview() {
-    const n = copyCount()
-    previewBarcodeLabels(Array.from({ length: n }, () => item), { currency, shopName, labelOpts: opts })
   }
 
   return (
@@ -629,15 +620,11 @@ function PrintBarcodeModal({ item, currency, shopName, onClose }) {
         )}
 
         <p className="flex items-center gap-1.5 text-xs text-muted">
-          <IconPrinter size={14} /> Labels print 3 to a row, each 3.3 × 2 cm. Use Preview to check
-          the layout before running a roll.
+          <IconPrinter size={14} /> Labels print 3 to a row, each 3.3 × 2 cm.
         </p>
 
         <div className="flex justify-end gap-3 pt-1">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button variant="ghost" onClick={doPreview} disabled={!value}>
-            <IconEye size={18} /> Preview
-          </Button>
           <Button onClick={doPrint} disabled={!value}>
             <IconPrinter size={18} /> Print
           </Button>
