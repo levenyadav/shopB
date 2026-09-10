@@ -92,13 +92,14 @@ function labelHtml(item, currency, shopName, opts) {
     </div>`
 }
 
-// Default label contents — everything on, retail rate shown. Each can be
-// unticked per print in the "What's on the label?" panel.
+// Default label contents — shop name, item name and retail rate (the text-only
+// price tag). Barcode and item code start off; tick them per print in the
+// "What's on the label?" panel when a scannable label is wanted.
 export const DEFAULT_LABEL_OPTS = {
   company: true,
   itemName: true,
-  barcode: true,
-  code: true,
+  barcode: false,
+  code: false,
   rate: 'customer', // 'none' | 'customer' | 'dealer'
 }
 
