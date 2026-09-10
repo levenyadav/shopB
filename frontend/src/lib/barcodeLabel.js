@@ -156,31 +156,37 @@ export function printBarcodeLabels(items, { currency = '₹', shopName = '', lab
       .price { font-size: 7pt; font-weight: 700; white-space: nowrap; }
 
       /* Text-only label (barcode turned off): centre everything and go big so
-         the code and price read across a counter. Every line stays on ONE row
-         (ellipsis if too long) and the type sizes step down by line count
-         (t2/t3/t4) so nothing is ever clipped by the 20mm label height. */
-      .label--text { justify-content: center; gap: 0.8mm; }
-      .label--text .shop,
+         the item name and price read across a counter. The company name may
+         wrap to two lines so it's never cut mid-word; the item name and code
+         stay on one line (ellipsis only if genuinely too long). Type sizes
+         step down by line count (t2/t3/t4) so nothing clips the 20mm height. */
+      .label--text { justify-content: center; gap: 0.7mm; }
+      .label--text .shop {
+        white-space: normal; letter-spacing: 0; line-height: 1.02;
+        display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+      }
       .label--text .nm,
       .label--text .code { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; }
-      .label--text .meta { flex-direction: column; align-items: center; gap: 0.5mm; }
+      .label--text .meta { flex-direction: column; align-items: center; gap: 0.4mm; }
       .label--text .code { font-weight: 700; }
       .label--text .price { font-weight: 800; line-height: 1; }
 
-      .label--text.t2 .shop { font-size: 7pt; }
-      .label--text.t2 .nm { font-size: 11pt; }
-      .label--text.t2 .code { font-size: 12pt; }
-      .label--text.t2 .price { font-size: 15pt; }
+      .label--text.t2 .shop { font-size: 6.5pt; }
+      .label--text.t2 .nm { font-size: 13pt; }
+      .label--text.t2 .code { font-size: 11pt; }
+      .label--text.t2 .price { font-size: 12pt; }
 
-      .label--text.t3 .shop { font-size: 6.5pt; }
-      .label--text.t3 .nm { font-size: 10pt; }
-      .label--text.t3 .code { font-size: 10pt; }
-      .label--text.t3 .price { font-size: 13pt; }
+      .label--text.t3 .shop { font-size: 6pt; }
+      .label--text.t3 .nm { font-size: 12pt; }
+      .label--text.t3 .code { font-size: 9.5pt; }
+      .label--text.t3 .price { font-size: 11pt; }
 
-      .label--text.t4 .shop { font-size: 6pt; }
-      .label--text.t4 .nm { font-size: 9pt; }
-      .label--text.t4 .code { font-size: 8.5pt; }
-      .label--text.t4 .price { font-size: 11pt; }
+      /* t4 has all four lines — keep the shop name to one row (ellipsis only for
+         an unusually long name) so the price can never be pushed off. */
+      .label--text.t4 .shop { font-size: 5.5pt; -webkit-line-clamp: 1; white-space: nowrap; text-overflow: ellipsis; }
+      .label--text.t4 .nm { font-size: 10pt; }
+      .label--text.t4 .code { font-size: 8pt; }
+      .label--text.t4 .price { font-size: 9.5pt; }
     </style>
   </head>
   <body><div class="sheet">${cells}</div></body>
