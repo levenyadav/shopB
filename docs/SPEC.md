@@ -134,7 +134,10 @@
 - **Database:** Supabase (PostgreSQL underneath)
 - **Authentication:** Supabase Auth — **mobile number + SMS one-time code (phone
   OTP)** for buyers; email is an optional contact field on the profile, not a
-  login handle. The OTP SMS is sent by Fast2SMS via the `phone-otp` Edge Function.
+  login handle. The OTP SMS is sent by NinzaSMS via the `phone-otp` Edge Function
+  (`NINZASMS_API_KEY` + `NINZASMS_SENDER_ID` secrets). NinzaSMS fills a
+  DLT-approved template, so the function supplies only the 6-digit code — it
+  cannot word the message.
 - **File Storage:** Supabase Storage (item photos)
 - **Real-time:** Supabase Realtime (live order notifications)
 - **Server Logic:** Supabase Edge Functions (PDF generation, QR codes, notifications)

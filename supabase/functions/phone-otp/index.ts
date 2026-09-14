@@ -1,10 +1,10 @@
-// phone-otp — send + verify login OTPs via Fast2SMS, then mint a Supabase session.
+// phone-otp — send + verify login OTPs via NinzaSMS, then mint a Supabase session.
 //
-// Fast2SMS only DELIVERS the SMS; it does not generate or verify codes. So this
+// NinzaSMS only DELIVERS the SMS; it does not generate or verify codes. So this
 // function owns the whole OTP lifecycle:
 //   send   — find the party's EXISTING profile by phone (never self-provision),
 //            generate a 6-digit code, store only its hash in `phone_otps`, and
-//            text it via Fast2SMS's Quick SMS (`q`) route (no DLT / verification).
+//            text it via NinzaSMS's `sms` route (DLT template on their side).
 //   verify — check the stored hash (expiry + attempt-capped), then reuse the
 //            admin generateLink → token_hash trick so the browser can redeem a
 //            real Supabase session with supabase.auth.verifyOtp(). Identity stays
@@ -12,7 +12,8 @@
 //
 // Deploy (public — the caller has no Supabase session yet, so skip the JWT gate):
 //   supabase functions deploy phone-otp --no-verify-jwt
-//   supabase secrets set FAST2SMS_API_KEY=your-fast2sms-api-key
+//   supabase secrets set NINZASMS_API_KEY=your-ninzasms-api-key
+//   supabase secrets set NINZASMS_SENDER_ID=your-ninzasms-user-id
 // (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are injected automatically.)
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -99,7 +100,7 @@ async function handleRegister(admin: any, phone: string, fullName: string) {
 }
 
 // Generate a 6-digit code, store only its hash (with the optional registration
-// name), and text it via Fast2SMS. Shared by login (`send`) and signup
+// name), and text it via NinzaSMS. Shared by login (`send`) and signup
 // (`register`). A non-null fullName marks the row as a REGISTRATION OTP.
 // deno-lint-ignore no-explicit-any
 async function storeAndSendOtp(admin: any, phone: string, fullName: string | null, kind: 'login' | 'registration') {
@@ -113,28 +114,59 @@ async function storeAndSendOtp(admin: any, phone: string, fullName: string | nul
   })
   if (upErr) return json({ error: upErr.message }, 400)
 
-  // Fast2SMS Quick SMS route (`q`): we compose the text ourselves. The built-in
-  // `otp` route needs Fast2SMS "website verification" (status 996) which this
-  // account doesn't have, so `q` is the no-DLT path that works today.
-  const apiKey = Deno.env.get('FAST2SMS_API_KEY')
-  if (!apiKey) return json({ error: 'Server not configured (FAST2SMS_API_KEY).' }, 500)
-  const label = kind === 'registration' ? 'sign-up' : 'login'
-  const smsRes = await fetch('https://www.fast2sms.com/dev/bulkV2', {
-    method: 'POST',
-    headers: { authorization: apiKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      route: 'q',
-      message: `${code} is your ${label} code.`,
-      language: 'english',
-      flash: 0,
-      numbers: phone.slice(-10),   // Fast2SMS wants the bare 10-digit number
-    }),
-  })
-  const smsBody = await smsRes.json().catch(() => ({}))
-  if (!smsRes.ok || smsBody?.return !== true) {
+  const sent = await sendSms(phone, code)
+  if (!sent.ok) {
+    // Log the provider's own words for the shop; the buyer gets plain language.
+    console.error(`NinzaSMS send failed (${kind}):`, sent.detail)
     return json({ error: 'Could not send the code right now. Please try again.' }, 502)
   }
   return json({ ok: true })
+}
+
+// Text a 6-digit code via NinzaSMS. Their `sms` route fills a DLT-approved
+// template on their side, so `variables_values` carries the DIGITS ONLY — we
+// cannot word the message (which is why login vs sign-up isn't distinguished in
+// the text). Returns { ok } plus a provider detail string for the server log.
+async function sendSms(phone: string, code: string): Promise<{ ok: boolean; detail?: string }> {
+  const apiKey = Deno.env.get('NINZASMS_API_KEY')
+  const senderId = Deno.env.get('NINZASMS_SENDER_ID')
+  if (!apiKey || !senderId) {
+    return { ok: false, detail: 'Server not configured (NINZASMS_API_KEY / NINZASMS_SENDER_ID).' }
+  }
+
+  const res = await fetch('https://ninzasms.in.net/auth/send_sms.php', {
+    method: 'POST',
+    headers: {
+      Authorization: apiKey,
+      'Content-Type': 'application/json',
+      // Required in practice, not just recommended: without a browser UA
+      // Cloudflare answers with an HTML challenge instead of JSON.
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    },
+    body: JSON.stringify({
+      sender_id: senderId,
+      numbers: phone.slice(-10),   // NinzaSMS wants the bare 10-digit number
+      rout: 'sms',                 // their API really does spell it "rout"
+      variables_values: code,
+    }),
+  })
+
+  const raw = await res.text()
+  let body: { status?: number; msg?: string; balance?: number } = {}
+  try {
+    body = JSON.parse(raw)
+  } catch {
+    return { ok: false, detail: `HTTP ${res.status}, non-JSON body: ${raw.slice(0, 200)}` }
+  }
+  if (!res.ok || body.status !== 1) {
+    return { ok: false, detail: `HTTP ${res.status} — ${body.msg ?? 'unknown error'}` }
+  }
+  // Balance is in rupees and each SMS costs ~₹0.30 — surface it while it's cheap
+  // to notice, so logins never die silently on an empty wallet.
+  if (typeof body.balance === 'number' && body.balance < 10) {
+    console.warn(`NinzaSMS balance low: ₹${body.balance} — recharge to keep logins working.`)
+  }
+  return { ok: true }
 }
 
 // deno-lint-ignore no-explicit-any

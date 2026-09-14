@@ -8,9 +8,10 @@
 --  * handle_new_user() already copied new.phone and honoured role/full_name; here
 --    we also carry the optional email through from the signup metadata.
 --
--- NOTE (manual, outside this migration): phone OTP is sent by Fast2SMS through
--- the `phone-otp` Edge Function (see migration 024 for the phone_otps table).
--- Set the sender key with:  supabase secrets set FAST2SMS_API_KEY=...
+-- NOTE (manual, outside this migration): phone OTP is sent by an SMS provider
+-- through the `phone-otp` Edge Function (see migration 024 for the phone_otps
+-- table). The provider is now NinzaSMS (it was Fast2SMS when this was written):
+--   supabase secrets set NINZASMS_API_KEY=... NINZASMS_SENDER_ID=...
 
 alter table public.profiles
   add column if not exists email text;

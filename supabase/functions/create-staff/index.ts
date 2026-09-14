@@ -106,7 +106,7 @@ Deno.serve(async (req) => {
   // Exactly like create-party: mint the auth user with a shadow <digits>@dev.local
   // email (email_confirm, no password — the owner vouches for them). We do NOT
   // create a phone-only user, because that requires Supabase's own phone provider
-  // to be enabled — and it isn't here (login OTPs go through Fast2SMS via
+  // to be enabled — and it isn't here (login OTPs go through NinzaSMS via
   // phone-otp, which looks the account up by profile.phone and reuses this same
   // shadow email to mint the session). Staff still sign in by phone OTP only.
   const shadowEmail = `${digits}@dev.local`

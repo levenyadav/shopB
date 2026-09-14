@@ -1,7 +1,8 @@
 -- 024_phone_otp.sql
 -- Pending login OTPs, generated + verified by the `phone-otp` Edge Function.
 --
--- Fast2SMS only SENDS the SMS; it does not generate or verify codes. So we mint
+-- The SMS provider (NinzaSMS; Fast2SMS when this was written) only SENDS the
+-- SMS — it does not generate or verify codes. So we mint
 -- the 6-digit code server-side, store only its SHA-256 hash here (never the code
 -- itself), and check it on verify. On success the row is deleted and a real
 -- Supabase session is minted (admin generateLink → token_hash), exactly like the
