@@ -62,12 +62,19 @@ export default function CounterSale() {
       const i = ls.findIndex((l) => l.id === it.id)
       if (i >= 0) {
         const next = [...ls]
-        next[i] = { ...next[i], quantity: Math.min(next[i].quantity + 1, Number(it.quantity) || next[i].quantity) }
+        // Made-to-order has no stock to run out of — any quantity is billable.
+        next[i] = {
+          ...next[i],
+          quantity: next[i].made_to_order
+            ? next[i].quantity + 1
+            : Math.min(next[i].quantity + 1, Number(it.quantity) || next[i].quantity),
+        }
         return next
       }
       return [...ls, {
         id: it.id, item_no: it.item_no, name: it.name, category_id: it.category_id,
         photo_url: it.photo_url, stock: Number(it.quantity) || 0, hsn_sac: it.hsn_sac ?? null,
+        made_to_order: !!it.made_to_order,
         gst_rate: it.gst_rate ?? null,   // null = the shop's default slab (034)
         rate: Number(it.rate), dealer_rate: Number(it.dealer_rate),
         purchase_rate: Number(it.purchase_rate ?? 0),
@@ -82,7 +89,8 @@ export default function CounterSale() {
     setErr('')
     if (!cart.length) return setErr('Add at least one item to the bill.')
     if (!buyer) return setErr('Choose or add a buyer first.')
-    const over = cart.find((l) => l.quantity > l.stock)
+    // Only stock items can be "over stock"; made-to-order is made after the bill.
+    const over = cart.find((l) => !l.made_to_order && l.quantity > l.stock)
     if (over) return setErr(`Only ${qty(over.stock)} of "${over.name}" in stock.`)
     if (cart.some((l) => l.quantity <= 0 || l.charge < 0)) return setErr('Check the quantities and rates.')
 
@@ -160,7 +168,9 @@ export default function CounterSale() {
                       <p className="truncate text-sm font-medium">{l.name}</p>
                       <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted">
                         <span className="fig">{m(l.charge)}</span> each
-                        {l.quantity > l.stock && <Badge tone="dues">Over stock</Badge>}
+                        {l.made_to_order
+                          ? <Badge tone="peacock">Make to order</Badge>
+                          : l.quantity > l.stock && <Badge tone="dues">Over stock</Badge>}
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
@@ -171,7 +181,9 @@ export default function CounterSale() {
                         className="w-10 rounded border border-line bg-paper-2 py-1 text-center fig text-sm"
                         inputMode="numeric"
                       />
-                      <StepBtn onClick={() => setLine(l.id, { quantity: Math.min(l.stock, l.quantity + 1) })}><IconPlus size={15} /></StepBtn>
+                      <StepBtn onClick={() => setLine(l.id, {
+                        quantity: l.made_to_order ? l.quantity + 1 : Math.min(l.stock, l.quantity + 1),
+                      })}><IconPlus size={15} /></StepBtn>
                     </div>
                     <span className="w-16 text-right fig text-sm font-semibold">{m(round2(l.charge * l.quantity))}</span>
                     <button onClick={() => removeLine(l.id)} className="text-muted hover:text-dues" aria-label="Remove">
@@ -254,8 +266,11 @@ function ItemPicker({ shopId, isOwner, onAdd, currency }) {
     const t = setTimeout(async () => {
       let query = supabase
         .from('items')
-        .select('id, item_no, name, category_id, photo_url, quantity, rate, dealer_rate, hsn_sac, gst_rate' + (isOwner ? ', purchase_rate' : ''))
-        .eq('shop_id', shopId).eq('is_active', true).gt('quantity', 0)
+        .select('id, item_no, name, category_id, photo_url, quantity, rate, dealer_rate, hsn_sac, gst_rate, made_to_order' + (isOwner ? ', purchase_rate' : ''))
+        .eq('shop_id', shopId).eq('is_active', true)
+        // Stock items need stock to sell; a made-to-order item is sourced after
+        // the bill, so it stays sellable at quantity 0 (migration 022).
+        .or('quantity.gt.0,made_to_order.is.true')
         .order('name').limit(24)
       const safe = orSafe(term)
       if (safe) query = query.or(`name.ilike.%${safe}%,item_no.ilike.%${safe}%`)
@@ -269,9 +284,9 @@ function ItemPicker({ shopId, isOwner, onAdd, currency }) {
     setScan(false)
     const { data } = await supabase
       .from('items')
-      .select('id, item_no, name, category_id, photo_url, quantity, rate, dealer_rate, hsn_sac, gst_rate' + (isOwner ? ', purchase_rate' : ''))
+      .select('id, item_no, name, category_id, photo_url, quantity, rate, dealer_rate, hsn_sac, gst_rate, made_to_order' + (isOwner ? ', purchase_rate' : ''))
       .eq('shop_id', shopId).eq('barcode', code).eq('is_active', true).maybeSingle()
-    if (data && Number(data.quantity) > 0) { onAdd(data); setFlash(`Added ${data.name}`); setTimeout(() => setFlash(''), 1500) }
+    if (data && (data.made_to_order || Number(data.quantity) > 0)) { onAdd(data); setFlash(`Added ${data.name}`); setTimeout(() => setFlash(''), 1500) }
     else setFlash(data ? `${data.name} is out of stock` : `No item for code ${code}`)
   }
 
@@ -304,7 +319,9 @@ function ItemPicker({ shopId, isOwner, onAdd, currency }) {
             <p className="mt-2 line-clamp-2 text-sm font-medium leading-snug">{it.name}</p>
             <div className="mt-1 flex items-center justify-between">
               <span className="fig text-sm font-semibold text-peacock">{m(it.rate)}</span>
-              <span className="fig text-xs text-muted">{qty(it.quantity)} left</span>
+              {it.made_to_order
+                ? <span className="text-xs text-muted">Make to order</span>
+                : <span className="fig text-xs text-muted">{qty(it.quantity)} left</span>}
             </div>
           </button>
         ))}
