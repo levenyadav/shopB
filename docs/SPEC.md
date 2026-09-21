@@ -566,24 +566,19 @@ by a trigger on `warehouse_stock` itself (`sync_item_quantity_from_warehouse_sto
 043) — no code path should ever write `items.quantity` directly any more.
 
 All stock movement goes through one function, `adjust_warehouse_stock(item_id,
-warehouse_id, delta)` (043), called from the purchase INSERT/UPDATE/DELETE
-triggers and the sale INSERT trigger. It resolves a NULL warehouse to the
-shop's "Main Warehouse" and **raises (blocking the transaction) if a
-warehouse would go negative** — this is where stock-out is blocked per
-warehouse rather than checked against the item's grand total.
+warehouse_id, delta)` (043/048), called from the purchase INSERT/UPDATE/DELETE
+triggers and — via `allocate_stock_out` (050) — the sale INSERT trigger. It
+resolves a NULL warehouse to the product's own warehouse (`items.warehouse_id`,
+044/045) and then the shop's "Main Warehouse", and **raises (blocking the
+transaction) if a warehouse would go negative**.
 
-Warehouse selection is wired into exactly three places (by design, SPEC-level
+Warehouse selection is wired into exactly two places (by design, SPEC-level
 decision, not a technical limit):
   * **Inventory** — owner corrects any warehouse's quantity directly.
-  * **Purchase Entry** — owner picks the destination warehouse for stock-in.
-  * **Sale approval** (`approve_order`, 043) — owner picks the source
-    warehouse; approval is blocked if it lacks enough stock.
+  * **Purchase Entry** — stock-in lands in the product's own warehouse
+    (`items.warehouse_id`, 044).
 
-**Counter Sale is intentionally NOT wired up** — `sales.warehouse_id` stays
-NULL there, which resolves to Main Warehouse. Known limitation: if new stock
-only ever lands in a different warehouse via Purchase Entry, Main Warehouse
-can run dry and block counter sales even though total stock elsewhere is
-fine.
+**Selling never asks which warehouse** (050). See §7.5c.
 
 ```
 item_id      uuid    REFERENCES items(id) NOT NULL
@@ -592,6 +587,54 @@ quantity     numeric DEFAULT 0 NOT NULL
 updated_at   timestamptz DEFAULT now()
 PRIMARY KEY (item_id, warehouse_id)
 ```
+
+---
+
+### 7.5c Table: sale_allocations (migration 050) — one sale, several warehouses
+
+A sale is **not** tied to one warehouse. Stock for an order is taken from as
+many warehouses as the quantity needs, and each slice is recorded here.
+
+Why: stock is per warehouse but every gate reasons about the total. Before 050,
+with A=100 and B=150 a buyer could order 250 (total is 250) and then **no
+warehouse could fill it** — approval was blocked forever, a dead end (§3). A
+counter bill for the same 250 died mid-transaction with a raw error.
+
+**The split is automatic — nobody is asked to solve it.**
+`allocate_stock_out(sale_id, item_id, preferred_warehouse, quantity)` fills in
+this order, calling `adjust_warehouse_stock` once per warehouse (so each keeps
+its own never-negative guard):
+  1. the preferred warehouse — `sales.warehouse_id`, if a caller passed one;
+  2. the product's own warehouse (`items.warehouse_id`, 044/045);
+  3. the fullest warehouse first, so small pockets of stock are left intact.
+
+It raises one plain-language error if the **shop as a whole** is short, naming
+the shortfall and what to do about it, and the whole sale rolls back.
+
+Because it lives inside `on_sale_insert`, **both sale paths get it from one
+place**: shopfront approval and Counter Sale (`create_counter_sale` is not
+modified). `approve_order`'s `p_warehouse_id` is now only a preference; its
+stock check is shop-wide, matching the check 047 already makes when the order
+is placed. `sales.warehouse_id` is likewise only the preferred warehouse — this
+table is the record of where goods actually left from.
+
+Staff are told the split: `fulfilment_queue.allocations` (a jsonb array of
+`{warehouse, quantity}`) drives the pack card, the board badge, and the printed
+supply slip — "Pick 100 from Warehouse A, 150 from Warehouse B."
+
+There is deliberately **no manual override** of the split. A stock transfer
+between warehouses remains a separate, not-yet-built feature.
+
+```
+sale_id      uuid    REFERENCES sales(id) ON DELETE CASCADE NOT NULL
+warehouse_id uuid    REFERENCES warehouses(id) NOT NULL
+quantity     numeric NOT NULL CHECK (quantity > 0)
+created_at   timestamptz DEFAULT now()
+PRIMARY KEY (sale_id, warehouse_id)
+```
+
+Written only by the trigger; RLS grants owner and staff SELECT and nobody
+INSERT/UPDATE/DELETE (no cost data lives here, so Golden Rule #4 is safe).
 
 ---
 
@@ -778,8 +821,11 @@ Every trigger listed here runs automatically in the database. The owner and staf
 ### 8.2 After INSERT on sales
 ```
 1. IF NOT items.made_to_order:
-      adjust_warehouse_stock(item_id, sales.warehouse_id, -sales.quantity)
-      -> BLOCKS (raises) if that warehouse doesn't have enough (043)
+      allocate_stock_out(sales.id, item_id, sales.warehouse_id, sales.quantity)   (050)
+      -> splits the quantity across warehouses as needed (preferred -> product's
+         own -> fullest first), one adjust_warehouse_stock call per warehouse,
+         writing one sale_allocations row each  (e.g. 250 = 100 from A + 150 from B)
+      -> BLOCKS (raises, whole sale rolls back) only if the SHOP is short overall
       -> items.quantity synced from SUM(warehouse_stock.quantity) by a trigger on warehouse_stock
 2. IF payment_type = 'udhaar':
       profiles.balance_due += sales.amount  (for buyer profile)

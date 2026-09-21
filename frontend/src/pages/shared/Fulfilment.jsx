@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  IconPackage, IconTruckDelivery, IconChecks, IconMapPin,
+  IconPackage, IconTruckDelivery, IconChecks, IconMapPin, IconBuildingWarehouse,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { qty, dateTime } from '../../lib/format'
@@ -129,6 +129,12 @@ function JobCard({ job, detailBase }) {
             {job.location && (
               <span className="inline-flex items-center gap-1">
                 <IconMapPin size={13} /> {job.location}
+              </span>
+            )}
+            {/* Warn on the board itself when a job needs two trips (050). */}
+            {Array.isArray(job.allocations) && job.allocations.length > 1 && (
+              <span className="inline-flex items-center gap-1 font-medium text-ink">
+                <IconBuildingWarehouse size={13} /> {job.allocations.length} warehouses
               </span>
             )}
             <span>{dateTime(job.ordered_at)}</span>

@@ -41,6 +41,12 @@ export default function SupplySlip({ job, shop }) {
         <Hr />
 
         <Line label="Quantity" value={<span className="fig">{qty(job.quantity)} pcs</span>} />
+        {/* A big order can be filled from more than one warehouse (050) — the
+            person walking to the racks needs the split on paper, not just on screen. */}
+        {(Array.isArray(job.allocations) ? job.allocations : []).map((a) => (
+          <Line key={a.warehouse} label={`Pick from ${a.warehouse}`}
+                value={<span className="fig">{qty(a.quantity)} pcs</span>} />
+        ))}
         <Line label="Rate (each)" value={<span className="fig">{money(job.rate_at_order).replace('₹', currency)}</span>} />
         <Line label="Total amount" value={<span className="fig font-bold">{money(job.amount).replace('₹', currency)}</span>} />
         <Line label="Payment" value={PAYMENT_LABEL[job.payment_type] || '—'} />

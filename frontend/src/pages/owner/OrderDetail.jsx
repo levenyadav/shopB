@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   IconArrowLeft, IconPhoto, IconCircleCheck, IconCircleX, IconCircle, IconAlertTriangle,
@@ -46,7 +46,7 @@ export default function OrderDetail() {
       .from('orders')
       .select(
         'id, shop_id, quantity, rate_at_order, amount, status, notes, rejection_reason, buyer_type, order_group_id, ' +
-          'created_at, item_no, item_name, item:items(id, name, photo_url, location, purchase_rate, category_id, quantity, made_to_order, company_no, ' +
+          'created_at, item_no, item_name, item:items(id, name, photo_url, location, purchase_rate, category_id, quantity, made_to_order, company_no, warehouse_id, ' +
           'supplier:suppliers(id, name, contact_person, phone)), ' +
           'buyer:profiles!orders_buyer_id_fkey(id, full_name, phone, balance_due)',
       )
@@ -233,11 +233,14 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
   const [err, setErr] = useState('')
   const [rejecting, setRejecting] = useState(false)
 
-  // Which warehouse this sale draws from (043). A stock item must pick one that
-  // actually has enough — the RPC blocks otherwise (Golden Rule: never let a
-  // warehouse go negative). Made-to-order items skip this entirely.
+  // Where this sale's stock comes from (050). The owner no longer picks: the
+  // server splits the quantity across as many warehouses as it needs (product's
+  // own warehouse first, then the fullest), so an order of 250 against A=100 /
+  // B=150 simply books as 100 + 150. We show that plan read-only — the same
+  // order allocate_stock_out() uses — and only block when the SHOP as a whole is
+  // short. Made-to-order items carry no stock and skip this entirely.
   const [stockByWarehouse, setStockByWarehouse] = useState([])
-  const [warehouseId, setWarehouseId] = useState('')
+  const [stockLoaded, setStockLoaded] = useState(false)
   useEffect(() => {
     if (madeToOrder) return
     let active = true
@@ -245,17 +248,35 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
       .from('warehouse_stock')
       .select('warehouse_id, quantity, warehouse:warehouses(name)')
       .eq('item_id', item.id)
+      .gt('quantity', 0)
       .then(({ data }) => {
         if (!active || !data) return
-        const rows = data.sort((a, b) => Number(b.quantity) - Number(a.quantity))
-        setStockByWarehouse(rows)
-        const enough = rows.find((r) => Number(r.quantity) >= order.quantity)
-        setWarehouseId((enough || rows[0])?.warehouse_id || '')
+        // Mirror allocate_stock_out's fill order: the product's default
+        // warehouse first, then the fullest.
+        setStockByWarehouse(
+          data.sort((a, b) =>
+            (b.warehouse_id === item.warehouse_id) - (a.warehouse_id === item.warehouse_id) ||
+            Number(b.quantity) - Number(a.quantity)),
+        )
+        setStockLoaded(true)
       })
     return () => { active = false }
-  }, [item.id, madeToOrder, order.quantity])
-  const selectedStock = Number(stockByWarehouse.find((r) => r.warehouse_id === warehouseId)?.quantity ?? 0)
-  const warehouseShort = !madeToOrder && (!warehouseId || selectedStock < order.quantity)
+  }, [item.id, item.warehouse_id, madeToOrder])
+
+  // The split the server will make, computed the same way for display only.
+  const plan = useMemo(() => {
+    let left = Number(order.quantity)
+    const lines = []
+    for (const w of stockByWarehouse) {
+      if (left <= 0) break
+      const take = Math.min(left, Number(w.quantity))
+      lines.push({ ...w, take })
+      left -= take
+    }
+    return { lines, short: left }
+  }, [stockByWarehouse, order.quantity])
+  const totalStock = stockByWarehouse.reduce((s, w) => s + Number(w.quantity), 0)
+  const warehouseShort = !madeToOrder && plan.short > 0
 
   // Dealer orders carry a flat shipping & handling fee, pre-filled here so the
   // bill matches the figure the dealer was already shown on their order page.
@@ -311,7 +332,8 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
       p_packing: 0,
       p_other: 0,
       p_notes: null,
-      p_warehouse_id: madeToOrder ? null : warehouseId,
+      // No warehouse: the server auto-splits across warehouses (050).
+      p_warehouse_id: null,
     })
     setBusy(false)
     if (error) { setErr(error.message); return }
@@ -339,28 +361,35 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
         </div>
       )}
 
-      {!madeToOrder && stockByWarehouse.length > 1 && (
+      {/* Where the stock comes from — decided automatically (050). Only shown
+          when it actually splits across warehouses, or when the shop is short:
+          a one-warehouse order needs no explanation. */}
+      {!madeToOrder && stockLoaded && (plan.lines.length > 1 || warehouseShort) && (
         <div>
-          <p className="mb-1.5 text-sm font-medium">Which warehouse is this coming from?</p>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {stockByWarehouse.map((w) => (
-              <button
-                key={w.warehouse_id} type="button" onClick={() => setWarehouseId(w.warehouse_id)}
-                className={`rounded-lg border px-3 py-2.5 text-left text-sm transition ${
-                  warehouseId === w.warehouse_id ? 'border-peacock bg-peacock/10' : 'border-line bg-card hover:text-ink'
-                }`}
-              >
-                <span className="font-medium">{w.warehouse?.name || 'Warehouse'}</span>
-                <span className={`ml-2 fig ${Number(w.quantity) < order.quantity ? 'text-dues' : 'text-muted'}`}>
-                  {qty(w.quantity)} in stock
-                </span>
-              </button>
-            ))}
-          </div>
-          {warehouseShort && (
-            <p className="mt-1.5 text-xs text-dues">
-              Only {qty(selectedStock)} in this warehouse — the order needs {qty(order.quantity)}. Pick a warehouse with enough, or stock up via Purchase Entry.
+          <p className="mb-1.5 text-sm font-medium">Stock for this order</p>
+          {warehouseShort ? (
+            <p className="rounded-lg bg-dues/10 px-4 py-3 text-sm text-dues">
+              Only {qty(totalStock)} pcs in all warehouses together — this order needs{' '}
+              {qty(order.quantity)}. Add {qty(plan.short)} more via Purchase Entry, then approve.
             </p>
+          ) : (
+            <div className="rounded-lg bg-paper-2 px-4 py-3">
+              <p className="text-sm">
+                <span className="fig font-semibold">{qty(order.quantity)}</span> pcs, taken from{' '}
+                {plan.lines.length} warehouses:
+              </p>
+              <ul className="mt-1.5 space-y-1">
+                {plan.lines.map((w) => (
+                  <li key={w.warehouse_id} className="flex justify-between text-sm">
+                    <span>{w.warehouse?.name || 'Warehouse'}</span>
+                    <span className="fig font-medium">
+                      {qty(w.take)} pcs
+                      <span className="ml-2 text-xs text-muted">of {qty(w.quantity)} there</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
       )}

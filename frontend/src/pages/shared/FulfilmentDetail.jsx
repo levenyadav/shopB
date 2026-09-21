@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   IconArrowLeft, IconPhoto, IconMapPin, IconPrinter, IconPackage,
-  IconTruckDelivery, IconBuildingStore, IconChecks, IconShare,
+  IconTruckDelivery, IconBuildingStore, IconChecks, IconShare, IconBuildingWarehouse,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
@@ -53,6 +53,9 @@ export default function FulfilmentDetail({ listPath }) {
 
   const meta = FULFIL_STATUS[job.status] || { label: job.status, tone: 'muted' }
   const isDone = job.status === 'delivered' || job.status === 'picked_up'
+  // Per-warehouse pick lines (050). Empty for made-to-order and for sales
+  // booked before that migration — those fall back to the rack label.
+  const picks = Array.isArray(job.allocations) ? job.allocations : []
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
@@ -77,6 +80,25 @@ export default function FulfilmentDetail({ listPath }) {
           <Row label="Item No" value={<span className="fig">{job.item_no || '—'}</span>} />
           <Row label="Location / Rack" value={<span className="inline-flex items-center gap-1">{job.location ? <><IconMapPin size={15} /> {job.location}</> : '—'}</span>} />
           <Row label="Quantity" value={<span className="fig font-semibold">{qty(job.quantity)} pcs</span>} />
+          {/* Which warehouses the goods actually left from (050). A big order can
+              be filled from more than one, so packing needs both lines. */}
+          {picks.length > 0 && (
+            <Row
+              label={picks.length > 1 ? `Pick from (${picks.length} warehouses)` : 'Pick from'}
+              full={picks.length > 1}
+              value={
+                <span className="inline-flex flex-wrap gap-x-4 gap-y-1">
+                  {picks.map((a) => (
+                    <span key={a.warehouse} className="inline-flex items-center gap-1">
+                      <IconBuildingWarehouse size={15} />
+                      <span className="font-medium">{a.warehouse}</span>
+                      <span className="fig">{qty(a.quantity)} pcs</span>
+                    </span>
+                  ))}
+                </span>
+              }
+            />
+          )}
           {job.notes && <Row label="Buyer note" value={job.notes} full />}
         </dl>
 
@@ -100,7 +122,20 @@ export default function FulfilmentDetail({ listPath }) {
             <p className="mb-4 text-sm text-muted">
               Pull <span className="fig font-medium text-ink">{qty(job.quantity)}</span> pcs of{' '}
               <span className="font-medium text-ink">{job.item_name}</span>
-              {job.location && <> from <span className="font-medium text-ink">{job.location}</span></>}, then mark it packed.
+              {picks.length > 0 ? (
+                <>
+                  {' '}— {picks.map((a, i) => (
+                    <span key={a.warehouse}>
+                      {i > 0 && ' and '}
+                      <span className="fig font-medium text-ink">{qty(a.quantity)}</span> from{' '}
+                      <span className="font-medium text-ink">{a.warehouse}</span>
+                    </span>
+                  ))}
+                </>
+              ) : (
+                job.location && <> from <span className="font-medium text-ink">{job.location}</span></>
+              )}
+              {job.location && picks.length > 0 && <> (rack {job.location})</>}, then mark it packed.
             </p>
             <div className="flex flex-wrap gap-3">
               <Button onClick={() => setStatus('packed')} disabled={busy} className="flex-1">
