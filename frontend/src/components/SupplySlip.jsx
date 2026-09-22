@@ -52,7 +52,16 @@ export default function SupplySlip({ job, shop }) {
         ) : (
           <Line label="Warehouse" value={<span className="text-muted">Not recorded — ask before packing</span>} />
         )}
-        <Line label="Location / Rack" value={job.location || '—'} />
+        {/* The rack label lives on the ITEM (one per product, not per
+            warehouse), so a blank one means nobody has set it in Inventory —
+            say that on the slip rather than printing a bare dash the packer
+            can do nothing with (SPEC §3: no dead ends). */}
+        <Line
+          label="Location / Rack"
+          value={job.location
+            ? job.location
+            : <span className="text-muted">Not set — add it in Inventory</span>}
+        />
 
         <Hr />
 

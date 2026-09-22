@@ -63,7 +63,9 @@ export function buildSlipPdf(job, shop) {
   } else {
     y = row(doc, 'Warehouse', 'Not recorded — ask before packing', y)
   }
-  y = row(doc, 'Location / Rack', job.location || '—', y)
+  // Blank means nobody set the rack on the item in Inventory — say so rather
+  // than printing a dash the packer can do nothing with.
+  y = row(doc, 'Location / Rack', job.location || 'Not set — add it in Inventory', y)
   y = divider(doc, y)
 
   y = row(doc, 'Quantity', `${qty(job.quantity)} pcs`, y)
