@@ -618,9 +618,15 @@ stock check is shop-wide, matching the check 047 already makes when the order
 is placed. `sales.warehouse_id` is likewise only the preferred warehouse — this
 table is the record of where goods actually left from.
 
-Staff are told the split: `fulfilment_queue.allocations` (a jsonb array of
-`{warehouse, quantity}`) drives the pack card, the board badge, and the printed
-supply slip — "Pick 100 from Warehouse A, 150 from Warehouse B."
+Staff are told the split by a separate view, **`fulfilment_picks`**
+(`sale_id, warehouse_id, warehouse, quantity`, owner/staff only, same
+postgres-owned + role-gated pattern as `fulfilment_queue`). It drives the pack
+card, the board badge and the printed supply slip — "Pick 100 from Warehouse A,
+150 from Warehouse B." It is deliberately NOT a column on `fulfilment_queue`:
+that view has drifted on the live database beyond any definition in this repo,
+and `create or replace view` can only append columns, never drop or reorder one,
+so any rebuild of it from here fails. A standalone view needs to know nothing
+about its shape and cannot damage it.
 
 There is deliberately **no manual override** of the split. A stock transfer
 between warehouses remains a separate, not-yet-built feature.

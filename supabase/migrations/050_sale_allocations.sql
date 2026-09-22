@@ -36,9 +36,12 @@
 -- moves from "does this warehouse have enough" to "does the shop have enough",
 -- which is the same question 047 already answers when the order is placed.
 --
--- Staff finally get told where to pick: fulfilment_queue gains the per-warehouse
--- lines, so the pack card can read "Pick 100 from Warehouse A, 150 from B".
+-- Staff finally get told where to pick: the new fulfilment_picks view carries
+-- the per-warehouse lines, so the pack card can read "Pick 100 from Warehouse A,
+-- 150 from B". fulfilment_queue itself is deliberately left alone — see §5.
 -- =============================================================================
+
+begin;
 
 -- ---------------------------------------------------------------------------
 -- 1. sale_allocations — which warehouses a sale actually drew from.
@@ -350,51 +353,39 @@ grant execute on function
   to authenticated;
 
 -- ---------------------------------------------------------------------------
--- 5. fulfilment_queue — tell staff WHERE to pick from. The view exposed only
---    items.location (a display label); a split job was impossible to pack
+-- 5. fulfilment_picks — tell staff WHERE to pick from. The pack board showed
+--    only items.location (a rack label); a split job was impossible to pack
 --    correctly because nothing said the goods sit in two places.
 --
---    `allocations` is a jsonb array [{warehouse, quantity}, ...], warehouse
---    name included so the board needs no extra query and no read on
---    warehouses. The view stays postgres-owned (security_invoker = false) with
---    the role gate in the WHERE clause, exactly as 008 built it — so staff can
---    see the pick lines without any new base-table grant. Empty array for
---    made-to-order and for sales booked before this migration.
+--    This is a SEPARATE view on purpose. The obvious move was to add an
+--    `allocations` column to fulfilment_queue, but that view has drifted on the
+--    live database beyond any definition in this repo (027 added packed_by_name;
+--    more columns exist that no migration here describes). `create or replace
+--    view` can only APPEND columns and never drop one, so rebuilding it from any
+--    definition we can see here fails — "cannot change name of view column",
+--    then "cannot drop columns from view". A standalone view needs to know
+--    nothing about that shape, cannot damage it, and keeps working however
+--    fulfilment_queue drifts next. The frontend reads it with one extra query
+--    keyed by sale_id.
 --
---    This is 027's definition (008 plus packed_by_name) with ONE column ADDED AT
---    THE END. `create or replace view` can only append: reordering or renaming
---    an existing column fails with "cannot change name of view column". So if a
---    later migration adds another column here, append it after `allocations`.
+--    Same safety pattern as fulfilment_queue itself (008): postgres-owned
+--    (security_invoker = false) so it bypasses base-table RLS, with the role
+--    gate in the WHERE clause. Only owner/staff of the shop get rows, and no
+--    cost or profit column lives here (Golden Rule #4).
 -- ---------------------------------------------------------------------------
-create or replace view public.fulfilment_queue
+create or replace view public.fulfilment_picks
 with (security_invoker = false) as
 select
-  f.id, f.shop_id, f.order_id, f.sale_id, f.status,
-  f.packed_at, f.completed_at, f.delivery_note, f.created_at,
-  o.quantity, o.rate_at_order, o.amount, o.notes, o.buyer_type,
-  o.created_at as ordered_at,
-  i.name as item_name, i.item_no, i.location, i.photo_url,
-  b.full_name as buyer_name, b.phone as buyer_phone,
-  s.payment_type,
-  pk.full_name as packed_by_name,
-  coalesce(a.allocations, '[]'::jsonb) as allocations
-from public.fulfilment f
-join public.orders   o on o.id = f.order_id
-join public.items    i on i.id = o.item_id
-join public.profiles b on b.id = o.buyer_id
-left join public.sales    s  on s.id  = f.sale_id
-left join public.profiles pk on pk.id = f.packed_by
-left join lateral (
-  select jsonb_agg(jsonb_build_object('warehouse', w.name, 'quantity', sa.quantity)
-                   order by sa.quantity desc, w.name) as allocations
-    from public.sale_allocations sa
-    join public.warehouses w on w.id = sa.warehouse_id
-   where sa.sale_id = f.sale_id
-) a on true
+  sa.sale_id,
+  sa.warehouse_id,
+  w.name as warehouse,
+  sa.quantity
+from public.sale_allocations sa
+join public.warehouses w on w.id = sa.warehouse_id
 where public.auth_role() in ('owner','staff')
-  and f.shop_id = public.auth_shop_id();
+  and w.shop_id = public.auth_shop_id();
 
-grant select on public.fulfilment_queue to authenticated;
+grant select on public.fulfilment_picks to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 6. Backfill. Sales that recorded a warehouse drew it all from that one, so
@@ -411,3 +402,5 @@ select s.id, s.warehouse_id, s.quantity, s.created_at
    and coalesce(i.made_to_order, false) = false
    and s.quantity > 0
 on conflict (sale_id, warehouse_id) do nothing;
+
+commit;

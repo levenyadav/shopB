@@ -30,9 +30,21 @@ export default function FulfilmentDetail({ listPath }) {
     setErr('')
     const { data, error } = await supabase
       .from('fulfilment_queue').select('*').eq('id', id).maybeSingle()
-    if (error) setErr(error.message)
-    else if (!data) setMissing(true)
-    else setJob(data)
+    if (error) { setErr(error.message); return }
+    if (!data) { setMissing(true); return }
+
+    // Which warehouses this job's stock came from (050) — a second query
+    // rather than a column on fulfilment_queue, see that migration's §5.
+    let picks = []
+    if (data.sale_id) {
+      const { data: rows } = await supabase
+        .from('fulfilment_picks')
+        .select('warehouse, quantity')
+        .eq('sale_id', data.sale_id)
+        .order('quantity', { ascending: false })
+      picks = rows ?? []
+    }
+    setJob({ ...data, picks })
   }
   useEffect(() => { load() }, [id])
 
@@ -55,7 +67,7 @@ export default function FulfilmentDetail({ listPath }) {
   const isDone = job.status === 'delivered' || job.status === 'picked_up'
   // Per-warehouse pick lines (050). Empty for made-to-order and for sales
   // booked before that migration — those fall back to the rack label.
-  const picks = Array.isArray(job.allocations) ? job.allocations : []
+  const picks = job.picks ?? []
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">

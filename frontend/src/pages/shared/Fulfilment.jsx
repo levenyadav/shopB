@@ -29,8 +29,21 @@ export default function Fulfilment({ detailBase }) {
       .from('fulfilment_queue')
       .select('*')
       .order('created_at', { ascending: true })
-    if (error) setErr(error.message)
-    else setJobs(data ?? [])
+    if (error) { setErr(error.message); return }
+    const rows = data ?? []
+
+    // Which warehouses each job's stock came from (050) — a second query
+    // rather than a column on fulfilment_queue, see that migration's §5.
+    const saleIds = rows.map((j) => j.sale_id).filter(Boolean)
+    let picksBySale = {}
+    if (saleIds.length) {
+      const { data: picks } = await supabase
+        .from('fulfilment_picks')
+        .select('sale_id, warehouse, quantity')
+        .in('sale_id', saleIds)
+      for (const p of picks ?? []) (picksBySale[p.sale_id] ||= []).push(p)
+    }
+    setJobs(rows.map((j) => ({ ...j, picks: picksBySale[j.sale_id] ?? [] })))
   }
 
   useEffect(() => {
@@ -132,9 +145,9 @@ function JobCard({ job, detailBase }) {
               </span>
             )}
             {/* Warn on the board itself when a job needs two trips (050). */}
-            {Array.isArray(job.allocations) && job.allocations.length > 1 && (
+            {job.picks?.length > 1 && (
               <span className="inline-flex items-center gap-1 font-medium text-ink">
-                <IconBuildingWarehouse size={13} /> {job.allocations.length} warehouses
+                <IconBuildingWarehouse size={13} /> {job.picks.length} warehouses
               </span>
             )}
             <span>{dateTime(job.ordered_at)}</span>

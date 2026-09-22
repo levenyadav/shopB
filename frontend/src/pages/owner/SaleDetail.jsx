@@ -26,6 +26,7 @@ export default function SaleDetail() {
   const [sale, setSale] = useState(null)
   const [invoice, setInvoice] = useState(null)
   const [bill, setBill] = useState(null)
+  const [picks, setPicks] = useState([])
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -57,6 +58,17 @@ export default function SaleDetail() {
     setBill(data || null)
   }
 
+  // Which warehouses this sale's stock actually came from (050) — a reprinted
+  // supply slip must show the same split the packer was given.
+  async function loadPicks(saleRow) {
+    const { data } = await supabase
+      .from('fulfilment_picks')
+      .select('warehouse, quantity')
+      .eq('sale_id', saleRow.id)
+      .order('quantity', { ascending: false })
+    setPicks(data ?? [])
+  }
+
   async function load() {
     setErr('')
     const { data, error } = await supabase
@@ -73,7 +85,7 @@ export default function SaleDetail() {
       .maybeSingle()
     if (error) setErr(error.message)
     else if (!data) setMissing(true)
-    else { setSale(data); loadInvoice(data); loadBill(data) }
+    else { setSale(data); loadInvoice(data); loadBill(data); loadPicks(data) }
   }
   useEffect(() => { load() }, [id])
 
@@ -101,6 +113,7 @@ export default function SaleDetail() {
     amount: sale.amount,
     payment_type: sale.payment_type,
     notes: sale.order?.notes,
+    picks,
   }
 
   // Customer Tax Invoice (Golden Rule #4: buyer-facing figures only). Bill-To

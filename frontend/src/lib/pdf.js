@@ -56,7 +56,7 @@ export function buildSlipPdf(job, shop) {
   y = row(doc, 'Quantity', `${qty(job.quantity)} pcs`, y)
   // One order can be filled from several warehouses (050) — the shared/printed
   // slip carries the split so whoever packs it knows where to walk.
-  for (const a of Array.isArray(job.allocations) ? job.allocations : []) {
+  for (const a of job.picks ?? []) {
     y = row(doc, `Pick from ${a.warehouse}`, `${qty(a.quantity)} pcs`, y)
   }
   y = row(doc, 'Rate (each)', fmtAmount(job.rate_at_order, currency), y)

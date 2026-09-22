@@ -43,7 +43,7 @@ export default function SupplySlip({ job, shop }) {
         <Line label="Quantity" value={<span className="fig">{qty(job.quantity)} pcs</span>} />
         {/* A big order can be filled from more than one warehouse (050) — the
             person walking to the racks needs the split on paper, not just on screen. */}
-        {(Array.isArray(job.allocations) ? job.allocations : []).map((a) => (
+        {(job.picks ?? []).map((a) => (
           <Line key={a.warehouse} label={`Pick from ${a.warehouse}`}
                 value={<span className="fig">{qty(a.quantity)} pcs</span>} />
         ))}
