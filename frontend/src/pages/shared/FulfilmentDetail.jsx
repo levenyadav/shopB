@@ -36,15 +36,19 @@ export default function FulfilmentDetail({ listPath }) {
     // Which warehouses this job's stock came from (050) — a second query
     // rather than a column on fulfilment_queue, see that migration's §5.
     let picks = []
+    let picksErr = ''
     if (data.sale_id) {
-      const { data: rows } = await supabase
+      const { data: rows, error: pErr } = await supabase
         .from('fulfilment_picks')
         .select('warehouse, quantity')
         .eq('sale_id', data.sale_id)
         .order('quantity', { ascending: false })
+      // Never swallow this — a failed lookup must not look like a job that
+      // simply has no warehouse to pick from.
+      if (pErr) picksErr = pErr.message
       picks = rows ?? []
     }
-    setJob({ ...data, picks })
+    setJob({ ...data, picks, picksErr })
   }
   useEffect(() => { load() }, [id])
 
@@ -68,6 +72,7 @@ export default function FulfilmentDetail({ listPath }) {
   // Per-warehouse pick lines (050). Empty for made-to-order and for sales
   // booked before that migration — those fall back to the rack label.
   const picks = job.picks ?? []
+  const picksErr = job.picksErr || ''
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
@@ -107,6 +112,18 @@ export default function FulfilmentDetail({ listPath }) {
                       <span className="fig">{qty(a.quantity)} pcs</span>
                     </span>
                   ))}
+                </span>
+              }
+            />
+          )}
+          {picks.length === 0 && picksErr && (
+            <Row
+              label="Pick from"
+              full
+              value={
+                <span className="text-saffron">
+                  Couldn’t load the warehouse breakdown — {picksErr}. Pack from the rack
+                  label above.
                 </span>
               }
             />

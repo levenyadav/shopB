@@ -21,10 +21,12 @@ export const FULFIL_STATUS = {
 export default function Fulfilment({ detailBase }) {
   const [jobs, setJobs] = useState(null)
   const [err, setErr] = useState('')
+  const [picksErr, setPicksErr] = useState('')
   const [showDone, setShowDone] = useState(false)
 
   async function load() {
     setErr('')
+    setPicksErr('')
     const { data, error } = await supabase
       .from('fulfilment_queue')
       .select('*')
@@ -37,10 +39,14 @@ export default function Fulfilment({ detailBase }) {
     const saleIds = rows.map((j) => j.sale_id).filter(Boolean)
     let picksBySale = {}
     if (saleIds.length) {
-      const { data: picks } = await supabase
+      const { data: picks, error: pErr } = await supabase
         .from('fulfilment_picks')
         .select('sale_id, warehouse, quantity')
         .in('sale_id', saleIds)
+      // Never swallow this: without it the board silently drops the "pick from"
+      // line and looks like a shop with no warehouses, which is exactly how a
+      // missing migration 050 used to present itself.
+      if (pErr) setPicksErr(pErr.message)
       for (const p of picks ?? []) (picksBySale[p.sale_id] ||= []).push(p)
     }
     setJobs(rows.map((j) => ({ ...j, picks: picksBySale[j.sale_id] ?? [] })))
@@ -71,6 +77,12 @@ export default function Fulfilment({ detailBase }) {
   return (
     <div className="space-y-6">
       {err && <p className="rounded-lg bg-dues/10 px-4 py-3 text-sm text-dues">{err}</p>}
+      {picksErr && (
+        <p className="rounded-lg bg-saffron/10 px-4 py-3 text-sm text-saffron">
+          Can’t show which warehouse to pick from — {picksErr}. Packing still works from
+          the rack label on each card.
+        </p>
+      )}
 
       <Section
         title="Waiting to pack" count={toPack.length} tone="saffron"
