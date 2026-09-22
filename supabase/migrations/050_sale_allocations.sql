@@ -350,7 +350,7 @@ grant execute on function
   to authenticated;
 
 -- ---------------------------------------------------------------------------
--- 5. fulfilment_queue — tell staff WHERE to pick from. 008's view exposed only
+-- 5. fulfilment_queue — tell staff WHERE to pick from. The view exposed only
 --    items.location (a display label); a split job was impossible to pack
 --    correctly because nothing said the goods sit in two places.
 --
@@ -360,6 +360,11 @@ grant execute on function
 --    the role gate in the WHERE clause, exactly as 008 built it — so staff can
 --    see the pick lines without any new base-table grant. Empty array for
 --    made-to-order and for sales booked before this migration.
+--
+--    This is 027's definition (008 plus packed_by_name) with ONE column ADDED AT
+--    THE END. `create or replace view` can only append: reordering or renaming
+--    an existing column fails with "cannot change name of view column". So if a
+--    later migration adds another column here, append it after `allocations`.
 -- ---------------------------------------------------------------------------
 create or replace view public.fulfilment_queue
 with (security_invoker = false) as
@@ -371,12 +376,14 @@ select
   i.name as item_name, i.item_no, i.location, i.photo_url,
   b.full_name as buyer_name, b.phone as buyer_phone,
   s.payment_type,
+  pk.full_name as packed_by_name,
   coalesce(a.allocations, '[]'::jsonb) as allocations
 from public.fulfilment f
 join public.orders   o on o.id = f.order_id
 join public.items    i on i.id = o.item_id
 join public.profiles b on b.id = o.buyer_id
-left join public.sales s on s.id = f.sale_id
+left join public.sales    s  on s.id  = f.sale_id
+left join public.profiles pk on pk.id = f.packed_by
 left join lateral (
   select jsonb_agg(jsonb_build_object('warehouse', w.name, 'quantity', sa.quantity)
                    order by sa.quantity desc, w.name) as allocations
