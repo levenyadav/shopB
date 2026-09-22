@@ -38,16 +38,26 @@ export default function CounterSale() {
   const [buyer, setBuyer] = useState(null) // { id, full_name, phone, role }
   const [payment, setPayment] = useState('cash')
   const [tendered, setTendered] = useState('')
+  const [discount, setDiscount] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [done, setDone] = useState(null)  // completed bill → receipt screen
 
   const buyerType = buyer?.role === 'dealer' ? 'dealer' : 'customer'
   const total = useMemo(() => round2(cart.reduce((s, l) => s + l.charge * l.quantity, 0)), [cart])
-  const profit = useMemo(
+  const listProfit = useMemo(
     () => round2(cart.reduce((s, l) => s + lineProfit(l.charge, l.purchase_rate ?? 0, l.quantity), 0)),
     [cart],
   )
+
+  // A flat-rupee discount on the whole bill (051), the same shape the shopfront
+  // approval uses: the lines stay at their gross rate and the discount prints as
+  // its own line — it comes out of the margin, never out of the item's price.
+  const discountRaw = round2(Math.max(0, Number(discount) || 0))
+  const discountNum = Math.min(discountRaw, total)
+  const discountOver = discountRaw > total
+  const payable = round2(total - discountNum)
+  const profit = round2(listProfit - discountNum)
 
   // Re-price every line when the buyer (and thus the tier) changes — dealer pays
   // dealer_rate, customer pays retail. A manual charge override is reset here; the
@@ -93,6 +103,7 @@ export default function CounterSale() {
     const over = cart.find((l) => !l.made_to_order && l.quantity > l.stock)
     if (over) return setErr(`Only ${qty(over.stock)} of "${over.name}" in stock.`)
     if (cart.some((l) => l.quantity <= 0 || l.charge < 0)) return setErr('Check the quantities and rates.')
+    if (discountOver) return setErr(`The discount cannot be more than the ${m(total)} bill. Lower it and try again.`)
 
     setBusy(true)
     const { data, error } = await supabase.rpc('create_counter_sale', {
@@ -102,6 +113,7 @@ export default function CounterSale() {
       p_lines: cart.map((l) => ({
         item_id: l.id, category_id: l.category_id, quantity: l.quantity, rate: l.charge,
       })),
+      p_discount: discountNum,
     })
     setBusy(false)
     if (error) { setErr(error.message); return }
@@ -119,7 +131,9 @@ export default function CounterSale() {
       buyer_state_name: buyer.state_name ?? null, buyer_state_code: buyer.state_code ?? null,
       payment_type: payment,
       tendered: payment === 'cash' && tendered !== '' ? Number(tendered) : null,
-      total,
+      subtotal: total,
+      discount: discountNum,
+      total: payable,
       lines: cart.map((l) => ({
         item_name: l.name, item_no: l.item_no, hsn_sac: l.hsn_sac ?? null,
         gst_rate: l.gst_rate ?? null, quantity: l.quantity,
@@ -129,7 +143,7 @@ export default function CounterSale() {
   }
 
   function reset() {
-    setDone(null); setCart([]); setBuyer(null); setPayment('cash'); setTendered(''); setErr('')
+    setDone(null); setCart([]); setBuyer(null); setPayment('cash'); setTendered(''); setDiscount(''); setErr('')
   }
 
   if (done) return <ReceiptScreen bill={done} shop={shop} currency={currency} onNew={reset} home={home} navigate={navigate} />
@@ -167,7 +181,25 @@ export default function CounterSale() {
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{l.name}</p>
                       <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted">
-                        <span className="fig">{m(l.charge)}</span> each
+                        {/* The owner may re-price a line at the counter (SPEC
+                            §6.5a). A walk-in bill is quoted and rung up in the
+                            same breath, so there is no earlier rate to protect
+                            (#5); staff bill at the tier rate, read-only. */}
+                        {isOwner ? (
+                          <span className="flex items-center gap-1">
+                            <span>{currency}</span>
+                            <input
+                              value={l.charge}
+                              onChange={(e) => setLine(l.id, { charge: Math.max(0, Number(e.target.value) || 0) })}
+                              className="w-16 rounded border border-line bg-paper-2 px-1 py-0.5 text-right fig text-xs text-ink"
+                              inputMode="decimal"
+                              aria-label={`Rate for ${l.name}`}
+                            />
+                            <span>each</span>
+                          </span>
+                        ) : (
+                          <><span className="fig">{m(l.charge)}</span> each</>
+                        )}
                         {l.made_to_order
                           ? <Badge tone="peacock">Make to order</Badge>
                           : l.quantity > l.stock && <Badge tone="dues">Over stock</Badge>}
@@ -195,7 +227,28 @@ export default function CounterSale() {
             )}
 
             <div className="space-y-1 border-t border-line px-4 py-3">
-              <Row label="Total" value={<span className="fig text-lg font-bold">{m(total)}</span>} />
+              {cart.length > 0 && (
+                <>
+                  <Row label="Subtotal" value={<span className="fig text-sm">{m(total)}</span>} />
+                  <div className="flex items-center justify-between gap-3 py-1">
+                    <span className="text-sm text-muted">Discount on this bill</span>
+                    <Field
+                      prefix={currency} inputMode="decimal" type="number" min={0} step="1"
+                      placeholder="0" className="w-28 py-1.5 text-right"
+                      value={discount} onChange={(e) => setDiscount(e.target.value)}
+                    />
+                  </div>
+                  {discountOver && (
+                    <p className="pb-1 text-right text-xs text-dues">
+                      More than the {m(total)} bill — lower it to continue.
+                    </p>
+                  )}
+                  {discountNum > 0 && (
+                    <Row label="Less : Discount" value={<span className="fig text-sm font-semibold text-profit">− {m(discountNum)}</span>} />
+                  )}
+                </>
+              )}
+              <Row label={discountNum > 0 ? 'To pay' : 'Total'} value={<span className="fig text-lg font-bold">{m(payable)}</span>} />
               {isOwner && cart.length > 0 && (
                 <Row label="Profit (owner only)" value={<span className="fig text-sm font-semibold text-profit">{m(profit)}</span>} />
               )}
@@ -220,10 +273,10 @@ export default function CounterSale() {
             </div>
             {payment === 'udhaar' && (
               <p className="mt-2 text-xs text-saffron">
-                Adds {m(total)} to {buyer?.full_name || 'the buyer'}’s udhaar. A named buyer is required — clear it later via Payment In.
+                Adds {m(payable)} to {buyer?.full_name || 'the buyer'}’s udhaar. A named buyer is required — clear it later via Payment In.
               </p>
             )}
-            {payment === 'cash' && total > 0 && (
+            {payment === 'cash' && payable > 0 && (
               <div className="mt-3 flex items-center justify-between gap-3">
                 <Field
                   label="Cash given" prefix={currency} inputMode="numeric" className="w-28"
@@ -231,7 +284,7 @@ export default function CounterSale() {
                 />
                 <div className="pt-5 text-right">
                   <p className="text-xs text-muted">Change</p>
-                  <p className="fig font-semibold">{tendered === '' ? '—' : m(Math.max(0, Number(tendered) - total))}</p>
+                  <p className="fig font-semibold">{tendered === '' ? '—' : m(Math.max(0, Number(tendered) - payable))}</p>
                 </div>
               </div>
             )}
@@ -239,9 +292,9 @@ export default function CounterSale() {
 
           {err && <p className="rounded-lg border border-dues/40 bg-dues/5 px-3 py-2 text-sm text-dues">{err}</p>}
 
-          <Button onClick={confirm} disabled={busy || !cart.length} className="w-full py-3 text-base">
+          <Button onClick={confirm} disabled={busy || !cart.length || discountOver} className="w-full py-3 text-base">
             {busy ? <Spinner /> : <IconCheck size={18} />}
-            {busy ? 'Saving…' : `Complete sale · ${m(total)}`}
+            {busy ? 'Saving…' : `Complete sale · ${m(payable)}`}
           </Button>
         </div>
       </div>
@@ -490,6 +543,7 @@ function ReceiptScreen({ bill, shop, currency, onNew, home, navigate }) {
         name: l.item_name, item_no: l.item_no, hsn: l.hsn_sac,
         gstRate: l.gst_rate, qty: l.quantity, rate: l.rate,
       })),
+      bill: { discount_amount: bill.discount || 0 },
       gstRate: shop?.gst_rate,
     })
     printInvoice(model)

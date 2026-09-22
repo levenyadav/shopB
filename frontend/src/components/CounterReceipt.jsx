@@ -90,6 +90,14 @@ export default function CounterReceipt({ bill, shop }) {
             ))}
           </>
         )}
+        {/* A bill discount (051) is shown against the gross subtotal, exactly as
+            the A5 invoice prints it. bill.total is already net of it. */}
+        {Number(bill.discount) > 0 && (
+          <>
+            <Line label="Subtotal" value={<span className="fig">{m(bill.subtotal ?? bill.total)}</span>} />
+            <Line label="Less : Discount" value={<span className="fig">− {m(bill.discount)}</span>} />
+          </>
+        )}
         <Line label="Total amount" value={<span className="fig text-base font-bold">{m(bill.total)}</span>} />
         <Line label="Payment" value={PAYMENT_LABEL[bill.payment_type] || '—'} />
         {bill.payment_type === 'cash' && bill.tendered != null && (

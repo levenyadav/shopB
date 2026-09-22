@@ -229,6 +229,7 @@ function ApprovedTracker({ order }) {
 function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onApproved, onRejected }) {
   const [pay, setPay] = useState('cash')
   const [shipping, setShipping] = useState('')
+  const [discount, setDiscount] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [rejecting, setRejecting] = useState(false)
@@ -316,8 +317,14 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
   // #5), and shipping is a pass-through charge that carries no profit.
   const subtotal = Number(order.amount)
   const shippingNum = round2(Number(shipping) || 0)
-  const grandTotal = round2(subtotal + shippingNum)
-  const effProfit = round2(listProfit)
+  // A discount is a flat rupee amount off THIS line's bill. It never edits the
+  // per-piece rate (#5) — it prints as its own "Less : Discount" line and comes
+  // straight out of the margin (#6). Capped at the subtotal, as the RPC does.
+  const discountRaw = round2(Math.max(0, Number(discount) || 0))
+  const discountNum = Math.min(discountRaw, subtotal)
+  const discountOver = discountRaw > subtotal
+  const grandTotal = round2(subtotal - discountNum + shippingNum)
+  const effProfit = round2(listProfit - discountNum)
 
   async function approve() {
     setBusy(true); setErr('')
@@ -327,7 +334,7 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
     const { error } = await supabase.rpc('approve_order', {
       p_order_id: order.id,
       p_payment_type: pay,
-      p_discount: 0,
+      p_discount: discountNum,
       p_shipping: shippingNum,
       p_packing: 0,
       p_other: 0,
@@ -397,12 +404,27 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
       {/* Bill total — the price the buyer already saw, plus any shipping fee. */}
       <dl className="space-y-1.5 rounded-lg bg-paper-2 px-4 py-3 text-sm">
         <BillRow label="Subtotal" value={cf(subtotal)} />
+        {discountNum > 0 && <BillRow label="Less : Discount" value={`− ${cf(discountNum)}`} tone="profit" />}
         {shippingNum > 0 && <BillRow label="Shipping & handling" value={cf(shippingNum)} />}
         <div className="flex items-center justify-between border-t border-line pt-1.5 font-semibold">
           <span>Grand total</span>
           <span className="fig">{cf(grandTotal)}</span>
         </div>
       </dl>
+
+      <Field
+        label="Discount on this bill"
+        prefix={currency}
+        type="number"
+        min={0}
+        step="1"
+        inputMode="decimal"
+        placeholder="0"
+        value={discount}
+        onChange={(e) => setDiscount(e.target.value)}
+        error={discountOver ? `A discount cannot be more than the ${cf(subtotal)} subtotal. Lower it to continue.` : undefined}
+        hint="Taken off this bill and printed as its own line — the per-piece rate the buyer saw is never changed. It comes out of your profit."
+      />
 
       <Field
         label="Shipping & handling fee"
@@ -450,7 +472,7 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
       {err && <p className="rounded-lg bg-dues/10 px-3 py-2 text-sm text-dues">{err}</p>}
 
       <div className="flex gap-3">
-        <Button onClick={approve} disabled={busy || costMissing || warehouseShort} className="flex-1">
+        <Button onClick={approve} disabled={busy || costMissing || warehouseShort || discountOver} className="flex-1">
           {busy ? <><Spinner /> Approving…</> : <><IconCircleCheck size={18} /> Approve &amp; record sale</>}
         </Button>
         <Button variant="danger" onClick={() => setRejecting(true)} disabled={busy}>
@@ -465,7 +487,7 @@ function BillRow({ label, value, tone }) {
   return (
     <div className="flex items-center justify-between">
       <span className="text-muted">{label}</span>
-      <span className={`fig ${tone === 'dues' ? 'text-dues' : 'text-ink'}`}>{value}</span>
+      <span className={`fig ${tone === 'dues' ? 'text-dues' : tone === 'profit' ? 'text-profit' : 'text-ink'}`}>{value}</span>
     </div>
   )
 }

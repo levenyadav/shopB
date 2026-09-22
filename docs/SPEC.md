@@ -293,6 +293,13 @@ Every read of `purchases` that totals anything must filter `deleted_at is null`.
 - Search by buyer name or item name
 - View full order detail on tap
 - Owner approves or rejects with one tap
+- **Finalize bill at approval (023):** on the approve panel the owner may add a
+  flat-rupee **discount** on this bill and a **shipping & handling** fee (dealer
+  orders pre-fill the flat fee). The per-piece rate the buyer saw is never
+  edited — the discount prints as its own `Less : Discount` line, comes out of
+  the recorded profit, and reduces the udhaar raised; shipping/packing/other are
+  pass-through and carry no profit. All of it goes through the single
+  `approve_order` RPC, stored in `order_bills` for the invoice
 - Rejection reason field (optional)
 - Approved order auto-creates Sale record
 - Stock decreases on approval (database trigger)
@@ -325,12 +332,24 @@ shopfront order needed. (Routes `/owner/counter-sale`, `/staff/counter-sale`.)
 - Multi-item cart with per-line quantity and live running total
 - Buyer is **always named** — search an existing customer/dealer, or quick-add
   (name + phone + type) inline. Quick-added buyers have **no login**
-- Rate auto-selects by buyer type (dealer → dealer rate, else retail); owner may
-  override a line price
-- Payment type at the counter: Cash (with change calculator) / UPI / Udhaar
-  (udhaar requires the named buyer; it raises their running balance)
+- Rate auto-selects by buyer type (dealer → dealer rate, else retail); **owner**
+  may override a line price inline (staff bill at the tier rate). A walk-in is
+  quoted and billed in the same breath, so there is no earlier rate to protect
+- **Bill discount (051):** a flat-rupee discount on the whole bill, the same
+  shape as shopfront approval — lines stay at their gross rate, the discount
+  prints as its own `Less : Discount` line and comes out of the margin, never
+  out of the item's price. Capped at the bill subtotal. The RPC apportions it
+  across the lines in proportion to each line's amount (last line absorbs the
+  rounding remainder), reduces each line's profit by its share, writes one
+  `order_bills` row per line and **one** ledger debit for the whole bill (on
+  udhaar the buyer's `balance_due` drops with it). A bill with no discount is
+  written exactly as before — no `order_bills` rows, no extra ledger entry
+- Payment type at the counter: Cash (with change calculator on the **net**
+  payable) / UPI / Udhaar (udhaar requires the named buyer; it raises their
+  running balance by the net)
 - **Complete sale** writes the whole bill **atomically** via the
-  `create_counter_sale(p_buyer_id, p_buyer_type, p_payment_type, p_lines)` RPC —
+  `create_counter_sale(p_buyer_id, p_buyer_type, p_payment_type, p_lines,
+  p_discount)` RPC —
   one transaction creates one `orders`+`sales` row per line (`source='counter'`,
   shared `bill_id`). The existing sale trigger drops stock, books the
   ledger/udhaar, sets the order `approved` and opens a `pending_pack` fulfilment
