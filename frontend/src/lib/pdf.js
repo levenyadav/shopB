@@ -50,15 +50,23 @@ export function buildSlipPdf(job, shop) {
 
   y = row(doc, 'Item', job.item_name || '—', y)
   y = row(doc, 'Item No', job.item_no || '—', y)
+
+  // Where to walk, in walking order: warehouse first, then the rack inside it.
+  // One order can be filled from several warehouses (050), so the printed slip
+  // carries the split. With nothing recorded we say so rather than leaving the
+  // field blank — mirrors SupplySlip.jsx exactly, the two must never diverge.
+  const picks = job.picks ?? []
+  if (picks.length > 0) {
+    for (const a of picks) {
+      y = row(doc, `Warehouse — ${a.warehouse}`, `${qty(a.quantity)} pcs`, y, { bold: true })
+    }
+  } else {
+    y = row(doc, 'Warehouse', 'Not recorded — ask before packing', y)
+  }
   y = row(doc, 'Location / Rack', job.location || '—', y)
   y = divider(doc, y)
 
   y = row(doc, 'Quantity', `${qty(job.quantity)} pcs`, y)
-  // One order can be filled from several warehouses (050) — the shared/printed
-  // slip carries the split so whoever packs it knows where to walk.
-  for (const a of job.picks ?? []) {
-    y = row(doc, `Pick from ${a.warehouse}`, `${qty(a.quantity)} pcs`, y)
-  }
   y = row(doc, 'Rate (each)', fmtAmount(job.rate_at_order, currency), y)
   y = row(doc, 'Total amount', fmtAmount(job.amount, currency), y, { bold: true })
   y = row(doc, 'Payment', PAYMENT_LABEL[job.payment_type] || '—', y)

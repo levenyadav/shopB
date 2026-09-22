@@ -10,6 +10,7 @@ export default function SupplySlip({ job, shop }) {
   if (!job) return null
   const currency = shop?.currency_symbol || '₹'
   const ref = job.order_id?.slice(0, 8).toUpperCase()
+  const picks = job.picks ?? []
 
   return (
     <div className="print-slip">
@@ -36,17 +37,26 @@ export default function SupplySlip({ job, shop }) {
 
         <Line label="Item" value={job.item_name} />
         <Line label="Item No" value={<span className="fig">{job.item_no || '—'}</span>} />
+
+        {/* Where to walk, in walking order: warehouse first, then the rack
+            inside it. A big order can be filled from more than one warehouse
+            (050), and the person at the racks needs that split on paper, not
+            just on screen. When no split was recorded (made-to-order, or a sale
+            booked before 050) we SAY so — a printed slip must never leave the
+            warehouse field silently blank. */}
+        {picks.length > 0 ? (
+          picks.map((a) => (
+            <Line key={a.warehouse} label={`Warehouse — ${a.warehouse}`}
+                  value={<span className="fig font-bold">{qty(a.quantity)} pcs</span>} />
+          ))
+        ) : (
+          <Line label="Warehouse" value={<span className="text-muted">Not recorded — ask before packing</span>} />
+        )}
         <Line label="Location / Rack" value={job.location || '—'} />
 
         <Hr />
 
         <Line label="Quantity" value={<span className="fig">{qty(job.quantity)} pcs</span>} />
-        {/* A big order can be filled from more than one warehouse (050) — the
-            person walking to the racks needs the split on paper, not just on screen. */}
-        {(job.picks ?? []).map((a) => (
-          <Line key={a.warehouse} label={`Pick from ${a.warehouse}`}
-                value={<span className="fig">{qty(a.quantity)} pcs</span>} />
-        ))}
         <Line label="Rate (each)" value={<span className="fig">{money(job.rate_at_order).replace('₹', currency)}</span>} />
         <Line label="Total amount" value={<span className="fig font-bold">{money(job.amount).replace('₹', currency)}</span>} />
         <Line label="Payment" value={PAYMENT_LABEL[job.payment_type] || '—'} />
