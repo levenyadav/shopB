@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
-  IconArrowLeft, IconPhoto, IconPrinter, IconMapPin, IconReceipt2,
+  IconPhoto, IconPrinter, IconMapPin, IconReceipt2,
   IconShare, IconEye, IconPencil, IconDeviceFloppy, IconX,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
@@ -13,6 +13,7 @@ import { buildInvoiceModel, viewInvoice, printInvoice } from '../../lib/invoiceT
 import { Button, Badge, Spinner } from '../../components/ui'
 import SupplySlip from '../../components/SupplySlip'
 import { PAYMENT_META } from './Sales'
+import { BackLink } from '../../components/BackButton'
 
 // Every column a sale LINE needs here — used both for the line the URL names
 // and for its siblings on the same bill.
@@ -214,9 +215,7 @@ export default function SaleDetail() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
-      <Link to="/owner/sales" className="no-print inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-ink">
-        <IconArrowLeft size={17} /> All sales
-      </Link>
+      <BackLink className="no-print" />
 
       {/* Sale summary */}
       <div className="relative rounded-lg border border-line bg-card p-5">

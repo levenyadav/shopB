@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   IconSearch, IconBarcode, IconPlus, IconMinus, IconTrash, IconUserPlus,
-  IconCheck, IconPrinter, IconX, IconShoppingCart, IconArrowLeft, IconFileInvoice,
+  IconCheck, IconPrinter, IconX, IconShoppingCart, IconFileInvoice,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
@@ -13,6 +13,7 @@ import { Button, Field, Spinner, Badge, PhotoThumb } from '../../components/ui'
 import BarcodeScanner from '../../components/BarcodeScanner'
 import CounterReceipt from '../../components/CounterReceipt'
 import { buildInvoiceModel, printInvoice } from '../../lib/invoiceTemplate'
+import { BackLink } from '../../components/BackButton'
 
 // POS / Counter Sale (SPEC §6.5a — walk-in billing). Owner OR staff ring up a
 // walk-in on the spot: scan/search items into a cart, pick or quick-add a named
@@ -150,11 +151,7 @@ export default function CounterSale() {
 
   return (
     <div className="mx-auto max-w-5xl">
-      {!isOwner && (
-        <button onClick={() => navigate(home)} className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-ink">
-          <IconArrowLeft size={16} /> Back to Fulfilment
-        </button>
-      )}
+      <BackLink className="mb-4" />
 
       <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
         {/* ---- Left: item picker ---- */}

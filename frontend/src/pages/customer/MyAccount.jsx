@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { money } from '../../lib/format'
 import { Button, Field, Textarea, Spinner } from '../../components/ui'
+import { BackLink } from '../../components/BackButton'
 
 // SPEC §10.2 — buyer's profile + running balance (udhaar). Balance is maintained
 // by triggers (sale on udhaar raises it; Payment In clears it) — read-only here.
@@ -18,6 +19,7 @@ export default function MyAccount() {
 
   return (
     <div className="mx-auto max-w-xl space-y-5">
+      <BackLink />
       <div>
         <h1 className="font-[var(--font-display)] text-3xl font-bold">My account</h1>
         <p className="text-muted">Your details and running balance with the shop.</p>

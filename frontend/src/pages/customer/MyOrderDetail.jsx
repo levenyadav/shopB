@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
-  IconArrowLeft, IconPhoto, IconCircleCheck, IconCircle, IconCircleX,
+  IconPhoto, IconCircleCheck, IconCircle, IconCircleX,
   IconEye, IconPrinter,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
@@ -10,6 +10,7 @@ import { money, qty, dateTime } from '../../lib/format'
 import { round2, itemGstRate, gstBreakupByRate, shippingFeeFor } from '../../lib/helpers'
 import { buildInvoiceModel, viewInvoice, printInvoice } from '../../lib/invoiceTemplate'
 import { Button, OrderStatusBadge, Spinner } from '../../components/ui'
+import { BackLink } from '../../components/BackButton'
 
 // SPEC §10.2 — a buyer's view of one order: what they bought, the locked rate,
 // and how far it's progressed. Read-only; status is driven by the owner/staff.
@@ -166,9 +167,7 @@ export default function MyOrderDetail() {
 
   return (
     <div className="mx-auto max-w-xl space-y-5">
-      <Link to="/orders" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-ink">
-        <IconArrowLeft size={17} /> My orders
-      </Link>
+      <BackLink />
 
       <div className="rounded-lg border border-line bg-card p-5">
         <div className="flex items-center justify-between gap-3">

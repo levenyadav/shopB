@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
-  IconPhoto, IconArrowLeft, IconCircleCheck, IconShoppingCartPlus,
+  IconPhoto, IconCircleCheck, IconShoppingCartPlus,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
@@ -11,6 +11,7 @@ import { money } from '../../lib/format'
 import { rateForBuyer, round2 } from '../../lib/helpers'
 import { Button, Textarea, Badge, Spinner } from '../../components/ui'
 import QtyStepper from '../../components/QtyStepper'
+import { BackLink } from '../../components/BackButton'
 
 // SPEC §6.3 — item detail + add to cart. Buyers see the price for their tier
 // (dealer → Dealer Rate, else Rate); purchase rate is never exposed. Items go
@@ -61,9 +62,7 @@ export default function ItemDetail() {
 
   return (
     <div className="space-y-5">
-      <Link to="/" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-ink">
-        <IconArrowLeft size={17} /> Back to shop
-      </Link>
+      <BackLink />
 
       <div className="grid gap-6 md:grid-cols-2">
         {/* Photo gallery */}

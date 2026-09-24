@@ -54,7 +54,7 @@ export default function StaffLayout() {
             >
               <IconMenu2 size={22} />
             </button>
-            <BackButton hideAt="md" />
+            <BackButton />
             <h1 className="truncate font-[var(--font-display)] text-xl font-bold">{title}</h1>
           </div>
 

@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
-  IconPhoto, IconTrash, IconShoppingCart, IconLogin2, IconArrowLeft,
-} from '@tabler/icons-react'
+  IconPhoto, IconTrash, IconShoppingCart, IconLogin2, } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
@@ -11,6 +10,7 @@ import { money } from '../../lib/format'
 import { rateForBuyer, round2 } from '../../lib/helpers'
 import { Button, Spinner } from '../../components/ui'
 import QtyStepper from '../../components/QtyStepper'
+import { BackLink } from '../../components/BackButton'
 
 // SPEC §6.3 — the cart. A cart is client-side only (CartContext); nothing touches
 // the books here. On checkout we insert one 'pending' orders row per line, all
@@ -58,9 +58,7 @@ export default function Cart() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
-      <Link to="/" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-ink">
-        <IconArrowLeft size={17} /> Continue shopping
-      </Link>
+      <BackLink />
 
       <div>
         <h1 className="font-[var(--font-display)] text-3xl font-bold">Your cart</h1>

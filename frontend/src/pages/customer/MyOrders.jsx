@@ -6,6 +6,7 @@ import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
 import { shippingFeeFor } from '../../lib/helpers'
 import { OrderStatusBadge, Spinner } from '../../components/ui'
+import { BackLink } from '../../components/BackButton'
 
 // SPEC §6.3 / §10.2 — buyer's own order list, newest first. RLS (orders_buyer_
 // select) already scopes rows to this buyer, so no extra filter is needed.
@@ -61,6 +62,7 @@ export default function MyOrders() {
 
   return (
     <div className="space-y-5">
+      <BackLink />
       <div>
         <h1 className="font-[var(--font-display)] text-3xl font-bold">My orders</h1>
         <p className="text-muted">Track every order you’ve placed and its status.</p>

@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { IconMoodEmpty } from '@tabler/icons-react'
 import { useShop } from '../../context/ShopContext'
 import { Spinner } from '../../components/ui'
+import { BackLink } from '../../components/BackButton'
 
 // SPEC §10 — public footer pages (About / Privacy / Terms / Contact). Content is
 // owner-editable from Settings and stored as a text column on `shops`, read here
@@ -21,6 +22,7 @@ export default function ContentPage({ column, title }) {
 
   return (
     <div className="mx-auto max-w-2xl">
+      <BackLink className="mb-4" />
       <h1 className="mb-6 font-[var(--font-display)] text-3xl font-bold text-ink">{title}</h1>
       {body ? (
         <article className="space-y-4 text-ink/90">{renderMarkdown(body)}</article>

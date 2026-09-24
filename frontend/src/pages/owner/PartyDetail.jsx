@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
-  IconArrowLeft, IconPhone, IconCashBanknote, IconDeviceFloppy,
+  IconPhone, IconCashBanknote, IconDeviceFloppy,
   IconFileText, IconBrandWhatsapp, IconAlertTriangle, IconCheck,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
@@ -12,6 +12,7 @@ import { round2, toE164India } from '../../lib/helpers'
 import { buildStatementModel, viewStatement, printStatement } from '../../lib/statementTemplate'
 import { Badge, Spinner, Button, Field, Textarea, Select } from '../../components/ui'
 import LedgerTable from '../../components/LedgerTable'
+import { BackLink } from '../../components/BackButton'
 
 // SPEC §6.7 / §6.10 — Party detail. Everything the owner needs about one party
 // on ONE screen (SPEC §3.2): who they are, what they have done with the shop,
@@ -135,9 +136,7 @@ export default function PartyDetail() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-5">
-      <Link to="/owner/parties" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-ink">
-        <IconArrowLeft size={17} /> All parties
-      </Link>
+      <BackLink />
 
       <PartyHeader
         summary={summary} type={type} currency={currency} shop={shop}

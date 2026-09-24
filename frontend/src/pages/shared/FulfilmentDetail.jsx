@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
-  IconArrowLeft, IconPhoto, IconMapPin, IconPrinter, IconPackage,
+  IconPhoto, IconMapPin, IconPrinter, IconPackage,
   IconTruckDelivery, IconBuildingStore, IconChecks, IconShare, IconBuildingWarehouse,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
@@ -12,6 +12,7 @@ import { buildSlipPdf, sharePdf } from '../../lib/pdf'
 import { Button, Textarea, Badge, Spinner } from '../../components/ui'
 import SupplySlip from '../../components/SupplySlip'
 import { FULFIL_STATUS } from './Fulfilment'
+import { BackLink } from '../../components/BackButton'
 
 // SPEC §6.6 / §13 — one packing job. Staff packs, then owner/staff marks how it
 // left (delivered or picked up). Status side-effects (timestamps, order status)
@@ -76,9 +77,7 @@ export default function FulfilmentDetail({ listPath }) {
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
-      <Link to={listPath} className="no-print inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-ink">
-        <IconArrowLeft size={17} /> All fulfilment
-      </Link>
+      <BackLink className="no-print" />
 
       {/* Job summary */}
       <div className="rounded-lg border border-line bg-card p-5">

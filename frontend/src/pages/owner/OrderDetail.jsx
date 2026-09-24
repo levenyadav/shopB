@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
-  IconArrowLeft, IconPhoto, IconCircleCheck, IconCircleX, IconCircle, IconAlertTriangle,
+  IconPhoto, IconCircleCheck, IconCircleX, IconCircle, IconAlertTriangle,
   IconBrandWhatsapp, IconCopy, IconCheck, IconMessage2Question,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
@@ -12,6 +12,7 @@ import { lineProfit, round2, toE164India, shippingFeeFor } from '../../lib/helpe
 import {
   Button, Textarea, Field, OrderStatusBadge, InProcessBadge, IN_PROCESS_STATUSES, Badge, Spinner,
 } from '../../components/ui'
+import { BackLink } from '../../components/BackButton'
 
 // Owner-side fulfilment timeline (post-approval). orders.status advances
 // approved → packed → delivered/picked_up via the fulfilment trigger, so it
@@ -81,9 +82,7 @@ export default function OrderDetail() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
-      <Link to="/owner/orders" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-ink">
-        <IconArrowLeft size={17} /> All orders
-      </Link>
+      <BackLink />
 
       {/* Order summary */}
       <div className="relative rounded-lg border border-line bg-card p-5">
