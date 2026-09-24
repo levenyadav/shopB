@@ -14,6 +14,16 @@ import { Button, Badge, Spinner } from '../../components/ui'
 import SupplySlip from '../../components/SupplySlip'
 import { PAYMENT_META } from './Sales'
 
+// Every column a sale LINE needs here — used both for the line the URL names
+// and for its siblings on the same bill.
+const SALE_COLS =
+  'id, order_id, bill_id, quantity, rate_charged, amount, purchase_rate, profit, payment_type, buyer_type, created_at, ' +
+  'item_no, item_name, ' +
+  'item:items(name, item_no, photo_url, location, hsn_sac, gst_rate), ' +
+  'buyer:profiles!sales_buyer_id_fkey(full_name, phone, balance_due, gstin, address, state_name, state_code), ' +
+  'category:categories(name), ' +
+  'order:orders!sales_order_id_fkey(notes, created_at, order_group_id)'
+
 // SPEC §6.5 / §13.1 / §15 — one sale, with the owner-only economics (cost,
 // profit) plus the two buyer-facing documents: the internal Order Supply Slip
 // (reprintable) and the customer Tax Invoice. The sale itself is the immutable
@@ -26,6 +36,7 @@ export default function SaleDetail() {
   const [sale, setSale] = useState(null)
   const [invoice, setInvoice] = useState(null)
   const [bill, setBill] = useState(null)
+  const [lines, setLines] = useState([])
   const [picks, setPicks] = useState([])
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState(null)
@@ -47,15 +58,48 @@ export default function SaleDetail() {
     setInvoice(data || null)
   }
 
+  // A bill is rarely one line. A counter bill shares `bill_id` (014) and a cart
+  // shares `orders.order_group_id` (018) — one invoice number over several sale
+  // rows. The sale the URL names is only the FIRST of them (party_bills hands
+  // out the earliest row as detail_ref), so load its siblings: this page and the
+  // Tax Invoice must show the whole document, not one line of it.
+  async function loadLines(saleRow) {
+    let rows = null
+    if (saleRow.bill_id) {
+      const { data } = await supabase.from('sales').select(SALE_COLS)
+        .eq('bill_id', saleRow.bill_id).order('created_at')
+      rows = data
+    } else if (saleRow.order?.order_group_id) {
+      const { data: ords } = await supabase.from('orders')
+        .select('id').eq('order_group_id', saleRow.order.order_group_id)
+      const ids = (ords ?? []).map((o) => o.id)
+      if (ids.length > 1) {
+        const { data } = await supabase.from('sales').select(SALE_COLS)
+          .in('order_id', ids).order('created_at')
+        rows = data
+      }
+    }
+    const billLines = rows?.length ? rows : [saleRow]
+    setLines(billLines)
+    loadBill(billLines)
+  }
+
   // The finalize-bill breakdown (023): discount + shipping/packing/other, shown
-  // as adjustment lines on the invoice. Only shopfront sales carry one.
-  async function loadBill(saleRow) {
+  // as adjustment lines on the invoice. order_bills holds one row PER LINE (a
+  // cart discount is split across its lines, 051), so a bill's charges are the
+  // sum over its lines.
+  async function loadBill(billLines) {
     const { data } = await supabase
       .from('order_bills')
       .select('subtotal, discount_amount, shipping_fee, packing_fee, other_charge, grand_total')
-      .eq('sale_id', saleRow.id)
-      .maybeSingle()
-    setBill(data || null)
+      .in('sale_id', billLines.map((l) => l.id))
+    if (!data?.length) { setBill(null); return }
+    const sum = (k) => round2(data.reduce((t, r) => t + Number(r[k] || 0), 0))
+    setBill({
+      subtotal: sum('subtotal'), discount_amount: sum('discount_amount'),
+      shipping_fee: sum('shipping_fee'), packing_fee: sum('packing_fee'),
+      other_charge: sum('other_charge'), grand_total: sum('grand_total'),
+    })
   }
 
   // Which warehouses this sale's stock actually came from (050) — a reprinted
@@ -73,21 +117,14 @@ export default function SaleDetail() {
     setErr('')
     const { data, error } = await supabase
       .from('sales')
-      .select(
-        'id, order_id, bill_id, quantity, rate_charged, amount, purchase_rate, profit, payment_type, buyer_type, created_at, ' +
-          'item_no, item_name, ' +
-          'item:items(name, item_no, photo_url, location, hsn_sac, gst_rate), ' +
-          'buyer:profiles!sales_buyer_id_fkey(full_name, phone, balance_due, gstin, address, state_name, state_code), ' +
-          'category:categories(name), ' +
-          'order:orders!sales_order_id_fkey(notes, created_at)',
-      )
+      .select(SALE_COLS)
       .eq('id', id)
       .maybeSingle()
     if (error) setErr(error.message)
     else if (!data) setMissing(true)
-    else { setSale(data); loadInvoice(data); loadBill(data); loadPicks(data) }
+    else { setSale(data); loadInvoice(data); loadLines(data); loadPicks(data) }
   }
-  useEffect(() => { load() }, [id])
+  useEffect(() => { setLines([]); load() }, [id])
 
   if (missing) return <Empty>Sale not found. <Link to="/owner/sales" className="font-medium text-peacock hover:underline">Back to sales</Link>.</Empty>
   if (err && !sale) return <Empty>{err}</Empty>
@@ -95,7 +132,16 @@ export default function SaleDetail() {
 
   const item = sale.item
   const pay = PAYMENT_META[sale.payment_type] || { label: sale.payment_type, tone: 'muted' }
-  const cost = round2(Number(sale.purchase_rate || 0) * Number(sale.quantity || 0))
+
+  // Whole bill, not just the line in the URL. Until the siblings land, the one
+  // line we have IS the bill as far as the page is concerned.
+  const billLines = lines.length ? lines : [sale]
+  const multi = billLines.length > 1
+  const sumBy = (fn) => round2(billLines.reduce((t, l) => t + fn(l), 0))
+  const billQty = sumBy((l) => Number(l.quantity || 0))
+  const billAmount = sumBy((l) => Number(l.amount || 0))
+  const cost = sumBy((l) => Number(l.purchase_rate || 0) * Number(l.quantity || 0))
+  const billProfit = sumBy((l) => Number(l.profit || 0))
 
   // Reshape the sale into the shape SupplySlip expects (it was built for the
   // fulfilment_queue view). Buyer-facing figures only — never cost/profit.
@@ -130,10 +176,10 @@ export default function SaleDetail() {
     shop,
     buyer: billTo,
     invoice: { invoice_no: invoice?.invoice_no, date: sale.created_at, notes: invoice?.notes },
-    lines: [{
-      name: item?.name || sale.item_name, item_no: item?.item_no || sale.item_no,
-      hsn: item?.hsn_sac, gstRate: item?.gst_rate, qty: sale.quantity, rate: sale.rate_charged,
-    }],
+    lines: billLines.map((l) => ({
+      name: l.item?.name || l.item_name, item_no: l.item?.item_no || l.item_no,
+      hsn: l.item?.hsn_sac, gstRate: l.item?.gst_rate, qty: l.quantity, rate: l.rate_charged,
+    })),
     bill,
     gstRate: shop?.gst_rate,
   })
@@ -178,7 +224,9 @@ export default function SaleDetail() {
         <div className="flex items-center gap-4">
           <Thumb url={item?.photo_url} />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-lg font-semibold">{item?.name || sale.item_name || 'Item'}</p>
+            <p className="truncate text-lg font-semibold">
+              {multi ? `Bill of ${billLines.length} items` : (item?.name || sale.item_name || 'Item')}
+            </p>
             <p className="text-xs text-muted">
               Sold {dateTime(sale.created_at)}
               {invoice?.invoice_no && <> · <span className="fig">{invoice.invoice_no}</span></>}
@@ -192,19 +240,63 @@ export default function SaleDetail() {
               <Badge tone={sale.buyer_type === 'dealer' ? 'peacock' : 'muted'} className="ml-1.5">{sale.buyer_type}</Badge>
             </>} />
           <Row label="Phone" value={<span className="fig">{sale.buyer?.phone || '—'}</span>} />
-          <Row label="Category" value={sale.category?.name || '—'} />
-          <Row label="Item No" value={<span className="fig">{item?.item_no || sale.item_no || '—'}</span>} />
-          <Row label="Rack / Location" value={<span className="inline-flex items-center gap-1">{item?.location ? <><IconMapPin size={15} /> {item.location}</> : '—'}</span>} />
           <Row label="Payment" value={<Badge tone={pay.tone}>{pay.label}</Badge>} />
-          <Row label="Quantity" value={<span className="fig">{qty(sale.quantity)} pcs</span>} />
-          <Row label={`${sale.buyer_type === 'dealer' ? 'Dealer ' : ''}rate (each)`} value={<span className="fig">{money(sale.rate_charged).replace('₹', currency)}</span>} />
-          <Row label="Amount" value={<span className="fig font-semibold">{money(sale.amount).replace('₹', currency)}</span>} />
+          {!multi && <>
+            <Row label="Category" value={sale.category?.name || '—'} />
+            <Row label="Item No" value={<span className="fig">{item?.item_no || sale.item_no || '—'}</span>} />
+            <Row label="Rack / Location" value={<span className="inline-flex items-center gap-1">{item?.location ? <><IconMapPin size={15} /> {item.location}</> : '—'}</span>} />
+            <Row label={`${sale.buyer_type === 'dealer' ? 'Dealer ' : ''}rate (each)`} value={<span className="fig">{money(sale.rate_charged).replace('₹', currency)}</span>} />
+          </>}
+          <Row label="Quantity" value={<span className="fig">{qty(billQty)} pcs</span>} />
+          <Row label={multi ? 'Bill total' : 'Amount'} value={<span className="fig font-semibold">{money(billAmount).replace('₹', currency)}</span>} />
         </dl>
+
+        {/* Every line on this bill. Rate is the one locked at order time
+            (Golden Rule #5) — the same figure the invoice prints. */}
+        {multi && (
+          <div className="mt-5 overflow-x-auto">
+            <table className="w-full min-w-[26rem] text-sm">
+              <thead>
+                <tr className="border-b border-line text-xs text-muted">
+                  <th className="py-2 text-left font-normal">Item</th>
+                  <th className="py-2 text-right font-normal">Qty</th>
+                  <th className="py-2 text-right font-normal">Rate</th>
+                  <th className="py-2 text-right font-normal">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {billLines.map((l) => (
+                  <tr key={l.id} className="border-b border-line/60">
+                    <td className="py-2 pr-3">
+                      <span className="text-ink">{l.item?.name || l.item_name || 'Item'}</span>
+                      <span className="ml-2 fig text-xs text-muted">{l.item?.item_no || l.item_no || ''}</span>
+                    </td>
+                    <td className="fig py-2 text-right">{qty(l.quantity)}</td>
+                    <td className="fig py-2 text-right">{money(l.rate_charged).replace('₹', currency)}</td>
+                    <td className="fig py-2 text-right font-medium">{money(l.amount).replace('₹', currency)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td className="py-2 text-xs text-muted" colSpan={3}>Goods total</td>
+                  <td className="fig py-2 text-right font-semibold">{money(billAmount).replace('₹', currency)}</td>
+                </tr>
+                {Number(bill?.discount_amount) > 0 && (
+                  <tr>
+                    <td className="py-1 text-xs text-muted" colSpan={3}>Less discount</td>
+                    <td className="fig py-1 text-right">−{money(bill.discount_amount).replace('₹', currency)}</td>
+                  </tr>
+                )}
+              </tfoot>
+            </table>
+          </div>
+        )}
 
         {/* Owner-only economics (Golden Rules #3, #4 — never on slip or invoice) */}
         <div className="mt-4 flex flex-wrap items-center gap-4 rounded-lg bg-paper-2 px-4 py-3 text-sm">
           <span className="text-muted">Cost <span className="fig text-ink">{money(cost).replace('₹', currency)}</span></span>
-          <span className="text-muted">Profit <span className="fig font-semibold text-profit">{money(sale.profit).replace('₹', currency)}</span></span>
+          <span className="text-muted">Profit <span className="fig font-semibold text-profit">{money(billProfit).replace('₹', currency)}</span></span>
           {sale.payment_type === 'udhaar' && (
             <span className="text-muted">Buyer udhaar now <span className="fig text-dues">{money(sale.buyer?.balance_due).replace('₹', currency)}</span></span>
           )}
@@ -223,11 +315,14 @@ export default function SaleDetail() {
           <IconPencil size={18} /> Edit billing
         </Button>
         <span className="mx-1 h-5 w-px bg-line" />
+        {/* The supply slip is a PACKING job, and a job is one line (one item,
+            one rack, one warehouse split) — so on a multi-line bill these two
+            print the line this page was opened on, and say so. */}
         <Button variant="ghost" onClick={() => sharePdf(buildSlipPdf(slip, shop), slipFile, `Supply slip #${ref}`)}>
-          <IconShare size={18} /> Share slip
+          <IconShare size={18} /> Share slip{multi ? ' (this item)' : ''}
         </Button>
         <Button variant="ghost" onClick={() => window.print()}>
-          <IconReceipt2 size={18} /> Reprint slip
+          <IconReceipt2 size={18} /> Reprint slip{multi ? ' (this item)' : ''}
         </Button>
       </div>
 
