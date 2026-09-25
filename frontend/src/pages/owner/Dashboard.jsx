@@ -4,7 +4,7 @@ import {
   IconShoppingCartPlus, IconBoxSeam, IconAlertTriangle, IconBuildingWarehouse,
   IconReceipt2, IconCoin, IconTrendingUp, IconCash, IconUserDollar,
 } from '@tabler/icons-react'
-import { supabase } from '../../lib/supabase'
+import { supabase, fetchAll } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { money, qty } from '../../lib/format'
@@ -28,7 +28,7 @@ export default function Dashboard() {
       const todayISO = startOfToday().toISOString()
       const [itemsRes, ordersRes, salesRes, udhaarRes] = await Promise.all([
         // Stock snapshot — active items for count + low, all rows for valuation.
-        supabase.from('items').select('quantity, purchase_rate, low_stock_threshold, is_active'),
+        fetchAll(() => supabase.from('items').select('quantity, purchase_rate, low_stock_threshold, is_active').order('id')),
         // Orders awaiting approval.
         supabase.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
         // Today's sales (amount + profit) since local midnight.

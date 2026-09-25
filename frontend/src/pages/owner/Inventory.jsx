@@ -5,7 +5,7 @@ import {
   IconDotsVertical, IconBarcode, IconPrinter, IconArchive, IconArchiveOff, IconAlertTriangle,
   IconTrash,
 } from '@tabler/icons-react'
-import { supabase } from '../../lib/supabase'
+import { supabase, fetchAll } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty } from '../../lib/format'
 import { round2, stockValue, isDuplicateCompanyNo, splitGstRate, combineGstRate } from '../../lib/helpers'
@@ -42,7 +42,7 @@ export default function Inventory() {
   async function load() {
     setErr('')
     const [{ data, error }, { data: wsData, error: wsErr }] = await Promise.all([
-      supabase
+      fetchAll(() => supabase
         .from('items')
         .select(
           'id, item_no, name, company_no, location, warehouse_id, quantity, purchase_rate, dealer_rate, rate, ' +
@@ -50,8 +50,8 @@ export default function Inventory() {
             'description, tags, images, ' +
             'supplier:suppliers(name), category:categories(name)',
         )
-        .order('item_no'),
-      supabase.from('warehouse_stock').select('item_id, warehouse_id, quantity'),
+        .order('item_no').order('id')),
+      fetchAll(() => supabase.from('warehouse_stock').select('item_id, warehouse_id, quantity').order('item_id').order('warehouse_id')),
     ])
     if (error) setErr(error.message)
     else setItems(data ?? [])

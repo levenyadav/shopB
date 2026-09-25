@@ -4,7 +4,7 @@ import {
   IconCoin, IconTrendingUp, IconReceipt2, IconBuildingWarehouse,
   IconAlertTriangle, IconCircleOff, IconShoppingCartPlus,
 } from '@tabler/icons-react'
-import { supabase } from '../../lib/supabase'
+import { supabase, fetchAll } from '../../lib/supabase'
 import { money, qty } from '../../lib/format'
 import { stockValue, stockStatus } from '../../lib/helpers'
 import {
@@ -27,12 +27,12 @@ export default function Reports() {
     let active = true
     async function load() {
       const [sRes, iRes] = await Promise.all([
-        supabase.from('sales')
+        fetchAll(() => supabase.from('sales')
           .select('amount, profit, quantity, buyer_type, created_at, item_name, item:items(name), category:categories(name)')
-          .order('created_at', { ascending: false }),
-        supabase.from('items')
+          .order('created_at', { ascending: false }).order('id')),
+        fetchAll(() => supabase.from('items')
           .select('id, item_no, name, quantity, purchase_rate, low_stock_threshold, is_active')
-          .eq('is_active', true),
+          .eq('is_active', true).order('id')),
       ])
       if (!active) return
       if (sRes.error) { setErr(sRes.error.message); return }

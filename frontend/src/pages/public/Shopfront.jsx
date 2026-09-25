@@ -4,7 +4,7 @@ import {
   IconSearch, IconMoodEmpty, IconChevronLeft, IconChevronRight,
   IconAdjustmentsHorizontal, IconX,
 } from '@tabler/icons-react'
-import { supabase } from '../../lib/supabase'
+import { supabase, fetchAll } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { useAuth } from '../../context/AuthContext'
 import { rateForBuyer } from '../../lib/helpers'
@@ -38,10 +38,10 @@ export default function Shopfront() {
 
   useEffect(() => {
     let active = true
-    supabase
+    fetchAll(() => supabase
       .from('shopfront_items')
       .select('id, name, quantity, rate, dealer_rate, low_stock_threshold, photo_url, category_id, tags, description, moq, made_to_order, company_no')
-      .order('name')
+      .order('name').order('id'))
       .then(({ data, error }) => {
         if (!active) return
         if (error) setErr(error.message)

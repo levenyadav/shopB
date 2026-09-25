@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { IconSearch, IconCheck, IconX, IconPencil } from '@tabler/icons-react'
-import { supabase } from '../../lib/supabase'
+import { supabase, fetchAll } from '../../lib/supabase'
 import { qty, money } from '../../lib/format'
 import { StockBadge, Spinner } from '../../components/ui'
 
@@ -20,10 +20,10 @@ export default function StaffInventory() {
   useEffect(() => { load() }, [])
 
   async function load() {
-    const { data, error } = await supabase
+    const { data, error } = await fetchAll(() => supabase
       .from('staff_items')
       .select('id, item_no, name, category_name, location, quantity, low_stock_threshold, rate, photo_url')
-      .order('name', { ascending: true })
+      .order('name', { ascending: true }).order('id'))
     if (error) setErr(error.message)
     else setItems(data ?? [])
   }

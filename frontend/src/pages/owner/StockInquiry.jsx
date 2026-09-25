@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { IconAlertTriangle, IconShoppingCartPlus } from '@tabler/icons-react'
-import { supabase } from '../../lib/supabase'
+import { supabase, fetchAll } from '../../lib/supabase'
 import { qty } from '../../lib/format'
 import { stockStatus } from '../../lib/helpers'
 import { StockBadge, Spinner } from '../../components/ui'
@@ -16,11 +16,11 @@ export default function StockInquiry() {
   const [highFirst, setHighFirst] = useState(false) // sort highest-stock first
 
   useEffect(() => {
-    supabase
+    fetchAll(() => supabase
       .from('items')
       .select('id, item_no, name, quantity, low_stock_threshold, is_active, category:categories(name)')
       .eq('is_active', true)
-      .order('quantity', { ascending: true })
+      .order('quantity', { ascending: true }).order('id'))
       .then(({ data, error }) => {
         if (error) setErr(error.message)
         else setItems(data ?? [])
