@@ -10,7 +10,8 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { round2, toE164India } from '../../lib/helpers'
-import { Button, Field, Select, Textarea, Badge, Spinner } from '../../components/ui'
+import { Button, Field, Select, Textarea, Badge, Spinner, Img } from '../../components/ui'
+import { uploadPhoto } from '../../lib/images'
 
 // SPEC §6.11 — Settings (owner only): shop info, categories, staff. Kept to the
 // three named blocks; each writes the table the owner already controls under RLS
@@ -449,14 +450,9 @@ function Branding() {
     setThemeColor(/^#[0-9a-f]{6}$/i.test(shop.theme_color) ? shop.theme_color : DEFAULT_THEME)
   }, [shop])
 
-  async function upload(file) {
-    const ext = (file.name.split('.').pop() || 'png').toLowerCase()
-    const path = `${shopId}/${crypto.randomUUID()}.${ext}`
-    const { error } = await supabase.storage
-      .from('brand-assets')
-      .upload(path, file, { upsert: false, contentType: file.type })
-    if (error) throw new Error('Upload failed: ' + error.message)
-    return supabase.storage.from('brand-assets').getPublicUrl(path).data.publicUrl
+  // Logo and app icon keep transparency; 512px is plenty for both.
+  function upload(file) {
+    return uploadPhoto('brand-assets', shopId, file, { keepTransparency: true, max: 512 })
   }
 
   async function save(e) {
@@ -578,12 +574,8 @@ function Banners() {
     if (!file) return
     setBusy(true); setMsg(''); setErr('')
     try {
-      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
-      const path = `${shopId}/banners/${crypto.randomUUID()}.${ext}`
-      const { error } = await supabase.storage
-        .from('brand-assets').upload(path, file, { upsert: false, contentType: file.type })
-      if (error) throw new Error('Upload failed: ' + error.message)
-      const image_url = supabase.storage.from('brand-assets').getPublicUrl(path).data.publicUrl
+      // Banners run full-width on the shopfront, so allow a wider image.
+      const image_url = await uploadPhoto('brand-assets', `${shopId}/banners`, file, { max: 1600 })
       setList((l) => [...l, { image_url, caption: '', link: '' }])
     } catch (e) {
       setErr(e.message)
@@ -635,7 +627,7 @@ function Banners() {
               {list.map((b, i) => (
                 <li key={i} className="flex flex-wrap items-start gap-3 rounded-lg border border-line bg-paper-2/40 p-3">
                   <div className="h-16 w-28 shrink-0 overflow-hidden rounded-md border border-line bg-paper-2">
-                    <img src={b.image_url} alt="" className="h-full w-full object-cover"
+                    <Img src={b.image_url} thumb alt="" className="h-full w-full object-cover"
                          onError={(e) => { e.currentTarget.style.opacity = '0.3' }} />
                   </div>
                   <div className="min-w-[12rem] flex-1 space-y-2">

@@ -9,7 +9,7 @@ import { useShop } from '../../context/ShopContext'
 import { useCart } from '../../context/CartContext'
 import { money } from '../../lib/format'
 import { rateForBuyer, round2 } from '../../lib/helpers'
-import { Button, Textarea, Badge, Spinner } from '../../components/ui'
+import { Button, Textarea, Badge, Spinner, Img } from '../../components/ui'
 import QtyStepper from '../../components/QtyStepper'
 import { BackLink } from '../../components/BackButton'
 
@@ -213,7 +213,7 @@ function Gallery({ item }) {
           {main ? (
             // object-contain so the full product photo is visible (landscape and
             // portrait alike) rather than cropped to a square.
-            <img src={main} alt={item.name} className="h-full w-full object-contain" />
+            <Img src={main} eager alt={item.name} className="h-full w-full object-contain" />
           ) : (
             <div className="grid h-full w-full place-items-center text-muted">
               <IconPhoto size={56} stroke={1.2} />
@@ -230,7 +230,7 @@ function Gallery({ item }) {
                 i === active ? 'border-peacock ring-1 ring-peacock' : 'border-line hover:border-ink/25'
               }`}
             >
-              <img src={p} alt="" className="h-full w-full object-cover" />
+              <Img src={p} thumb alt="" className="h-full w-full object-cover" />
             </button>
           ))}
         </div>

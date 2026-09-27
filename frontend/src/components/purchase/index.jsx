@@ -12,6 +12,7 @@ import {
 } from '../../lib/helpers'
 import { Button, Field, Select, Textarea, Spinner, StockBadge, TagsInput, ImagesInput, Badge } from '../ui'
 import BarcodeScanner from '../BarcodeScanner'
+import { uploadPhoto } from '../../lib/images'
 
 // =============================================================================
 // The shared parts of building a supplier bill (SPEC §6.1).
@@ -822,15 +823,9 @@ export function BillCharges({ lines, value, onChange }) {
 }
 
 // Upload a line's photo to the item-photos bucket, returning its public URL.
+// Shrunk in the browser with a thumbnail alongside — see lib/images.js.
 export async function uploadItemPhoto(shopId, file) {
-  if (!file) return null
-  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
-  const path = `${shopId}/${crypto.randomUUID()}.${ext}`
-  const { error } = await supabase.storage
-    .from('item-photos')
-    .upload(path, file, { upsert: false, contentType: file.type })
-  if (error) throw new Error('Photo upload failed: ' + error.message)
-  return supabase.storage.from('item-photos').getPublicUrl(path).data.publicUrl
+  return uploadPhoto('item-photos', shopId, file)
 }
 
 // Create the catalogue row for a `mode: 'new'` line, with NO opening stock.

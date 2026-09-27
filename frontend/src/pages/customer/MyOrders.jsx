@@ -5,7 +5,7 @@ import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
 import { shippingFeeFor } from '../../lib/helpers'
-import { OrderStatusBadge, Spinner } from '../../components/ui'
+import { OrderStatusBadge, Spinner, Img } from '../../components/ui'
 import { BackLink } from '../../components/BackButton'
 
 // SPEC §6.3 / §10.2 — buyer's own order list, newest first. RLS (orders_buyer_
@@ -158,7 +158,7 @@ function Thumb({ url }) {
   return (
     <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-line bg-paper-2">
       {url ? (
-        <img src={url} alt="" className="h-full w-full object-cover" />
+        <Img src={url} thumb alt="" className="h-full w-full object-cover" />
       ) : (
         <div className="grid h-full w-full place-items-center text-muted"><IconPhoto size={22} /></div>
       )}

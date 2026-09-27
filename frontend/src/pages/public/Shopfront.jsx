@@ -8,7 +8,7 @@ import { supabase, fetchAll } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { useAuth } from '../../context/AuthContext'
 import { rateForBuyer } from '../../lib/helpers'
-import { Spinner } from '../../components/ui'
+import { Spinner, Img } from '../../components/ui'
 import ItemCard from '../../components/ItemCard'
 
 // SPEC §6.3 — the customer-facing shopfront, auto-generated from live inventory.
@@ -310,7 +310,7 @@ function BannerCarousel({ banners, navigate }) {
             className={`relative aspect-[3/1] w-full shrink-0 ${b.link ? 'cursor-pointer' : 'cursor-default'}`}
             aria-label={b.caption || `Banner ${idx + 1}`}
           >
-            <img src={b.image_url} alt={b.caption || ''} className="h-full w-full object-cover" />
+            <Img src={b.image_url} eager={idx === 0} alt={b.caption || ''} className="h-full w-full object-cover" />
             {b.caption && (
               <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-ink/70 to-transparent px-5 py-4 text-left text-base font-semibold text-white sm:px-7 sm:py-5 sm:text-lg">
                 {b.caption}

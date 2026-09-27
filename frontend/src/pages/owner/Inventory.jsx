@@ -10,7 +10,8 @@ import { useShop } from '../../context/ShopContext'
 import { money, qty } from '../../lib/format'
 import { round2, stockValue, isDuplicateCompanyNo, splitGstRate, combineGstRate } from '../../lib/helpers'
 import { printBarcodeLabels, barcodeValue, DEFAULT_LABEL_OPTS } from '../../lib/barcodeLabel'
-import { Button, Field, Select, Textarea, StockBadge, Badge, Spinner, TagsInput, ImagesInput } from '../../components/ui'
+import { Button, Field, Select, Textarea, StockBadge, Badge, Spinner, TagsInput, ImagesInput, Img } from '../../components/ui'
+import { uploadPhoto } from '../../lib/images'
 
 // SPEC §6.2 — Inventory master list. Owner sees all items, searches/filters,
 // and edits any field including quantity (direct stock correction; new stock-in
@@ -665,8 +666,9 @@ function Thumb({ url, onZoom }) {
         title="View photo"
         className="group h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-line bg-paper-2 transition hover:ring-2 hover:ring-peacock/40"
       >
-        <img
+        <Img
           src={url}
+          thumb
           alt=""
           className="h-full w-full object-cover transition group-hover:scale-105"
         />
@@ -697,6 +699,7 @@ function Lightbox({ url, onClose }) {
       <img
         src={url}
         alt=""
+        decoding="async"
         onClick={(e) => e.stopPropagation()}
         className="max-h-[85vh] max-w-full rounded-lg border border-line object-contain shadow-2xl"
       />
@@ -787,13 +790,7 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
 
   async function uploadPhoto() {
     if (!photoFile) return photoUrl.trim() || null
-    const ext = (photoFile.name.split('.').pop() || 'jpg').toLowerCase()
-    const path = `${shopId}/${crypto.randomUUID()}.${ext}`
-    const { error } = await supabase.storage
-      .from('item-photos')
-      .upload(path, photoFile, { upsert: false, contentType: photoFile.type })
-    if (error) throw new Error('Photo upload failed: ' + error.message)
-    return supabase.storage.from('item-photos').getPublicUrl(path).data.publicUrl
+    return uploadPhoto('item-photos', shopId, photoFile)
   }
 
   async function save(e) {

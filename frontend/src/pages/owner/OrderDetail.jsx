@@ -10,7 +10,7 @@ import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
 import { lineProfit, round2, toE164India, shippingFeeFor } from '../../lib/helpers'
 import {
-  Button, Textarea, Field, OrderStatusBadge, InProcessBadge, IN_PROCESS_STATUSES, Badge, Spinner,
+  Button, Textarea, Field, OrderStatusBadge, InProcessBadge, IN_PROCESS_STATUSES, Badge, Spinner, Img,
 } from '../../components/ui'
 import { BackLink } from '../../components/BackButton'
 
@@ -662,7 +662,7 @@ function Row({ label, value, full }) {
 function Thumb({ url }) {
   return (
     <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-line bg-paper-2">
-      {url ? <img src={url} alt="" className="h-full w-full object-cover" />
+      {url ? <Img src={url} thumb alt="" className="h-full w-full object-cover" />
            : <div className="grid h-full w-full place-items-center text-muted"><IconPhoto size={22} /></div>}
     </div>
   )

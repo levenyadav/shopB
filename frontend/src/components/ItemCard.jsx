@@ -6,7 +6,7 @@ import { useShop } from '../context/ShopContext'
 import { useCart } from '../context/CartContext'
 import { money } from '../lib/format'
 import { rateForBuyer } from '../lib/helpers'
-import { Badge } from './ui'
+import { Badge, Img } from './ui'
 
 // One product tile on the shopfront (SPEC §6.3). Shows photo, name, category and
 // the price the viewer pays — dealers see Dealer Rate, everyone else the Rate.
@@ -42,8 +42,9 @@ export default function ItemCard({ item, categoryName }) {
     >
       <div className="relative aspect-square overflow-hidden bg-paper-2">
         {item.photo_url ? (
-          <img
+          <Img
             src={item.photo_url}
+            thumb
             alt={item.name}
             // object-contain (not cover) so landscape/portrait photos show in full
             // inside the square tile instead of being cropped; the paper-2 bg fills

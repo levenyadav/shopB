@@ -3,6 +3,7 @@
 
 import { useState } from 'react'
 import { IconPhoto, IconX } from '@tabler/icons-react'
+import { thumbUrl } from '../../lib/images'
 
 // Tones set the ink colour; the .stamp utility derives its rule + wash from it.
 const TONE = {
@@ -171,7 +172,7 @@ export function ImagesInput({ label, hint, value = [], onChange }) {
         <div className="mb-2 flex flex-wrap gap-2">
           {value.map((u, i) => (
             <div key={i} className="relative h-16 w-16 overflow-hidden rounded-md border border-line bg-paper-2">
-              <img src={u} alt="" className="h-full w-full object-cover" onError={(e) => { e.currentTarget.style.opacity = '0.3' }} />
+              <Img src={u} thumb alt="" className="h-full w-full object-cover" onError={(e) => { e.currentTarget.style.opacity = '0.3' }} />
               <button
                 type="button" onClick={() => remove(i)} aria-label="Remove image"
                 className="absolute right-0.5 top-0.5 rounded bg-ink/60 p-0.5 text-white hover:bg-ink"
@@ -258,6 +259,29 @@ export function Spinner({ className = '' }) {
   )
 }
 
+// Every stored photo goes through this. Loads lazily (only when scrolled into
+// view) and, with `thumb`, fetches the ~20 KB thumbnail instead of the full
+// photo — falling back to the full photo if no thumbnail exists. Keeps the
+// Supabase cached-egress quota alive; see lib/images.js.
+export function Img({ src, thumb = false, alt = '', eager = false, ...rest }) {
+  const small = thumb ? thumbUrl(src) : src
+  const [failed, setFailed] = useState(false)
+  if (!src) return null
+  return (
+    <img
+      src={failed ? src : small}
+      alt={alt}
+      loading={eager ? 'eager' : 'lazy'}
+      decoding="async"
+      {...rest}
+      onError={(e) => {
+        if (!failed && small !== src) setFailed(true)
+        else rest.onError?.(e)
+      }}
+    />
+  )
+}
+
 // Product thumbnail with a built-in click-to-zoom lightbox. Drop-in replacement
 // for the per-page <Thumb url={...}/>. Manages its own overlay state, so callers
 // just pass the photo URL (and optionally a size class). Anchor-safe: the trigger
@@ -283,7 +307,7 @@ export function PhotoThumb({ url, size = 'h-14 w-14', alt = '' }) {
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { stop(e); setOpen(true) } }}
         className={`group ${size} block shrink-0 cursor-pointer overflow-hidden rounded-md border border-line bg-paper-2 transition-colors hover:border-peacock`}
       >
-        <img src={url} alt={alt} className="h-full w-full object-cover transition group-hover:scale-105" />
+        <Img src={url} thumb alt={alt} className="h-full w-full object-cover transition group-hover:scale-105" />
       </span>
       {open && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-ink/70 p-4" onClick={(e) => { stop(e); setOpen(false) }}>

@@ -9,7 +9,7 @@ import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
 import { round2, itemGstRate, gstBreakupByRate, shippingFeeFor } from '../../lib/helpers'
 import { buildInvoiceModel, viewInvoice, printInvoice } from '../../lib/invoiceTemplate'
-import { Button, OrderStatusBadge, Spinner } from '../../components/ui'
+import { Button, OrderStatusBadge, Spinner, Img } from '../../components/ui'
 import { BackLink } from '../../components/BackButton'
 
 // SPEC §10.2 — a buyer's view of one order: what they bought, the locked rate,
@@ -337,7 +337,7 @@ function Row({ label, value, full }) {
 function Thumb({ url }) {
   return (
     <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-line bg-paper-2">
-      {url ? <img src={url} alt="" className="h-full w-full object-cover" />
+      {url ? <Img src={url} thumb alt="" className="h-full w-full object-cover" />
            : <div className="grid h-full w-full place-items-center text-muted"><IconPhoto size={22} /></div>}
     </div>
   )

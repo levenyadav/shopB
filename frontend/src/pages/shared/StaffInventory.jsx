@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { IconSearch, IconCheck, IconX, IconPencil } from '@tabler/icons-react'
 import { supabase, fetchAll } from '../../lib/supabase'
 import { qty, money } from '../../lib/format'
-import { StockBadge, Spinner } from '../../components/ui'
+import { StockBadge, Spinner, Img } from '../../components/ui'
 
 // SPEC §9.1/§10.3 — staff Inventory. Staff SEE stock (photo, name, category,
 // quantity, retail rate) from the cost-safe `staff_items` view — never
@@ -105,7 +105,7 @@ export default function StaffInventory() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         {i.photo_url && (
-                          <img src={i.photo_url} alt="" className="h-8 w-8 rounded object-cover" />
+                          <Img src={i.photo_url} thumb alt="" className="h-8 w-8 rounded object-cover" />
                         )}
                         <span className="font-medium text-ink">{i.name}</span>
                       </div>
