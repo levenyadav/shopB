@@ -484,13 +484,18 @@ function BillEditor({ bill, currency, onCancel, onSaved }) {
       // with NO opening stock — the stock arrives through the purchase line the
       // RPC writes below (Golden Rule #1), exactly as in Purchase Entry.
       const payload = []
-      for (const l of lines) {
+      for (const [idx, l] of lines.entries()) {
         let item = l.item
         if (l.mode === 'new') {
           item = await createProductFromLine({
             shopId: bill.shopId, supplierId: bill.supplierId, line: l,
           })
           createdItems.push(item.item_no)
+          // Switch the line to that product now, so if the save fails below a
+          // second press of Save reuses it instead of creating it again.
+          setLines((ls) => ls.map((x, i) => (i === idx
+            ? { ...x, mode: 'existing', item: { ...item, warehouse_id: x.warehouse_id || null } }
+            : x)))
         }
         payload.push({
           id: l.rowId || null,

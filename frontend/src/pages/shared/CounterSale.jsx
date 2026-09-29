@@ -77,8 +77,8 @@ export default function CounterSale() {
         next[i] = {
           ...next[i],
           quantity: next[i].made_to_order
-            ? next[i].quantity + 1
-            : Math.min(next[i].quantity + 1, Number(it.quantity) || next[i].quantity),
+            ? (Number(next[i].quantity) || 0) + 1
+            : Math.min((Number(next[i].quantity) || 0) + 1, Number(it.quantity) || 1),
         }
         return next
       }
@@ -101,9 +101,10 @@ export default function CounterSale() {
     if (!cart.length) return setErr('Add at least one item to the bill.')
     if (!buyer) return setErr('Choose or add a buyer first.')
     // Only stock items can be "over stock"; made-to-order is made after the bill.
-    const over = cart.find((l) => !l.made_to_order && l.quantity > l.stock)
+    const over = cart.find((l) => !l.made_to_order && Number(l.quantity) > l.stock)
     if (over) return setErr(`Only ${qty(over.stock)} of "${over.name}" in stock.`)
-    if (cart.some((l) => l.quantity <= 0 || l.charge < 0)) return setErr('Check the quantities and rates.')
+    const blank = cart.find((l) => !(Number(l.quantity) > 0) || l.charge === '' || !(Number(l.charge) >= 0))
+    if (blank) return setErr(`Enter a quantity and rate for "${blank.name}".`)
     if (discountOver) return setErr(`The discount cannot be more than the ${m(total)} bill. Lower it and try again.`)
 
     setBusy(true)
@@ -112,7 +113,7 @@ export default function CounterSale() {
       p_buyer_type: buyerType,
       p_payment_type: payment,
       p_lines: cart.map((l) => ({
-        item_id: l.id, category_id: l.category_id, quantity: l.quantity, rate: l.charge,
+        item_id: l.id, category_id: l.category_id, quantity: Number(l.quantity), rate: Number(l.charge),
       })),
       p_discount: discountNum,
     })
@@ -137,8 +138,8 @@ export default function CounterSale() {
       total: payable,
       lines: cart.map((l) => ({
         item_name: l.name, item_no: l.item_no, hsn_sac: l.hsn_sac ?? null,
-        gst_rate: l.gst_rate ?? null, quantity: l.quantity,
-        rate: l.charge, amount: round2(l.charge * l.quantity),
+        gst_rate: l.gst_rate ?? null, quantity: Number(l.quantity),
+        rate: Number(l.charge), amount: round2(l.charge * l.quantity),
       })),
     })
   }
@@ -187,7 +188,12 @@ export default function CounterSale() {
                             <span>{currency}</span>
                             <input
                               value={l.charge}
-                              onChange={(e) => setLine(l.id, { charge: Math.max(0, Number(e.target.value) || 0) })}
+                              // Keep the typed text: coercing each keystroke to a
+                              // number ate the "." and made 16.50 impossible.
+                              onChange={(e) => {
+                                const v = e.target.value.replace(/[^\d.]/g, '')
+                                if (/^\d*\.?\d{0,2}$/.test(v)) setLine(l.id, { charge: v })
+                              }}
                               className="w-16 rounded border border-line bg-paper-2 px-1 py-0.5 text-right fig text-xs text-ink"
                               inputMode="decimal"
                               aria-label={`Rate for ${l.name}`}
@@ -195,23 +201,28 @@ export default function CounterSale() {
                             <span>each</span>
                           </span>
                         ) : (
-                          <><span className="fig">{m(l.charge)}</span> each</>
+                          <><span className="fig">{m(Number(l.charge))}</span> each</>
                         )}
                         {l.made_to_order
                           ? <Badge tone="peacock">Make to order</Badge>
-                          : l.quantity > l.stock && <Badge tone="dues">Over stock</Badge>}
+                          : Number(l.quantity) > l.stock && <Badge tone="dues">Over stock</Badge>}
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
-                      <StepBtn onClick={() => setLine(l.id, { quantity: Math.max(1, l.quantity - 1) })}><IconMinus size={15} /></StepBtn>
+                      <StepBtn onClick={() => setLine(l.id, { quantity: Math.max(1, (Number(l.quantity) || 0) - 1) })}><IconMinus size={15} /></StepBtn>
                       <input
                         value={l.quantity}
-                        onChange={(e) => setLine(l.id, { quantity: Math.max(1, Math.floor(Number(e.target.value) || 1)) })}
-                        className="w-10 rounded border border-line bg-paper-2 py-1 text-center fig text-sm"
+                        // May be '' mid-typing: forcing it back to 1 turned "500"
+                        // into "1500". confirm() rejects a blank line.
+                        onChange={(e) => {
+                          const v = e.target.value.replace(/\D/g, '')
+                          setLine(l.id, { quantity: v === '' ? '' : Number(v) })
+                        }}
+                        className="w-14 rounded border border-line bg-paper-2 py-1 text-center fig text-sm"
                         inputMode="numeric"
                       />
                       <StepBtn onClick={() => setLine(l.id, {
-                        quantity: l.made_to_order ? l.quantity + 1 : Math.min(l.stock, l.quantity + 1),
+                        quantity: l.made_to_order ? (Number(l.quantity) || 0) + 1 : Math.min(l.stock, (Number(l.quantity) || 0) + 1),
                       })}><IconPlus size={15} /></StepBtn>
                     </div>
                     <span className="w-16 text-right fig text-sm font-semibold">{m(round2(l.charge * l.quantity))}</span>
@@ -334,10 +345,15 @@ function ItemPicker({ shopId, isOwner, onAdd, currency }) {
 
   async function onScan(code) {
     setScan(false)
-    const { data } = await supabase
+    // Barcodes aren't unique in the catalogue (a product saved twice shares
+    // one), and maybeSingle() errors on two matches — which read as "No item
+    // for code". Take the match with the most stock instead.
+    const { data: matches } = await supabase
       .from('items')
       .select('id, item_no, name, category_id, photo_url, quantity, rate, dealer_rate, hsn_sac, gst_rate, made_to_order' + (isOwner ? ', purchase_rate' : ''))
-      .eq('shop_id', shopId).eq('barcode', code).maybeSingle()
+      .eq('shop_id', shopId).eq('barcode', code)
+      .order('quantity', { ascending: false }).limit(1)
+    const data = matches?.[0] ?? null
     if (data && (data.made_to_order || Number(data.quantity) > 0)) { onAdd(data); setFlash(`Added ${data.name}`); setTimeout(() => setFlash(''), 1500) }
     else setFlash(data ? `${data.name} is out of stock` : `No item for code ${code}`)
   }

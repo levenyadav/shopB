@@ -183,12 +183,17 @@ function BillEntry() {
     const invoice_no = bill.invoice_no.trim() || null
     const invoice_date = bill.invoice_date || null
     const createdItems = []   // for the error message if the stock-in half fails
+    // Line index → product created by THIS attempt. If anything later fails,
+    // those lines are switched to "restock existing product" so pressing Save
+    // again can't create the same products a second time (that is how KCP 740
+    // and KCP 1230 ended up in the catalogue twice on 26 Sept 2026).
+    const created = new Map()
 
     try {
       // 1) Create a catalogue row for every NEW line, with NO opening stock —
       //    stock arrives only through the purchases insert below (Golden Rule #1).
       const rows = []
-      for (const line of lines) {
+      for (const [idx, line] of lines.entries()) {
         let itemId = line.item?.id
         // Each product carries its own warehouse (set in Inventory or when the
         // product was created), but this line can override it for this one
@@ -202,6 +207,7 @@ function BillEntry() {
           itemId = item.id
           warehouseId = line.warehouse_id || null
           createdItems.push(item.item_no)
+          created.set(idx, item)
         }
 
         // Make-to-Order lines hold no stock, so they buy nothing on this bill.
@@ -292,7 +298,24 @@ function BillEntry() {
       setLines([])
       setErrors({})
     } catch (err) {
-      setTopError(err.message || 'Could not save this bill. Please try again.')
+      if (created.size) {
+        // A made-to-order product buys nothing on a bill, so once it exists its
+        // line is done; a stock product becomes a restock of the new row.
+        setLines((ls) => ls.flatMap((l, i) => {
+          const item = created.get(i)
+          if (!item) return [l]
+          if (isListingOnly(l)) return []
+          return [{
+            mode: 'existing', item: { ...item, warehouse_id: l.warehouse_id || null },
+            quantity: l.quantity, purchase_rate: l.purchase_rate, notes: l.notes || '',
+            warehouse_id: l.warehouse_id || null,
+          }]
+        }))
+      }
+      setTopError(
+        (err.message || 'Could not save this bill.') +
+          (created.size ? ' The new products are kept on the bill as existing items — fix the problem and press Save again; nothing will be created twice.' : ''),
+      )
     } finally {
       setBusy(false)
     }

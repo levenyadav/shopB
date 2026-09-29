@@ -428,12 +428,17 @@ function NewProductFields({ line, set, setVal, errors, shopId, onUseExisting, al
     setScanInfo(null)
     setVal('barcode', code)
     try {
-      const { data: existing } = await supabase
+      // limit(1), not maybeSingle(): two products sharing a barcode made
+      // maybeSingle() error, the scan read as "new product", and a third copy
+      // got created.
+      const { data: matches } = await supabase
         .from('items')
         .select('id, item_no, name, quantity, purchase_rate, low_stock_threshold')
         .eq('shop_id', shopId)
         .eq('barcode', code)
-        .maybeSingle()
+        .order('quantity', { ascending: false })
+        .limit(1)
+      const existing = matches?.[0] ?? null
       if (existing) { setScanInfo({ tone: 'found', item: existing }); return }
 
       const found = await lookupPublicProduct(code)
