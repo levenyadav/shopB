@@ -19,7 +19,6 @@ export default function StockInquiry() {
     fetchAll(() => supabase
       .from('items')
       .select('id, item_no, name, quantity, low_stock_threshold, is_active, category:categories(name)')
-      .eq('is_active', true)
       .order('quantity', { ascending: true }).order('id'))
       .then(({ data, error }) => {
         if (error) setErr(error.message)

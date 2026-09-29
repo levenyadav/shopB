@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { IconSearch, IconInbox, IconCoin, IconFileSpreadsheet, IconChevronDown, IconChevronRight, IconTag, IconFileInvoice } from '@tabler/icons-react'
-import { supabase } from '../../lib/supabase'
+import { supabase, fetchAll } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime, dateShort } from '../../lib/format'
 import { toCsv, downloadText } from '../../lib/csv'
@@ -83,9 +83,10 @@ export default function PurchaseHistory() {
     // A failure here must not be silent: without these rows every bill totals to
     // goods only, and a wrong total that looks right is worse than an error.
     const charges = new Map()
-    const { data: billRows, error: chargesErr } = await supabase
+    const { data: billRows, error: chargesErr } = await fetchAll(() => supabase
       .from('purchase_bills')
       .select('purchase_group_id, postage, cgst_amount, sgst_amount, grand_total')
+      .order('id'))
     for (const c of billRows ?? []) charges.set(c.purchase_group_id, c)
     if (chargesErr) {
       setErr(`Postage and GST could not be read, so bill totals below are goods only. `
@@ -103,16 +104,18 @@ export default function PurchaseHistory() {
     // kept for audit but is worth no stock and no money, so it must never be
     // counted here. A database still short of 039 has no such lines, so the
     // fallback query loses nothing.
-    let { data, error } = await supabase
+    // Paged: PostgREST silently stops at 1000 rows, and older bills would drop
+    // out of the list and its totals (see fetchAll).
+    let { data, error } = await fetchAll(() => supabase
       .from('purchases')
       .select(COLUMNS)
       .is('deleted_at', null)
-      .order('created_at', { ascending: false })
+      .order('created_at', { ascending: false }).order('id'))
     if (error && /deleted_at/.test(error.message || '')) {
-      ;({ data, error } = await supabase
+      ;({ data, error } = await fetchAll(() => supabase
         .from('purchases')
         .select(COLUMNS)
-        .order('created_at', { ascending: false }))
+        .order('created_at', { ascending: false }).order('id')))
     }
     if (error) { setErr(error.message); return }
     setPurchases((data ?? []).map((p) => ({ ...p, charges: charges.get(p.purchase_group_id) || null })))

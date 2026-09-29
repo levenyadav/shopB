@@ -498,12 +498,22 @@ function RejectPanel({ order, onCancel, onDone }) {
 
   async function reject() {
     setBusy(true); setErr('')
-    const { error } = await supabase
+    // Only a still-pending order may be rejected. Without the status guard, a
+    // screen left open while the order was approved elsewhere would flip an
+    // approved order (sale, stock and udhaar already booked) to "rejected".
+    const { data, error } = await supabase
       .from('orders')
       .update({ status: 'rejected', rejection_reason: reason.trim() || null })
       .eq('id', order.id)
+      .eq('status', 'pending')
+      .select('id')
     setBusy(false)
     if (error) { setErr(error.message); return }
+    if (!data?.length) {
+      setErr('This order is no longer waiting — it was already approved or rejected. The page has been refreshed to show its current status.')
+      onDone()
+      return
+    }
     onDone()
   }
 

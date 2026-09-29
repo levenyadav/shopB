@@ -32,7 +32,7 @@ export default function Reports() {
           .order('created_at', { ascending: false }).order('id')),
         fetchAll(() => supabase.from('items')
           .select('id, item_no, name, quantity, purchase_rate, low_stock_threshold, is_active')
-          .eq('is_active', true).order('id')),
+          .order('id')),
       ])
       if (!active) return
       if (sRes.error) { setErr(sRes.error.message); return }

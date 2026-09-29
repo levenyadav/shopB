@@ -88,12 +88,39 @@ export function CartProvider({ children }) {
     setLines((prev) => prev.filter((l) => l.id !== id))
   }, [])
 
+  // Re-read every line against today's shopfront (called when the cart opens).
+  // A cart can sit on a phone for days; without this the buyer is shown the old
+  // price while the order books at the current one, and one item that has since
+  // gone out of stock / been hidden fails the whole checkout. `fresh` is the
+  // shopfront_items rows for the cart's ids — a line missing from it is no
+  // longer sold online and is flagged `unavailable` for the buyer to remove.
+  const sync = useCallback((fresh) => {
+    const byId = new Map(fresh.map((r) => [r.id, r]))
+    setLines((prev) => prev.map((l) => {
+      const it = byId.get(l.id)
+      if (!it) return { ...l, unavailable: true }
+      const mto = !!it.made_to_order
+      const available = Number(it.quantity) || 0
+      const moq = Math.max(1, Number(it.moq) || 1)
+      const cap = mto ? Infinity : available
+      return {
+        ...l,
+        name: it.name, photo_url: it.photo_url ?? null,
+        rate: Number(it.rate), dealer_rate: Number(it.dealer_rate),
+        moq, available, made_to_order: mto,
+        qty: snapToMoq(l.qty, moq, cap),
+        // Not enough stock left for even one pack.
+        unavailable: !mto && available < moq,
+      }
+    }))
+  }, [])
+
   const clear = useCallback(() => setLines([]), [])
 
   const count = useMemo(() => lines.reduce((s, l) => s + l.qty, 0), [lines])
   const distinctCount = lines.length
 
-  const value = { lines, add, setQty, remove, clear, count, distinctCount }
+  const value = { lines, add, setQty, remove, sync, clear, count, distinctCount }
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>
 }
 

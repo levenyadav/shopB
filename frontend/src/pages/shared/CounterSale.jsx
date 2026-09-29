@@ -317,7 +317,9 @@ function ItemPicker({ shopId, isOwner, onAdd, currency }) {
       let query = supabase
         .from('items')
         .select('id, item_no, name, category_id, photo_url, quantity, rate, dealer_rate, hsn_sac, gst_rate, made_to_order' + (isOwner ? ', purchase_rate' : ''))
-        .eq('shop_id', shopId).eq('is_active', true)
+        // No is_active filter: that switch only hides an item from the online
+        // shopfront. A walk-in can still buy it at the counter.
+        .eq('shop_id', shopId)
         // Stock items need stock to sell; a made-to-order item is sourced after
         // the bill, so it stays sellable at quantity 0 (migration 022).
         .or('quantity.gt.0,made_to_order.is.true')
@@ -335,7 +337,7 @@ function ItemPicker({ shopId, isOwner, onAdd, currency }) {
     const { data } = await supabase
       .from('items')
       .select('id, item_no, name, category_id, photo_url, quantity, rate, dealer_rate, hsn_sac, gst_rate, made_to_order' + (isOwner ? ', purchase_rate' : ''))
-      .eq('shop_id', shopId).eq('barcode', code).eq('is_active', true).maybeSingle()
+      .eq('shop_id', shopId).eq('barcode', code).maybeSingle()
     if (data && (data.made_to_order || Number(data.quantity) > 0)) { onAdd(data); setFlash(`Added ${data.name}`); setTimeout(() => setFlash(''), 1500) }
     else setFlash(data ? `${data.name} is out of stock` : `No item for code ${code}`)
   }

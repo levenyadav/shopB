@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { IconSearch, IconInbox, IconCoin, IconFileSpreadsheet, IconChevronDown } from '@tabler/icons-react'
-import { supabase } from '../../lib/supabase'
+import { supabase, fetchAll } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
 import { toCsv, downloadText } from '../../lib/csv'
@@ -86,7 +86,8 @@ export default function Sales() {
 
   async function load() {
     setErr('')
-    const { data, error } = await supabase
+    // Paged: PostgREST silently stops at 1000 rows (see fetchAll).
+    const { data, error } = await fetchAll(() => supabase
       .from('sales')
       .select(
         'id, quantity, rate_charged, amount, purchase_rate, profit, payment_type, buyer_type, ' +
@@ -95,7 +96,7 @@ export default function Sales() {
           'buyer:profiles!sales_buyer_id_fkey(full_name, phone), ' +
           'category:categories(name)',
       )
-      .order('created_at', { ascending: false })
+      .order('created_at', { ascending: false }).order('id'))
     if (error) setErr(error.message)
     else setSales(data ?? [])
 
@@ -104,9 +105,10 @@ export default function Sales() {
     // bill_id carries no FK, so this can't be a PostgREST embed. One extra read,
     // mapped by hand. A counter bill is invoiced once, so every line of that
     // bill shares its number.
-    const { data: invs } = await supabase
+    const { data: invs } = await fetchAll(() => supabase
       .from('invoices')
       .select('invoice_no, sale_id, bill_id, series')
+      .order('id'))
     const bySale = new Map()
     const byBill = new Map()
     for (const inv of invs ?? []) {

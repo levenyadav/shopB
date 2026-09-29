@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   IconPhoto, IconTrash, IconShoppingCart, IconLogin2, } from '@tabler/icons-react'
@@ -22,20 +22,42 @@ export default function Cart() {
   const navigate = useNavigate()
   const { role, profile } = useAuth()
   const { shopId, currency } = useShop()
-  const { lines, setQty, remove, clear } = useCart()
+  const { lines, setQty, remove, sync, clear } = useCart()
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
+  // Refresh prices and stock from the live shopfront once when the cart opens,
+  // so the total shown is the total the order will book (the server re-prices
+  // every line at checkout anyway — normalize_shopfront_order).
+  const idsKey = lines.map((l) => l.id).sort().join(',')
+  useEffect(() => {
+    if (!idsKey) return
+    let active = true
+    supabase
+      .from('shopfront_items')
+      .select('id, name, photo_url, quantity, rate, dealer_rate, moq, made_to_order')
+      .in('id', idsKey.split(','))
+      .then(({ data, error }) => { if (active && !error) sync(data ?? []) })
+    return () => { active = false }
+  }, [idsKey, sync])
+
+  const unavailable = lines.filter((l) => l.unavailable)
+  const orderable = lines.filter((l) => !l.unavailable)
+
   const isBuyer = role === 'customer' || role === 'dealer'
   const priceOf = (l) => rateForBuyer(l, role)
-  const total = round2(lines.reduce((s, l) => s + priceOf(l) * l.qty, 0))
+  const total = round2(orderable.reduce((s, l) => s + priceOf(l) * l.qty, 0))
 
   async function checkout() {
     if (!isBuyer) { navigate('/login'); return }
-    if (lines.length === 0) return
+    if (orderable.length === 0) return
+    if (unavailable.length) {
+      setErr(`Remove ${unavailable.map((l) => l.name).join(', ')} first — ${unavailable.length === 1 ? 'it is' : 'they are'} no longer available.`)
+      return
+    }
     setBusy(true); setErr('')
     const groupId = crypto.randomUUID()
-    const rows = lines.map((l) => {
+    const rows = orderable.map((l) => {
       const rate = round2(priceOf(l))
       return {
         shop_id: shopId,
@@ -81,6 +103,9 @@ export default function Cart() {
                 </Link>
                 <div className="min-w-0 flex-1">
                   <Link to={`/item/${l.id}`} className="truncate font-medium text-ink hover:text-peacock">{l.name}</Link>
+                  {l.unavailable && (
+                    <p className="text-xs font-medium text-dues">No longer available — remove it to place your order.</p>
+                  )}
                   <p className="text-xs text-muted">
                     <span className="fig">{money(priceOf(l)).replace('₹', currency)}</span> each
                     {l.moq > 1 && <> · in packs of <span className="fig">{l.moq}</span></>}
@@ -117,7 +142,7 @@ export default function Cart() {
 
             {isBuyer ? (
               <>
-                <Button onClick={checkout} disabled={busy} className="w-full">
+                <Button onClick={checkout} disabled={busy || unavailable.length > 0} className="w-full">
                   {busy ? <><Spinner /> Placing order…</> : 'Place order'}
                 </Button>
                 <p className="text-center text-xs text-muted">

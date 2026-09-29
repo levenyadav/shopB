@@ -293,7 +293,9 @@ function ExistingItemFields({ line, setVal, errors, shopId, supplierId }) {
       .order('name')
       .limit(50)
     if (onlyThisSupplier && supplierId) q = q.eq('supplier_id', supplierId)
-    const term = search.trim()
+    // Commas and brackets are or() syntax — strip them so "Card (Red)" can't
+    // break the search into an error that looks like "no products".
+    const term = search.replace(/[,()]/g, ' ').trim()
     if (term) q = q.or(`name.ilike.%${term}%,item_no.ilike.%${term}%,company_no.ilike.%${term}%`)
     q.then(({ data }) => {
       if (!cancelled) { setItems(data || []); setLoading(false) }

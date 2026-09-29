@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { IconSearch, IconInbox } from '@tabler/icons-react'
-import { supabase } from '../../lib/supabase'
+import { supabase, fetchAll } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
 import { OrderStatusBadge, InProcessBadge, IN_PROCESS_STATUSES, Badge, Spinner, PhotoThumb } from '../../components/ui'
@@ -25,7 +25,8 @@ export default function OrderManagement() {
 
   async function load() {
     setErr('')
-    const { data, error } = await supabase
+    // Paged: PostgREST silently stops at 1000 rows (see fetchAll).
+    const { data, error } = await fetchAll(() => supabase
       .from('orders')
       .select(
         'id, quantity, amount, status, buyer_type, source, created_at, ' +
@@ -35,7 +36,7 @@ export default function OrderManagement() {
       // Both origins land here now: shopfront orders wait for approval; counter
       // bills arrive already 'approved' (staff rang them up) and move straight
       // into the pack queue — 049.
-      .order('created_at', { ascending: false })
+      .order('created_at', { ascending: false }).order('id'))
     if (error) setErr(error.message)
     else setOrders(data ?? [])
   }

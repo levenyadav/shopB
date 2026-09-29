@@ -547,7 +547,7 @@ rate                  numeric     NOT NULL  -- retail price
 photo_url             text        -- public R2 photo URL
 barcode               text        -- scanned or generated
 low_stock_threshold   numeric     DEFAULT 10
-is_active             boolean     DEFAULT true
+is_active             boolean     DEFAULT true  -- "Active on shopfront": false hides it from online buyers ONLY; Counter Sale, Inventory, Stock Inquiry and staff screens still show it
 created_at            timestamptz DEFAULT now()
 updated_at            timestamptz DEFAULT now()
 ```
@@ -896,7 +896,7 @@ All tables have RLS enabled in Supabase. These policies control who can see and 
 | Role | SELECT | INSERT | UPDATE | DELETE |
 |---|---|---|---|---|
 | Owner | All items in shop | Yes | Yes | Soft delete (is_active=false) |
-| Staff | All active items in shop | Yes | Location, quantity only | No |
+| Staff | All items in shop (incl. hidden from shopfront — 053) | Yes | Location, quantity only | No |
 | Customer / Dealer | Active items with quantity > 0 | No | No | No |
 | Public (no login) | Active items with quantity > 0 | No | No | No |
 
