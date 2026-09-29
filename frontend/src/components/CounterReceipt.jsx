@@ -12,7 +12,7 @@ import { gstBreakupByRate, itemGstRate } from '../lib/helpers'
 // each line's HSN/SAC, and the CGST/SGST break-up backed out of the tax-inclusive
 // total (same model as the A5 invoice — migrations 009/016). Otherwise it stays a
 // plain CASH MEMO. For a full-page copy use the "Tax Invoice (A5)" button.
-const PAYMENT_LABEL = { cash: 'Cash', upi: 'UPI', udhaar: 'Udhaar (credit)' }
+const PAYMENT_LABEL = { cash: 'Cash', upi: 'UPI', udhaar: 'Udhaar / part paid' }
 
 export default function CounterReceipt({ bill, shop }) {
   if (!bill) return null
@@ -107,7 +107,18 @@ export default function CounterReceipt({ bill, shop }) {
           </>
         )}
         {bill.payment_type === 'udhaar' && (
-          <p className="mt-1 text-xs">Added to {bill.buyer_name || 'buyer'}'s udhaar (credit) balance.</p>
+          <>
+            {Number(bill.paid_now) > 0 && (
+              <Line label={`Paid now (${bill.paid_method === 'upi' ? 'UPI' : 'cash'})`} value={<span className="fig">{m(bill.paid_now)}</span>} />
+            )}
+            <Line label="On account" value={<span className="fig font-semibold">{m(bill.on_account ?? bill.total)}</span>} />
+            {bill.balance_after != null && (
+              <Line
+                label={Number(bill.balance_after) < 0 ? 'Advance left' : 'Total udhaar now'}
+                value={<span className="fig">{m(Math.abs(Number(bill.balance_after)))}</span>}
+              />
+            )}
+          </>
         )}
 
         <Hr />

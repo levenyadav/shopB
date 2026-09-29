@@ -5,6 +5,7 @@ import {
   IconBrandWhatsapp, IconCopy, IconCheck, IconMessage2Question,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
+import PaymentChooser, { paymentArgs } from '../../components/PaymentChooser'
 import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
@@ -26,10 +27,8 @@ const FLOW = ['approved', 'packed', 'delivered', 'picked_up']
 // SPEC §6.4 / §6.5 — owner approves or rejects. Approval INSERTS a sale row; the
 // on_sale_insert trigger then drops stock, books the ledger, flips the order to
 // 'approved' and opens a fulfilment record (Golden Rules #2, #3, #10 — the client
-// never mutates stock/ledger directly). Owner picks the payment type here.
-const PAYMENTS = [
-  ['cash', 'Cash'], ['upi', 'UPI'], ['udhaar', 'Udhaar (credit)'],
-]
+// never mutates stock/ledger directly). Owner picks the payment type here —
+// including part paid, with any advance used up (056, see PaymentChooser).
 
 export default function OrderDetail() {
   const { id } = useParams()
@@ -228,6 +227,8 @@ function ApprovedTracker({ order }) {
 
 function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onApproved, onRejected }) {
   const [pay, setPay] = useState('cash')
+  const [paidNow, setPaidNow] = useState('')
+  const [paidMethod, setPaidMethod] = useState('cash')
   const [shipping, setShipping] = useState('')
   const [discount, setDiscount] = useState('')
   const [busy, setBusy] = useState(false)
@@ -325,6 +326,7 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
   const discountOver = discountRaw > subtotal
   const grandTotal = round2(subtotal - discountNum + shippingNum)
   const effProfit = round2(listProfit - discountNum)
+  const payArgs = paymentArgs({ payment: pay, paidNow, paidMethod, total: grandTotal })
 
   async function approve() {
     setBusy(true); setErr('')
@@ -341,6 +343,7 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
       p_notes: null,
       // No warehouse: the server auto-splits across warehouses (050).
       p_warehouse_id: null,
+      ...payArgs.rpc,
     })
     setBusy(false)
     if (error) { setErr(error.message); return }
@@ -441,26 +444,14 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
           : "Added on top of the item total and printed on the buyer's bill. Leave empty for pickup / no shipping."}
       />
 
-      <div>
-        <p className="mb-1.5 text-sm font-medium">How is the buyer paying?</p>
-        <div className="grid grid-cols-3 gap-2">
-          {PAYMENTS.map(([key, label]) => (
-            <button
-              key={key} type="button" onClick={() => setPay(key)}
-              className={`rounded-lg border px-3 py-2.5 text-sm font-medium transition ${
-                pay === key ? 'border-peacock bg-peacock/10 text-peacock' : 'border-line bg-card text-muted hover:text-ink'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        {pay === 'udhaar' && (
-          <p className="mt-2 text-xs text-saffron">
-            Udhaar adds {cf(grandTotal)} to the buyer’s running balance. Clear it later via Payment In.
-          </p>
-        )}
-      </div>
+      <PaymentChooser
+        question="How is the buyer paying?"
+        payment={pay} setPayment={setPay}
+        paidNow={paidNow} setPaidNow={setPaidNow}
+        paidMethod={paidMethod} setPaidMethod={setPaidMethod}
+        total={grandTotal} balance={order.buyer?.balance_due}
+        buyerName={order.buyer?.full_name} currency={currency}
+      />
 
       <div className="flex items-center justify-between border-t border-line pt-3 text-sm">
         <span className="text-muted">Profit on this sale</span>
@@ -472,7 +463,7 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
       {err && <p className="rounded-lg bg-dues/10 px-3 py-2 text-sm text-dues">{err}</p>}
 
       <div className="flex gap-3">
-        <Button onClick={approve} disabled={busy || costMissing || warehouseShort || discountOver} className="flex-1">
+        <Button onClick={approve} disabled={busy || costMissing || warehouseShort || discountOver || !!payArgs.error} className="flex-1">
           {busy ? <><Spinner /> Approving…</> : <><IconCircleCheck size={18} /> Approve &amp; record sale</>}
         </Button>
         <Button variant="danger" onClick={() => setRejecting(true)} disabled={busy}>

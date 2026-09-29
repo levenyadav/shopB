@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   IconPhoto, IconPrinter, IconMapPin, IconReceipt2,
-  IconShare, IconEye, IconPencil, IconDeviceFloppy, IconX,
+  IconShare, IconEye, IconPencil, IconDeviceFloppy, IconX, IconAdjustments,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
-import { money, qty, dateTime } from '../../lib/format'
+import { money, qty, dateTime, dateShort } from '../../lib/format'
 import { round2 } from '../../lib/helpers'
 import { buildSlipPdf, sharePdf } from '../../lib/pdf'
 import { buildInvoiceModel, viewInvoice, printInvoice } from '../../lib/invoiceTemplate'
@@ -367,6 +367,14 @@ export default function SaleDetail() {
 
       {err && sale && <p className="no-print rounded-lg bg-dues/10 px-4 py-3 text-sm text-dues">{err}</p>}
 
+      {/* Fixing a bill after the fact — only by ADDING entries (056). */}
+      <CorrectBill
+        firstLineId={billLines[0]?.id} lineIds={billLines.map((l) => l.id)}
+        billAmount={billAmount} billValue={bill ? bill.grand_total : billAmount}
+        paymentType={sale.payment_type} buyerName={sale.buyer?.full_name}
+        currency={currency} onDone={load}
+      />
+
       {/* Hidden on screen; the only thing inked by window.print() (SPEC §13). */}
       <SupplySlip job={slip} shop={shop} />
     </div>
@@ -407,4 +415,165 @@ function Thumb({ url }) {
 
 function Empty({ children }) {
   return <div className="mx-auto max-w-md rounded-lg border border-dashed border-line p-10 text-center text-muted">{children}</div>
+}
+
+// ---------------------------------------------------------------------------
+// Correct this bill (owner only — the page is owner-only, and the RPC checks
+// the role again). The ledger is append-only, so a correction never edits the
+// sale: it adds an entry the party can see on their statement, and a
+// sale_corrections row says who did it and why.
+//
+//   Money not received — the bill was entered as paid (cash/UPI) but the money
+//                        did not come in. That amount moves onto udhaar.
+//   Discount           — agreed after billing. Split across the lines like a
+//                        billing discount (051); comes out of profit.
+// A return with stock going back is not here on purpose: stock comes in only
+// through Purchase Entry (Golden Rule #1).
+// ---------------------------------------------------------------------------
+const CORRECTION_LABEL = { mark_unpaid: 'Moved to udhaar (money not received)', discount: 'Discount after billing' }
+
+function CorrectBill({ firstLineId, lineIds, billAmount, billValue, paymentType, buyerName, currency, onDone }) {
+  const m = (n) => money(n).replace('₹', currency)
+  const [open, setOpen] = useState(false)
+  const [action, setAction] = useState('mark_unpaid')
+  const [amount, setAmount] = useState('')
+  const [unit, setUnit] = useState('rs')        // discount: rupees or % of the goods total
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [msg, setMsg] = useState('')
+  const [history, setHistory] = useState([])
+  const idsKey = lineIds.join(',')
+
+  useEffect(() => {
+    if (!lineIds.length) return
+    let active = true
+    supabase.from('sale_corrections')
+      .select('id, action, amount, reason, created_at')
+      .in('sale_id', lineIds).order('created_at')
+      .then(({ data }) => { if (active) setHistory(data ?? []) })
+    return () => { active = false }
+  }, [idsKey, msg])
+
+  const who = buyerName || 'The buyer'
+  const typed = round2(Math.max(0, Number(amount) || 0))
+  const rupees = action === 'discount' && unit === 'pct' ? round2(billAmount * typed / 100) : typed
+  const effect = action === 'mark_unpaid'
+    ? (amount === ''
+        ? `Everything recorded as paid for this bill moves onto ${who}'s udhaar.`
+        : `${m(rupees)} moves onto ${who}'s udhaar.`)
+    : rupees > 0
+      ? `${who}'s account is reduced by ${m(rupees)}, and it comes out of your profit.`
+      : ''
+
+  async function save() {
+    setErr(''); setMsg('')
+    if (!reason.trim()) return setErr('Write why this bill is being corrected. It is kept with the correction.')
+    if (action === 'discount' && !(rupees > 0)) return setErr('Enter the discount amount.')
+    if (action === 'discount' && rupees > billValue) return setErr(`The discount cannot be more than the bill (${m(billValue)}).`)
+    setBusy(true)
+    const { data, error } = await supabase.rpc('correct_sale_bill', {
+      p_sale_id: firstLineId,
+      p_action: action,
+      p_amount: action === 'mark_unpaid' && amount === '' ? null : rupees,
+      p_reason: reason.trim(),
+    })
+    setBusy(false)
+    if (error) return setErr(error.message)
+    const bal = Number(data?.balance_after ?? 0)
+    setMsg(`Saved. ${who}'s balance is now ${bal < 0 ? `an advance of ${m(-bal)}` : bal > 0 ? `udhaar ${m(bal)}` : 'settled'}.`)
+    setAmount(''); setReason(''); setOpen(false)
+    onDone?.()
+  }
+
+  return (
+    <div className="no-print rounded-lg border border-line bg-card p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="font-semibold">Correct this bill</p>
+          <p className="text-xs text-muted">
+            Entered as paid by mistake, or a discount agreed later? The fix is added as a new entry. Nothing is deleted.
+          </p>
+        </div>
+        {!open && (
+          <Button variant="ghost" onClick={() => { setOpen(true); setMsg('') }}>
+            <IconAdjustments size={18} /> Correct bill
+          </Button>
+        )}
+      </div>
+
+      {msg && <p className="mt-3 rounded-lg bg-profit/10 px-3 py-2 text-sm text-profit">{msg}</p>}
+
+      {open && (
+        <div className="mt-4 space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            {[['mark_unpaid', 'Money not received'], ['discount', 'Give a discount']].map(([k, l]) => (
+              <button
+                key={k} type="button" onClick={() => { setAction(k); setErr('') }}
+                className={`rounded-lg border px-3 py-2.5 text-sm font-medium transition ${
+                  action === k ? 'border-peacock bg-peacock/10 text-peacock' : 'border-line bg-card text-muted hover:text-ink'
+                }`}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+
+          {action === 'mark_unpaid' ? (
+            <>
+              {paymentType === 'udhaar' && (
+                <p className="text-xs text-muted">This bill is already on udhaar. Only money recorded as paid at billing can still be moved.</p>
+              )}
+              <Field label="Amount not received (leave empty for all of it)" value={amount} onChange={setAmount} placeholder="All of it" />
+            </>
+          ) : (
+            <div className="flex items-end gap-2">
+              <div className="flex-1">
+                <Field label={unit === 'pct' ? 'Discount (% of the goods total)' : 'Discount amount'} value={amount} onChange={setAmount} placeholder="0" />
+              </div>
+              <div className="mb-0.5 flex overflow-hidden rounded-lg border border-line text-sm">
+                {[['rs', currency], ['pct', '%']].map(([k, l]) => (
+                  <button key={k} type="button" onClick={() => setUnit(k)}
+                    className={`px-3 py-2 font-medium ${unit === k ? 'bg-peacock text-white' : 'bg-card text-muted hover:text-ink'}`}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {action === 'discount' && unit === 'pct' && typed > 0 && (
+            <p className="text-xs text-muted">{typed}% of {m(billAmount)} = <b className="fig text-ink">{m(rupees)}</b></p>
+          )}
+
+          <Field label="Why? (kept with the correction)" value={reason} onChange={setReason}
+                 placeholder={action === 'discount' ? 'e.g. 10% agreed with the dealer' : 'e.g. Entered as cash by mistake, bill was on credit'} full />
+
+          {effect && <p className="rounded-lg bg-saffron/10 px-3 py-2 text-sm text-ink">{effect}</p>}
+          {err && <p className="rounded-lg bg-dues/10 px-3 py-2 text-sm text-dues">{err}</p>}
+
+          <div className="flex gap-3">
+            <Button onClick={save} disabled={busy}>
+              {busy ? <Spinner /> : <IconDeviceFloppy size={18} />} Save correction
+            </Button>
+            <Button variant="ghost" onClick={() => { setOpen(false); setErr('') }}>Cancel</Button>
+          </div>
+        </div>
+      )}
+
+      {history.length > 0 && (
+        <ul className="mt-4 space-y-1.5 border-t border-line pt-3 text-sm">
+          {history.map((h) => (
+            <li key={h.id} className="flex flex-wrap items-baseline justify-between gap-2">
+              <span>
+                <span className="text-muted">{dateShort(h.created_at)} · </span>
+                {CORRECTION_LABEL[h.action] || h.action}
+                {h.reason && <span className="text-muted"> · {h.reason}</span>}
+              </span>
+              <span className="fig font-semibold">{m(h.amount)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
 }

@@ -314,8 +314,16 @@ Every read of `purchases` that totals anything must filter `deleted_at is null`.
 
 - Created automatically on order approval — owner never creates manually
 - Sale stores: Item No, Category, Quantity, Rate used, Amount, Profit, Payment Type
-- Payment type selected by owner at time of approval: Cash / UPI / Udhaar
-- If Udhaar selected: amount added to buyer's running balance automatically
+- Payment type selected by owner at time of approval: Cash / UPI / Udhaar / part paid
+- Every bill goes on the buyer's account; money taken at billing is recorded as a
+  Payment In linked to the bill (`payments.at_billing`), so a cash bill shows
+  "Sale" and "Paid at billing" in the ledger and nets to zero (migration 056)
+- Udhaar / part paid: "Paid now" (0 up to the bill, cash or UPI) is received; the
+  rest stays on the account. An advance the buyer holds is used up automatically
+- Correct a bill afterwards (owner only, `correct_sale_bill`): "money not received"
+  moves what was recorded as paid onto udhaar; "discount" applies a discount agreed
+  later (split across lines, out of profit). Both only ADD ledger entries and are
+  kept in `sale_corrections` with who and why
 - Print Order Supply slip from sale screen
 - Slip shows: shop name, date, buyer name, item, quantity, rate, total amount
 - View all sales in a list (owner only)
@@ -824,9 +832,14 @@ created_at        timestamptz DEFAULT now()
 ```
 
 **Rules:**
-- This table is append-only — no UPDATE, no DELETE ever
+- This table is append-only — no UPDATE, no DELETE ever (enforced by trigger, 056)
 - Every financial event writes exactly one row here via trigger
-- The owner's ledger view is simply a SELECT on this table filtered by party
+- debit/credit are from the PARTY's point of view (a sale is a "credit" on the buyer).
+  Read `ledger_entries.dr_amount` / `cr_amount` for normal books, and
+  `balance_delta` for how much a row moved the balance
+- From 056 each row carries `balance_delta` and `kind`; older sale rows' movement
+  is frozen in `ledger_legacy_moves`
+- The owner's ledger is read through the `ledger_entries` view (052, 056)
 
 ---
 
@@ -1262,10 +1275,11 @@ These small serverless functions handle tasks that need server-side logic.
 | Stock timing | Stock does NOT decrease when order is placed. Only decreases on owner approval |
 | Sale approval | Every shopfront order needs owner approval before it becomes a Sale. Exception: a Counter Sale (POS/walk-in) may be finalized by owner OR staff — the bill is the approval (§6.5a) |
 | Profit formula | (Rate charged − Purchase Rate) × Quantity. Uses buyer type to pick rate |
-| Payment timing | Owner selects payment type at approval: Cash / UPI / Udhaar |
+| Payment timing | Owner selects payment type at approval: Cash / UPI / Udhaar / part paid. Money taken at billing is a Payment In linked to the bill |
 | Udhaar | Udhaar adds to buyer's running balance. Cleared by Payment Entry |
 | Supplier balance | Purchase adds to supplier balance. Cleared by Payment Out entry |
 | Ledger | Append-only. Auto-written by triggers. Never manually edited |
+| Sale bill correction | Owner may mark money on a sale bill as not received, or give a discount after billing (§6.5). Appends entries only; stock is never returned this way (Golden Rule #1) |
 | Bill correction | Owner may correct an entered purchase bill (§6.1). Never rewrites the ledger — appends one correction entry for the difference. Refused if it would take stock negative |
 | Returns | Not in Phase 1. Planned for Phase 7. Rule to be decided before building |
 | Supplier login | No supplier login in Phase 1. Suppliers are records only |

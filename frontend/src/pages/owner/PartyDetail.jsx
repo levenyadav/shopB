@@ -412,8 +412,8 @@ function StatementBar({ statement, period, setPeriod, summary, currency }) {
         <div className="min-w-[14rem] flex-1">
           <h3 className="font-semibold text-ink">Statement of Account</h3>
           <p className="text-xs text-muted">
-            The money-on-account record to hand this party. Bills paid in cash or UPI at the
-            counter are settled on the spot, so they are not account transactions and do not appear.
+            The money-on-account record to hand this party: every bill, discount and payment.
+            Only old counter bills (before 29 Sep 2026) that were paid on the spot are left out.
           </p>
           <div className="mt-3 max-w-xs">
             <Select label="Period" value={period} onChange={(e) => setPeriod(e.target.value)}>
@@ -449,10 +449,9 @@ function StatementBar({ statement, period, setPeriod, summary, currency }) {
 // ---------------------------------------------------------------------------
 // Bill-wise outstanding.
 //
-// Payments in this system are independent of invoices (Golden Rule #8) — a
-// receipt just lowers balance_due, it is never tied to a bill. So "which bills
-// are open" is DERIVED oldest-first by party_open_bills, and the screen says so
-// rather than implying the shop tracked it per bill all along.
+// Money paid at billing, or recorded against a bill, settles that bill (056).
+// Every other receipt just lowers balance_due, so party_open_bills applies it
+// to the oldest bill first, and the screen says so.
 // ---------------------------------------------------------------------------
 function OutstandingBills({ bills, summary, currency, isSupplier }) {
   const open = bills.filter((b) => Number(b.outstanding) > 0)
@@ -472,7 +471,7 @@ function OutstandingBills({ bills, summary, currency, isSupplier }) {
   return (
     <div className="space-y-2.5">
       <p className="text-xs text-muted">
-        Payments are not tied to a bill, so the oldest bill is treated as paid first.
+        Money paid for a bill settles that bill. Other payments clear the oldest bill first.
       </p>
       {open.map((b) => {
         const part = Number(b.paid_amount) > 0
@@ -548,9 +547,10 @@ function BillList({ bills, currency, isSupplier }) {
               </p>
               <p className="text-xs text-muted">{dateTime(b.billed_at)}</p>
             </div>
-            {/* How it was settled. A counter bill never joined the account. */}
+            {/* How it was settled: in full at billing, part paid, or on udhaar. */}
             <Badge tone={b.on_credit ? 'saffron' : 'profit'}>
-              {b.on_credit ? 'On udhaar' : b.payment_type === 'upi' ? 'Paid by UPI'
+              {b.on_credit ? (Number(b.paid_linked) > 0 ? 'Part paid' : 'On udhaar')
+                : b.payment_type === 'upi' ? 'Paid by UPI'
                 : b.payment_type === 'cash' ? 'Paid in cash' : 'Settled'}
             </Badge>
             <div className="text-right">

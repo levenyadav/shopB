@@ -12,6 +12,7 @@ import { rateForBuyer, lineProfit, round2, toE164India } from '../../lib/helpers
 import { Button, Field, Spinner, Badge, PhotoThumb } from '../../components/ui'
 import BarcodeScanner from '../../components/BarcodeScanner'
 import CounterReceipt from '../../components/CounterReceipt'
+import PaymentChooser, { paymentArgs } from '../../components/PaymentChooser'
 import { buildInvoiceModel, printInvoice } from '../../lib/invoiceTemplate'
 
 // POS / Counter Sale (SPEC §6.5a — walk-in billing). Owner OR staff ring up a
@@ -19,8 +20,8 @@ import { buildInvoiceModel, printInvoice } from '../../lib/invoiceTemplate'
 // buyer, take payment, and finalize via the atomic create_counter_sale RPC (one
 // transaction → stock drops, ledger/udhaar booked, order 'approved' and a
 // 'pending_pack' fulfilment job opened — the bill still goes through the pack
-// queue (049), same as a shopfront order.
-const PAYMENTS = [['cash', 'Cash'], ['upi', 'UPI'], ['udhaar', 'Udhaar (credit)']]
+// queue (049), same as a shopfront order. A bill can be part paid, and any
+// advance the buyer holds is used by an udhaar bill (056, see PaymentChooser).
 
 // Commas and parentheses are PostgREST's `.or()` grammar; a search term that
 // contains one otherwise throws a 400 and looks like "no results". Strip them.
@@ -38,6 +39,8 @@ export default function CounterSale() {
   const [buyer, setBuyer] = useState(null) // { id, full_name, phone, role }
   const [payment, setPayment] = useState('cash')
   const [tendered, setTendered] = useState('')
+  const [paidNow, setPaidNow] = useState('')
+  const [paidMethod, setPaidMethod] = useState('cash')
   const [discount, setDiscount] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -58,6 +61,7 @@ export default function CounterSale() {
   const discountOver = discountRaw > total
   const payable = round2(total - discountNum)
   const profit = round2(listProfit - discountNum)
+  const pay = paymentArgs({ payment, paidNow, paidMethod, total: payable })
 
   // Re-price every line when the buyer (and thus the tier) changes — dealer pays
   // dealer_rate, customer pays retail. A manual charge override is reset here; the
@@ -105,6 +109,7 @@ export default function CounterSale() {
     const blank = cart.find((l) => !(Number(l.quantity) > 0) || l.charge === '' || !(Number(l.charge) >= 0))
     if (blank) return setErr(`Enter a quantity and rate for "${blank.name}".`)
     if (discountOver) return setErr(`The discount cannot be more than the ${m(total)} bill. Lower it and try again.`)
+    if (pay.error) return setErr(`Paid now is more than the ${m(payable)} bill. Take the extra as a Payment In advance.`)
 
     setBusy(true)
     const { data, error } = await supabase.rpc('create_counter_sale', {
@@ -115,6 +120,7 @@ export default function CounterSale() {
         item_id: l.id, category_id: l.category_id, quantity: Number(l.quantity), rate: Number(l.charge),
       })),
       p_discount: discountNum,
+      ...pay.rpc,
     })
     setBusy(false)
     if (error) { setErr(error.message); return }
@@ -130,7 +136,12 @@ export default function CounterSale() {
       buyer_name: buyer.full_name, buyer_phone: buyer.phone, buyer_type: buyerType,
       buyer_gstin: buyer.gstin ?? null, buyer_address: buyer.address ?? null,
       buyer_state_name: buyer.state_name ?? null, buyer_state_code: buyer.state_code ?? null,
-      payment_type: payment,
+      // 056 returns what was really booked: a part-paid bill is 'udhaar'.
+      payment_type: data?.payment_type ?? payment,
+      paid_now: data?.paid_now ?? pay.paid,
+      paid_method: payment === 'udhaar' ? paidMethod : payment,
+      on_account: data?.on_account ?? pay.onAccount,
+      balance_after: data?.balance_after ?? null,
       tendered: payment === 'cash' && tendered !== '' ? Number(tendered) : null,
       subtotal: total,
       discount: discountNum,
@@ -145,6 +156,7 @@ export default function CounterSale() {
 
   function reset() {
     setDone(null); setCart([]); setBuyer(null); setPayment('cash'); setTendered(''); setDiscount(''); setErr('')
+    setPaidNow(''); setPaidMethod('cash')
   }
 
   if (done) return <ReceiptScreen bill={done} shop={shop} currency={currency} onNew={reset} home={home} navigate={navigate} />
@@ -264,24 +276,13 @@ export default function CounterSale() {
           <BuyerPanel buyer={buyer} setBuyer={setBuyer} shopId={shopId} />
 
           <div className="rounded-lg border border-line bg-card p-4">
-            <p className="mb-1.5 text-sm font-medium">Payment</p>
-            <div className="grid grid-cols-3 gap-2">
-              {PAYMENTS.map(([key, label]) => (
-                <button
-                  key={key} type="button" onClick={() => setPayment(key)}
-                  className={`rounded-lg border px-2 py-2 text-sm font-medium transition ${
-                    payment === key ? 'border-peacock bg-peacock/10 text-peacock' : 'border-line bg-card text-muted hover:text-ink'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            {payment === 'udhaar' && (
-              <p className="mt-2 text-xs text-saffron">
-                Adds {m(payable)} to {buyer?.full_name || 'the buyer'}’s udhaar. A named buyer is required — clear it later via Payment In.
-              </p>
-            )}
+            <PaymentChooser
+              payment={payment} setPayment={setPayment}
+              paidNow={paidNow} setPaidNow={setPaidNow}
+              paidMethod={paidMethod} setPaidMethod={setPaidMethod}
+              total={payable} balance={buyer?.balance_due} buyerName={buyer?.full_name}
+              currency={currency}
+            />
             {payment === 'cash' && payable > 0 && (
               <div className="mt-3 flex items-center justify-between gap-3">
                 <Field
@@ -298,7 +299,7 @@ export default function CounterSale() {
 
           {err && <p className="rounded-lg border border-dues/40 bg-dues/5 px-3 py-2 text-sm text-dues">{err}</p>}
 
-          <Button onClick={confirm} disabled={busy || !cart.length || discountOver} className="w-full py-3 text-base">
+          <Button onClick={confirm} disabled={busy || !cart.length || discountOver || !!pay.error} className="w-full py-3 text-base">
             {busy ? <Spinner /> : <IconCheck size={18} />}
             {busy ? 'Saving…' : `Complete sale · ${m(payable)}`}
           </Button>
@@ -481,7 +482,9 @@ function BuyerPanel({ buyer, setBuyer, shopId }) {
         <div className="flex items-center justify-between gap-3 rounded-lg border border-peacock/30 bg-peacock/5 px-3 py-2">
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold">{buyer.full_name} <Badge tone={buyer.role === 'dealer' ? 'saffron' : 'muted'}>{buyer.role}</Badge></p>
-            <p className="fig text-xs text-muted">{buyer.phone || 'No phone'}{Number(buyer.balance_due) > 0 ? ` · Udhaar ₹${Number(buyer.balance_due).toLocaleString('en-IN')}` : ''}</p>
+            <p className="fig text-xs text-muted">{buyer.phone || 'No phone'}
+              {Number(buyer.balance_due) > 0 ? ` · Udhaar ₹${Number(buyer.balance_due).toLocaleString('en-IN')}` : ''}
+              {Number(buyer.balance_due) < 0 ? ` · Advance ₹${(-Number(buyer.balance_due)).toLocaleString('en-IN')}` : ''}</p>
           </div>
           <button onClick={() => { setBuyer(null); setQ('') }} className="text-muted hover:text-ink" aria-label="Change buyer"><IconX size={18} /></button>
         </div>

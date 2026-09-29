@@ -16,15 +16,18 @@ import { Badge } from './ui'
 //     discount as "+₹5,200", wrong by double. `signed_amount` is signed once,
 //     correctly, in SQL.
 //
-//   * a ledger row does not mean the balance moved. Every sale writes a row,
-//     but only udhaar touches balance_due — so a cash bill used to read
-//     "+₹4,500" beside a "Balance after" that hadn't budged. `moved_balance`
-//     separates the two, and those rows now say so in plain words instead of
-//     showing a change that never happened.
+//   * before migration 056 a ledger row did not always mean the balance
+//     moved: a cash bill wrote a row but only udhaar touched balance_due.
+//     `moved_balance` marks those old rows, and they say so in plain words.
+//     From 056 every bill goes on the account and money taken at billing is
+//     its own "Paid at billing" row, so new cash bills show both halves.
 const KIND = {
   purchase:      { label: 'Purchase',    tone: 'peacock' },
   sale:          { label: 'Sale',        tone: 'saffron' },
   sale_discount: { label: 'Discount',    tone: 'profit'  },
+  bill_charge:   { label: 'Charges',     tone: 'saffron' },
+  bill_unpaid:   { label: 'Correction',  tone: 'dues'    },
+  receipt_reversed: { label: 'Receipt reversed', tone: 'dues' },
   payment_in:    { label: 'Payment in',  tone: 'profit'  },
   payment_out:   { label: 'Payment out', tone: 'profit'  },
 }
@@ -106,10 +109,10 @@ export default function LedgerTable({ entries, currency = '₹', emptyText }) {
                     <span className="fig text-ink">{money(e.running_balance).replace('₹', currency)}</span>
                   </>
                 ) : (
-                  // Settled at the counter — it never joined the account, so
-                  // showing a "balance after" here would imply it did.
+                  // A pre-056 counter bill settled on the spot — it never
+                  // joined the account, so a "balance after" would mislead.
                   <span className="text-xs text-muted">
-                    Paid {e.sale_payment_type === 'upi' ? 'by UPI' : 'in cash'} · nothing on account
+                    Entered as paid {e.sale_payment_type === 'upi' ? 'by UPI' : 'in cash'} · not on account
                   </span>
                 )}
               </div>

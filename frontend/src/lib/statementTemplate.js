@@ -4,13 +4,12 @@
 // iframe — the same no-popup pattern as invoiceTemplate.js and barcodeLabel.js,
 // so "Download" is the browser's native Print → Save as PDF with no PDF library.
 //
-// WHAT BELONGS ON A STATEMENT. Only entries that moved the account. A cash or
-// UPI bill is settled at the counter and never touches balance_due (see
-// on_sale_insert / migration 052's `moved_balance`), so it is not an account
-// transaction and printing it would stop the statement footing:
+// WHAT BELONGS ON A STATEMENT. Only entries that moved the account, so that
 //     opening + billed - settled = closing
-// holds exactly because those rows are excluded. The on-screen Ledger still
-// shows every entry; this document is the money-owed record.
+// holds exactly. From migration 056 that is every bill: it goes on the account
+// and money taken at billing is its own "Paid at billing" row. Only counter
+// bills from before 056 that were paid on the spot never touched balance_due
+// (balance_delta 0) and are left out.
 //
 // SIDES. Proper double entry, per side, with a plain-words legend underneath:
 //   buyer (debtor)    — a sale DEBITS them, a receipt CREDITS them
@@ -307,8 +306,8 @@ export function statementHtml(model) {
 
   <div class="foot">
     <div class="note">
-      <div><b>Please note.</b> Bills settled in cash or UPI at the counter are not account
-      transactions and do not appear above. This statement covers money on account only.</div>
+      <div><b>Please note.</b> Every bill and payment on your account is listed, including money
+      paid at the time of billing. Counter bills before 29 Sep 2026 that were paid on the spot are not included.</div>
       ${s.bank ? `<div style="margin-top:4px">${esc(s.bank)}</div>` : ''}
       <div style="margin-top:4px">Errors and omissions excepted. Kindly report any difference within 7 days.</div>
     </div>
