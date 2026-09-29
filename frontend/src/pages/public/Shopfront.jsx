@@ -16,6 +16,8 @@ import ItemCard from '../../components/ItemCard'
 // (category / tag / price range). Only active, in-stock items appear — we
 // filter client-side too so an owner previewing the page sees what buyers see
 // (their RLS would otherwise return out-of-stock / inactive rows).
+const PAGE = 60
+
 export default function Shopfront() {
   const { categoryId } = useParams()
   const navigate = useNavigate()
@@ -28,6 +30,9 @@ export default function Shopfront() {
   const [showFilters, setShowFilters] = useState(false)
   const [minP, setMinP] = useState('')   // kept as strings so the inputs can be empty
   const [maxP, setMaxP] = useState('')
+  // Cards drawn so far. Rendering all ~1000 products at once made the first
+  // page slow on budget phones; "Show more" adds a page at a time.
+  const [shown, setShown] = useState(PAGE)
 
   // shopfront_items is the column-safe view (no purchase_rate — Golden Rule #4).
   // Category names come from ShopContext, so no embed through the view is needed.
@@ -88,6 +93,9 @@ export default function Shopfront() {
       return true
     })
   }, [items, categoryId, q, activeTag, minP, maxP, role])
+
+  // Any new search / filter starts again from the first page.
+  useEffect(() => { setShown(PAGE) }, [categoryId, q, activeTag, minP, maxP])
 
   const setCategory = (id) => navigate(id ? `/shop/${id}` : '/')
 
@@ -258,11 +266,27 @@ export default function Shopfront() {
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {visible.map((item) => (
-            <ItemCard key={item.id} item={item} categoryName={catName[item.category_id]} />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            {visible.slice(0, shown).map((item) => (
+              <ItemCard key={item.id} item={item} categoryName={catName[item.category_id]} />
+            ))}
+          </div>
+          {visible.length > shown && (
+            <div className="flex flex-col items-center gap-1.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShown((n) => n + PAGE)}
+                className="rounded-lg border border-line bg-card px-6 py-2.5 text-sm font-semibold text-ink transition hover:border-peacock hover:text-peacock"
+              >
+                Show more items
+              </button>
+              <p className="text-xs text-muted">
+                Showing <span className="fig">{shown}</span> of <span className="fig">{visible.length}</span>
+              </p>
+            </div>
+          )}
+        </>
       )}
     </div>
   )

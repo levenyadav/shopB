@@ -65,18 +65,24 @@ export default function SaleDetail() {
   // out the earliest row as detail_ref), so load its siblings: this page and the
   // Tax Invoice must show the whole document, not one line of it.
   async function loadLines(saleRow) {
+    // A failed read here must say so: the page (and a printed invoice) would
+    // otherwise show one line of the bill as if it were the whole thing.
+    const fail = (e) => setErr(`Could not load the rest of this bill (${e.message}). Refresh before printing.`)
     let rows = null
     if (saleRow.bill_id) {
-      const { data } = await supabase.from('sales').select(SALE_COLS)
+      const { data, error } = await supabase.from('sales').select(SALE_COLS)
         .eq('bill_id', saleRow.bill_id).order('created_at')
+      if (error) fail(error)
       rows = data
     } else if (saleRow.order?.order_group_id) {
-      const { data: ords } = await supabase.from('orders')
+      const { data: ords, error: oErr } = await supabase.from('orders')
         .select('id').eq('order_group_id', saleRow.order.order_group_id)
+      if (oErr) fail(oErr)
       const ids = (ords ?? []).map((o) => o.id)
       if (ids.length > 1) {
-        const { data } = await supabase.from('sales').select(SALE_COLS)
+        const { data, error } = await supabase.from('sales').select(SALE_COLS)
           .in('order_id', ids).order('created_at')
+        if (error) fail(error)
         rows = data
       }
     }
@@ -90,10 +96,11 @@ export default function SaleDetail() {
   // cart discount is split across its lines, 051), so a bill's charges are the
   // sum over its lines.
   async function loadBill(billLines) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('order_bills')
       .select('subtotal, discount_amount, shipping_fee, packing_fee, other_charge, grand_total')
       .in('sale_id', billLines.map((l) => l.id))
+    if (error) setErr(`Could not load this bill's discount and shipping (${error.message}). The total below may be wrong — refresh before printing.`)
     if (!data?.length) { setBill(null); return }
     const sum = (k) => round2(data.reduce((t, r) => t + Number(r[k] || 0), 0))
     setBill({

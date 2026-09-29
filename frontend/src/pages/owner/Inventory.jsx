@@ -715,6 +715,10 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
   // rows by a trigger, so this screen edits warehouse_stock directly instead of
   // items.quantity — one number per warehouse, owner corrects any of them.
   const [whQty, setWhQty] = useState(null) // { [warehouse_id]: 'string qty' } once loaded
+  // The figures as loaded, so Save writes only the warehouses the owner actually
+  // corrected. Writing all of them put back stock sold while the form was open:
+  // change a price while staff sell 200 at the counter → the 200 reappeared.
+  const [whOrig, setWhOrig] = useState(null)
   useEffect(() => {
     if (item.made_to_order || !warehouses.length) return
     let active = true
@@ -725,7 +729,9 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
       .then(({ data }) => {
         if (!active) return
         const byId = Object.fromEntries((data || []).map((r) => [r.warehouse_id, String(r.quantity)]))
-        setWhQty(Object.fromEntries(warehouses.map((w) => [w.id, byId[w.id] ?? '0'])))
+        const loaded = Object.fromEntries(warehouses.map((w) => [w.id, byId[w.id] ?? '0']))
+        setWhQty(loaded)
+        setWhOrig(loaded)
       })
     return () => { active = false }
   }, [item.id, item.made_to_order, warehouses])
@@ -810,7 +816,9 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
           warehouse_id: f.warehouse_id || null,
           // When the per-warehouse breakdown loaded, it owns quantity (a trigger
           // derives items.quantity from warehouse_stock) — don't also set it here.
-          ...(whQty ? {} : { quantity: round2(f.quantity || 0) }),
+          // Otherwise send quantity only if the owner changed it: the form's
+          // number may be minutes old, and re-saving it would undo sales since.
+          ...(whQty || f.quantity === String(item.quantity) ? {} : { quantity: round2(f.quantity || 0) }),
           purchase_rate: round2(f.purchase_rate),
           dealer_rate: round2(f.dealer_rate),
           rate: round2(f.rate),
@@ -835,10 +843,13 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
         throw new Error(error.message)
       }
 
-      // Per-warehouse correction (043): write the whole breakdown. The sync
+      // Per-warehouse correction (043): write only the warehouses changed. The sync
       // trigger on warehouse_stock recomputes items.quantity from these.
-      if (whQty) {
-        const rows = warehouses.map((w) => ({
+      const changed = whQty
+        ? warehouses.filter((w) => round2(whQty[w.id] || 0) !== round2(whOrig?.[w.id] || 0))
+        : []
+      if (changed.length) {
+        const rows = changed.map((w) => ({
           item_id: item.id, warehouse_id: w.id, quantity: round2(whQty[w.id] || 0),
         }))
         const { error: whErr } = await supabase
