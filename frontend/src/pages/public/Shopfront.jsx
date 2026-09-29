@@ -181,7 +181,7 @@ export default function Shopfront() {
 
       {/* Categories — one swipeable row, the only category control. */}
       {categories.length > 0 && (
-        <nav aria-label="Categories" className="no-scrollbar -mx-4 flex snap-x gap-2 overflow-x-auto px-4 sm:-mx-6 sm:px-6">
+        <nav aria-label="Categories" className="no-scrollbar -mx-4 flex snap-x scroll-px-4 gap-2 overflow-x-auto px-4 sm:-mx-6 sm:scroll-px-6 sm:px-6">
           <Pill active={!categoryId} onClick={() => setCategory('')}>All</Pill>
           {categories.map((c) => (
             <Pill key={c.id} active={categoryId === c.id} onClick={() => setCategory(c.id)}>{c.name}</Pill>
@@ -207,7 +207,7 @@ export default function Shopfront() {
             id="shop-sort"
             value={sort}
             onChange={(e) => setParam({ sort: e.target.value })}
-            className="h-11 rounded-lg border border-line bg-card pl-3 pr-8 text-sm font-medium text-ink outline-none transition-colors duration-150 hover:border-ink/25"
+            className="h-11 rounded-lg border border-line bg-card pl-3 pr-8 text-sm font-medium text-ink outline-none transition-colors duration-150 hover:border-ink/25 focus-visible:border-peacock focus-visible:ring-1 focus-visible:ring-peacock"
           >
             {SORTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>

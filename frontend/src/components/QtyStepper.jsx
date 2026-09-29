@@ -65,7 +65,7 @@ export default function QtyStepper({
           onFocus={(e) => { setTyping(true); e.target.select() }}
           onBlur={commit}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
-          className={`fig self-stretch border-x border-line bg-transparent text-center outline-none ${sm ? 'w-12 text-sm' : 'w-14'}`}
+          className={`fig self-stretch border-x border-line bg-transparent text-center outline-none focus:ring-2 focus:ring-inset focus:ring-peacock ${sm ? 'w-12 text-sm' : 'w-14'}`}
         />
         <button type="button" disabled={disabled} aria-label={`More ${step}`}
                 onClick={() => onChange(snapToMoq(value + step, step, cap))}

@@ -159,7 +159,11 @@ body {
   color: var(--color-ink); letter-spacing: -.01em; text-transform: none;
   font-size: 1.125rem; line-height: 1.2;
 }
-.storefront :focus-visible { outline: 2px solid var(--color-brand-ink); outline-offset: 2px; }
+/* Base layer, so a control that draws its own focus (outline-none + border)
+   can opt out; everything else gets one consistent ring. */
+@layer base {
+  .storefront :focus-visible { outline: 2px solid var(--color-brand-ink); outline-offset: 2px; }
+}
 /* Scroll-snap rails (category chips, banners, gallery) — swipe without a scrollbar. */
 .no-scrollbar { scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }

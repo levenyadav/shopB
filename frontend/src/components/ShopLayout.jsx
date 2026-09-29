@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate, useNavigationType, useSearchParams } from 'react-router-dom'
 import {
   IconReceipt2, IconUserCircle, IconUser, IconLayoutDashboard, IconClipboardCheck,
@@ -72,7 +72,7 @@ export default function ShopLayout() {
 
           {search && <HeaderSearch className="order-last w-full sm:order-none sm:mx-auto sm:max-w-xl sm:flex-1" />}
 
-          <nav aria-label="Account" className="flex shrink-0 items-center">
+          <nav aria-label="Account" className="ml-auto flex shrink-0 items-center">
             {isStaffSide ? (
               <HeaderLink
                 to={role === 'owner' ? '/owner' : '/staff'}
@@ -144,18 +144,33 @@ function HeaderSearch({ className = '' }) {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const onGrid = isListing(pathname)
-  const [draft, setDraft] = useState('')
-  const value = onGrid ? (params.get('q') || '') : draft
+  const urlQ = onGrid ? (params.get('q') || '') : ''
 
-  function change(v) {
-    if (!onGrid) { setDraft(v); return }
-    setParams((p) => {
-      const next = new URLSearchParams(p)
-      if (v) next.set('q', v)
-      else next.delete('q')
-      return next
-    }, { replace: true })
-  }
+  // The box owns what's typed; the URL follows a beat later. (Driving the input
+  // straight from the URL drops keystrokes — router updates land after the next
+  // key.) The URL only overwrites the box when it changed from elsewhere, e.g.
+  // "Show all products" or Back.
+  const [value, setValue] = useState(urlQ)
+  const pushed = useRef(urlQ)
+  useEffect(() => {
+    if (urlQ !== pushed.current) { pushed.current = urlQ; setValue(urlQ) }
+  }, [urlQ])
+
+  useEffect(() => {
+    if (!onGrid || value === pushed.current) return
+    const t = setTimeout(() => {
+      pushed.current = value
+      setParams((p) => {
+        const next = new URLSearchParams(p)
+        if (value) next.set('q', value)
+        else next.delete('q')
+        return next
+      }, { replace: true })
+    }, 200)
+    return () => clearTimeout(t)
+  }, [value, onGrid, setParams])
+
+  const change = setValue
 
   function submit(e) {
     e.preventDefault()
@@ -175,7 +190,7 @@ function HeaderSearch({ className = '' }) {
         value={value}
         onChange={(e) => change(e.target.value)}
         placeholder="Search cards, gifts, boxes…"
-        className="h-11 w-full rounded-lg border border-transparent bg-paper-2 pl-10 pr-10 text-[15px] text-ink outline-none transition-colors duration-150 placeholder:text-muted focus:border-line focus:bg-card [&::-webkit-search-cancel-button]:hidden"
+        className="h-11 w-full rounded-lg border border-transparent bg-paper-2 pl-10 pr-10 text-[15px] text-ink outline-none transition-colors duration-150 placeholder:text-muted focus:border-peacock focus:bg-card [&::-webkit-search-cancel-button]:hidden"
       />
       {value && (
         <button

@@ -130,9 +130,13 @@ export default function Login() {
 
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-4 pb-10">
         <div className="rounded-2xl bg-card p-6 ring-1 ring-line sm:p-8">
-          <div className="mb-6 flex justify-center">
-            <Brand shop={shop} maxWords={3} logoClassName="h-12" />
-          </div>
+          {/* The logo only when there is an image — a text logo would just
+              repeat the shop name in the heading below. */}
+          {shop?.logo_url && (
+            <div className="mb-6 flex justify-center">
+              <Brand shop={shop} maxWords={3} logoClassName="h-12" />
+            </div>
+          )}
 
           <h1 className="text-center font-[var(--font-display)] text-2xl font-bold text-ink">
             {step === 'otp' ? 'Enter the code' : step === 'name' ? 'Create your account' : `Sign in to ${shopName}`}
@@ -152,7 +156,7 @@ export default function Login() {
               <form onSubmit={submitPhone} className="space-y-4" noValidate>
                 <label className="block">
                   <span className="mb-1.5 block text-sm font-medium text-ink">Mobile number</span>
-                  <span className="flex h-12 items-center rounded-lg border border-line bg-card transition-colors duration-150 focus-within:border-ink/40">
+                  <span className="flex h-12 items-center rounded-lg border border-line bg-card transition-colors duration-150 focus-within:border-peacock focus-within:ring-1 focus-within:ring-peacock">
                     <span className="fig pl-3 pr-2 text-muted">+91</span>
                     <input
                       value={phone} onChange={(e) => setPhone(e.target.value)} autoFocus
@@ -175,7 +179,7 @@ export default function Login() {
                     value={name} onChange={(e) => setName(e.target.value)} autoFocus
                     type="text" autoComplete="name" placeholder="Full name"
                     aria-invalid={!!error} aria-describedby={error ? 'login-error' : undefined}
-                    className="h-12 w-full rounded-lg border border-line bg-card px-3 text-base text-ink outline-none transition-colors duration-150 focus:border-ink/40"
+                    className="h-12 w-full rounded-lg border border-line bg-card px-3 text-base text-ink outline-none transition-colors duration-150 focus:border-peacock focus:ring-1 focus:ring-peacock"
                   />
                 </label>
                 <ErrorLine error={error} />
@@ -197,7 +201,7 @@ export default function Login() {
                     }}
                     type="text" inputMode="numeric" autoComplete="one-time-code" placeholder="••••••"
                     aria-invalid={!!error} aria-describedby={error ? 'login-error' : undefined}
-                    className="fig h-14 w-full rounded-lg border border-line bg-card text-center text-2xl tracking-[0.5em] text-ink outline-none transition-colors duration-150 placeholder:text-line focus:border-ink/40"
+                    className="fig h-14 w-full rounded-lg border border-line bg-card text-center text-2xl tracking-[0.5em] text-ink outline-none transition-colors duration-150 placeholder:text-line focus:border-peacock focus:ring-1 focus:ring-peacock"
                   />
                 </label>
                 <ErrorLine error={error} />

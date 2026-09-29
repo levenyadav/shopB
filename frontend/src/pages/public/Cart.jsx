@@ -177,7 +177,7 @@ export default function Cart() {
               <textarea
                 id="order-note" rows={2} value={note} onChange={(e) => setNote(e.target.value)}
                 placeholder="e.g. need by Friday, gift wrap, call before delivery…"
-                className="mt-1 w-full rounded-lg border border-line bg-card px-3 py-2.5 text-[15px] text-ink outline-none transition-colors duration-150 focus:border-ink/40"
+                className="mt-1 w-full rounded-lg border border-line bg-card px-3 py-2.5 text-[15px] text-ink outline-none transition-colors duration-150 focus:border-peacock focus:ring-1 focus:ring-peacock"
               />
             </details>
           )}
@@ -214,11 +214,12 @@ export default function Cart() {
               <div className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-card px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:static lg:mt-4 lg:border-0 lg:p-0">
                 {action}
               </div>
-              <div className="h-20 lg:hidden" aria-hidden />
             </>
           )}
         </aside>
       </div>
+      {/* Room for the pinned Place-order bar on phones. */}
+      {!isStaffSide && <div className="h-20 lg:hidden" aria-hidden />}
     </div>
   )
 }
