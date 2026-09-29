@@ -12,6 +12,7 @@ import { putBlob, getBlob, delBlob } from '../../lib/idbBlob'
 import { useFormDraft } from '../../hooks/useFormDraft'
 import { useBeforeUnload } from '../../hooks/useBeforeUnload'
 import { Button, Field, Select, Textarea, Spinner, StockBadge } from '../../components/ui'
+import { useBack } from '../../components/BackButton'
 // The bill-building UI is shared with Purchase Bill Detail, which corrects an
 // already-entered bill (migration 039) and must offer exactly these options.
 import {
@@ -235,8 +236,10 @@ function BillEntry() {
       //    statement-level trigger (migration 033) writes exactly one ledger
       //    row per INSERT statement, so inserting line by line would give the
       //    supplier one ledger entry per product instead of one per bill.
+      let firstLineId = null
       if (rows.length) {
-        const { error: pErr } = await supabase.from('purchases').insert(rows)
+        const { data: inserted, error: pErr } = await supabase.from('purchases').insert(rows).select('id')
+        firstLineId = inserted?.[0]?.id ?? null
         if (pErr) {
           throw new Error(
             createdItems.length
@@ -281,6 +284,7 @@ function BillEntry() {
       }
 
       setDone({
+        firstLineId,
         invoice_no,
         supplier: supplier?.name || 'supplier',
         lineCount: lines.length,
@@ -511,10 +515,17 @@ function BillSuccess({ done, onAnother }) {
       )}
       <div className="mt-6 flex justify-center gap-3">
         <Button onClick={onAnother}><IconPlus size={18} /> Enter another bill</Button>
-        <Link to="/owner/inventory"
-              className="inline-flex items-center rounded-lg border border-line bg-card px-4 py-2.5 text-sm font-semibold hover:bg-paper-2">
-          View Inventory
-        </Link>
+        {done.firstLineId ? (
+          <Link to={`/owner/purchases/${done.firstLineId}`}
+                className="inline-flex items-center rounded-lg border border-line bg-card px-4 py-2.5 text-sm font-semibold hover:bg-paper-2">
+            View this bill
+          </Link>
+        ) : (
+          <Link to="/owner/inventory"
+                className="inline-flex items-center rounded-lg border border-line bg-card px-4 py-2.5 text-sm font-semibold hover:bg-paper-2">
+            View Inventory
+          </Link>
+        )}
       </div>
     </div>
   )
@@ -522,17 +533,19 @@ function BillSuccess({ done, onAnother }) {
 
 
 // =============================================================================
-// Quick restock (SPEC §6.9 — reached from Stock Inquiry's low list and Reports).
+// Quick restock (SPEC §6.9 — reached from Inventory's reorder view, Item
+// history, an order that is short of stock, and Reports).
 // One item, one line, no bill to build: the fastest path when a single product
 // runs low. Left ungrouped, so its ledger entry names the item rather than a
 // bill. Multi-product invoices go through Bill entry above.
 // =============================================================================
 function RestockEntry({ itemId }) {
   const { profile } = useAuth()
-  const { shopId, warehouses } = useShop()
+  const { shopId, warehouses, suppliers, currency } = useShop()
+  const { goBack } = useBack()
   const [item, setItem] = useState(null)
   const [loadErr, setLoadErr] = useState('')
-  const [form, setForm] = useState({ quantity: '', purchase_rate: '', invoice_no: '', invoice_date: today(), notes: '', warehouse_id: '' })
+  const [form, setForm] = useState({ quantity: '', purchase_rate: '', invoice_no: '', invoice_date: today(), notes: '', warehouse_id: '', supplier_id: '' })
   const [errors, setErrors] = useState({})
   const [busy, setBusy] = useState(false)
   const [topError, setTopError] = useState('')
@@ -571,6 +584,7 @@ function RestockEntry({ itemId }) {
             ...f,
             purchase_rate: f.purchase_rate || String(data.purchase_rate),
             warehouse_id: f.warehouse_id || (data.warehouse_id || ''),
+            supplier_id: f.supplier_id || (data.supplier_id || ''),
           }))
         }
       })
@@ -582,6 +596,7 @@ function RestockEntry({ itemId }) {
     const er = {}
     if (!form.quantity || Number(form.quantity) <= 0) er.quantity = 'Enter how many came in.'
     if (form.purchase_rate === '' || Number(form.purchase_rate) < 0) er.purchase_rate = 'Enter the cost rate.'
+    if (!form.supplier_id) er.supplier_id = 'Choose who you bought this batch from.'
     setErrors(er)
     if (Object.keys(er).length) return
 
@@ -593,7 +608,8 @@ function RestockEntry({ itemId }) {
       const { error } = await supabase.from('purchases').insert({
         shop_id: shopId,
         item_id: item.id,
-        supplier_id: item.supplier_id,
+        // Usually the product's own supplier, but a batch can come from anyone.
+        supplier_id: form.supplier_id,
         quantity,
         purchase_rate,
         total_cost,
@@ -605,7 +621,10 @@ function RestockEntry({ itemId }) {
       })
       if (error) throw new Error(error.message)
       clearRestockDraft()
-      setDone({ item_no: item.item_no, name: item.name, quantity, total_cost })
+      setDone({
+        item_no: item.item_no, name: item.name, quantity, total_cost,
+        supplier: suppliers.find((s) => s.id === form.supplier_id)?.name || 'the supplier',
+      })
     } catch (err) {
       setTopError(err.message || 'Could not save. Please try again.')
     } finally {
@@ -636,8 +655,8 @@ function RestockEntry({ itemId }) {
           <span className="fig font-semibold text-ink">{done.item_no}</span> — {done.name}
         </p>
         <div className="mt-5 grid grid-cols-2 gap-3 text-left">
-          <Box label="Stocked in" value={`${done.quantity}`} />
-          <Box label="Added to supplier due" value={money(done.total_cost)} tone="dues" />
+          <Box label="Stocked in" value={`${qty(done.quantity)} pcs`} />
+          <Box label={`Added to ${done.supplier}'s due`} value={money(done.total_cost)} tone="dues" />
         </div>
         <div className="mt-6 flex justify-center gap-3">
           <Link to="/owner/inventory?low=1&sort=low"
@@ -660,9 +679,6 @@ function RestockEntry({ itemId }) {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <Link to="/owner/inventory?low=1&sort=low" className="mb-4 inline-block text-sm font-medium text-muted hover:text-ink">
-        ← Reorder list
-      </Link>
       <form onSubmit={onSubmit} className="space-y-6">
         <DraftBar
           at={restoredAt}
@@ -700,9 +716,14 @@ function RestockEntry({ itemId }) {
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Quantity coming in" type="number" min="0" inputMode="decimal"
                    value={form.quantity} onChange={set('quantity')} error={errors.quantity} autoFocus />
-            <Field label="Purchase Rate" prefix="₹" type="number" min="0" step="0.01" inputMode="decimal"
+            <Field label="Purchase Rate" prefix={currency} type="number" min="0" step="0.01" inputMode="decimal"
                    value={form.purchase_rate} onChange={set('purchase_rate')} error={errors.purchase_rate} />
           </div>
+          <Select label="Bought from" value={form.supplier_id} onChange={set('supplier_id')} error={errors.supplier_id}
+                  hint="Defaults to this product's usual supplier. Their balance goes up by the cost below.">
+            <option value="">Select supplier…</option>
+            {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </Select>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Bill / Invoice No. (optional)" placeholder="e.g. 4521"
                    value={form.invoice_no} onChange={set('invoice_no')}
@@ -720,7 +741,7 @@ function RestockEntry({ itemId }) {
             <p className="rounded-lg bg-paper-2 px-4 py-2.5 text-sm">
               Total purchase cost:{' '}
               <span className="fig font-bold text-dues">{money(liveCost)}</span>
-              <span className="text-muted"> — added to {item.supplier?.name || 'the supplier'}'s balance.</span>
+              <span className="text-muted"> — added to {suppliers.find((s) => s.id === form.supplier_id)?.name || 'the supplier'}'s balance.</span>
             </p>
           )}
         </Section>
@@ -732,7 +753,8 @@ function RestockEntry({ itemId }) {
           <Button type="submit" disabled={busy} className="px-6">
             {busy ? <><Spinner /> Saving…</> : 'Save & Stock In'}
           </Button>
-          <Link to="/owner/inventory?low=1&sort=low" className="text-sm font-medium text-muted hover:text-ink">Cancel</Link>
+          {/* Back to wherever the restock was started from (order, item, list). */}
+          <button type="button" onClick={goBack} className="text-sm font-medium text-muted hover:text-ink">Cancel</button>
         </div>
       </form>
     </div>

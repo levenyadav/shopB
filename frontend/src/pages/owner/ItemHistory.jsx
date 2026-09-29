@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
-  IconShoppingCartPlus, IconPencil, IconArrowDownLeft, IconArrowUpRight, IconInbox,
+  IconShoppingCartPlus, IconPencil, IconArrowDownLeft, IconArrowUpRight, IconInbox, IconAdjustments,
 } from '@tabler/icons-react'
 import { supabase, fetchAll } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
@@ -24,6 +24,7 @@ export default function ItemHistory() {
   const [whStock, setWhStock] = useState([])
   const [err, setErr] = useState('')
   const [missing, setMissing] = useState(false)
+  const [logged, setLogged] = useState(true) // false = migration 057 not run yet
 
   useEffect(() => {
     let active = true
@@ -49,7 +50,13 @@ export default function ItemHistory() {
         pRes = await fetchAll(() => supabase.from('purchases').select(purchaseCols)
           .eq('item_id', id).order('created_at', { ascending: false }).order('id'))
       }
+      // Hand corrections from Inventory → Edit (057). Until that migration is
+      // run the table is missing — then the list simply has no corrections.
+      const aRes = await supabase.from('stock_adjustments')
+        .select('id, warehouse_id, old_quantity, new_quantity, delta, created_at, by:profiles(full_name)')
+        .eq('item_id', id).order('created_at', { ascending: false })
       if (!active) return
+      setLogged(!aRes.error)
       if (iRes.error) { setErr(iRes.error.message); return }
       if (!iRes.data) { setMissing(true); return }
       setItem(iRes.data)
@@ -68,14 +75,20 @@ export default function ItemHistory() {
         whoTo: s.buyer?.id ? `/owner/parties/${s.buyer_type}/${s.buyer.id}` : null,
         ref: s.source === 'counter' ? 'Counter sale' : 'Shopfront sale', to: `/owner/sales/${s.id}`,
       }))
-      setMoves([...ins, ...outs].sort((a, b) => b.at.localeCompare(a.at)))
+      const fixes = (aRes.data ?? []).map((a) => ({
+        key: `a-${a.id}`, dir: 'fix', at: a.created_at, quantity: Number(a.delta),
+        who: a.by?.full_name || 'Owner', whoTo: null, to: null,
+        ref: `Stock corrected ${qty(a.old_quantity)} → ${qty(a.new_quantity)}`,
+        warehouse_id: a.warehouse_id,
+      }))
+      setMoves([...ins, ...outs, ...fixes].sort((a, b) => b.at.localeCompare(a.at)))
     }
     load()
     return () => { active = false }
   }, [id])
 
   const totals = useMemo(() => {
-    const t = { in: 0, out: 0, sold30: 0 }
+    const t = { in: 0, out: 0, fix: 0, sold30: 0 }
     const since = Date.now() - 30 * 864e5
     for (const m of moves ?? []) {
       t[m.dir] += m.quantity
@@ -168,6 +181,7 @@ export default function ItemHistory() {
           {moves && (
             <p className="text-xs text-muted">
               Bought in <span className="fig font-medium text-ink">{qty(totals.in)}</span> · Sold <span className="fig font-medium text-ink">{qty(totals.out)}</span>
+              {totals.fix !== 0 && <> · Corrected <span className="fig font-medium text-ink">{totals.fix > 0 ? '+' : '−'}{qty(Math.abs(totals.fix))}</span></>}
             </p>
           )}
         </div>
@@ -177,11 +191,31 @@ export default function ItemHistory() {
         ) : moves.length === 0 ? (
           <div className="grid place-items-center gap-2 rounded-lg border border-dashed border-line py-10 text-center text-sm text-muted">
             <IconInbox size={30} stroke={1.3} aria-hidden />
-            No purchases or sales of this item yet.
+            No purchases, sales or corrections of this item yet.
           </div>
         ) : (
           <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-card">
             {moves.map((m) => {
+              if (m.dir === 'fix') {
+                const up = m.quantity >= 0
+                return (
+                  <li key={m.key} className="flex items-center gap-3 bg-saffron/[0.05] px-4 py-2.5">
+                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-saffron/15 text-saffron">
+                      <IconAdjustments size={16} aria-hidden />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-ink">
+                        {m.ref}
+                        {m.warehouse_id && <span className="font-normal text-muted"> · {whName[m.warehouse_id] || 'Warehouse'}</span>}
+                      </p>
+                      <p className="truncate text-xs text-muted">By {m.who} · {dateTime(m.at)}</p>
+                    </div>
+                    <span className="fig shrink-0 font-semibold text-saffron">
+                      {up ? '+' : '−'}{qty(Math.abs(m.quantity))}
+                    </span>
+                  </li>
+                )
+              }
               const inbound = m.dir === 'in'
               return (
                 <li key={m.key} className="flex items-center gap-3 px-4 py-2.5">
@@ -206,9 +240,12 @@ export default function ItemHistory() {
             })}
           </ul>
         )}
-        <p className="mt-2 text-xs text-muted">
-          Quantity corrections made with Inventory → Edit are not listed here.
-        </p>
+        {!logged && (
+          <p className="mt-2 text-xs text-muted">
+            Quantity corrections made with Inventory → Edit are not listed yet — run
+            database migration 057 to start recording them.
+          </p>
+        )}
       </section>
     </div>
   )

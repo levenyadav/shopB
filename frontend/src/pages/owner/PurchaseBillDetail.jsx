@@ -188,7 +188,7 @@ export default function PurchaseBillDetail() {
                   {bill.supplier?.name || 'the supplier'}’s balance.
                 </>}
           </p>
-          <button type="button" onClick={() => setSaved(null)} className="shrink-0 text-muted hover:text-ink">
+          <button type="button" onClick={() => setSaved(null)} aria-label="Dismiss" className="shrink-0 text-muted hover:text-ink">
             <IconX size={16} />
           </button>
         </div>
@@ -246,7 +246,11 @@ export default function PurchaseBillDetail() {
             <li key={l.id} className="flex items-center gap-3 px-5 py-3">
               <PhotoThumb url={l.item?.photo_url} size="h-12 w-12" />
               <div className="min-w-0 flex-1">
-                <p className="truncate font-medium text-ink">{l.item_name || l.item?.name || 'Item'}</p>
+                <p className="truncate font-medium text-ink">
+                  {l.item?.id
+                    ? <Link to={`/owner/inventory/${l.item.id}`} className="hover:text-peacock hover:underline">{l.item_name || l.item.name || 'Item'}</Link>
+                    : (l.item_name || 'Item')}
+                </p>
                 <p className="text-xs text-muted">
                   {(l.item_no || l.item?.item_no) && <span className="fig">{l.item_no || l.item?.item_no} · </span>}
                   <span className="fig">{qty(l.quantity)}</span> pcs ×{' '}
@@ -425,6 +429,12 @@ function BillEditor({ bill, currency, onCancel, onSaved }) {
   const [editing, setEditing] = useState(null)   // { line, index } while the dialog is open
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
+  // Leaving with unsaved corrections takes a second tap, so a stray Cancel or
+  // back tap can't throw away a long edit.
+  const [initial] = useState(() => JSON.stringify({ lines, head }))
+  const dirty = JSON.stringify({ lines, head }) !== initial
+  const [confirmLeave, setConfirmLeave] = useState(false)
+  const leave = () => (dirty && !confirmLeave ? setConfirmLeave(true) : onCancel())
 
   const setHeadVal = (k) => (e) => { setHead((h) => ({ ...h, [k]: e.target.value })); setErr('') }
 
@@ -537,9 +547,9 @@ function BillEditor({ bill, currency, onCancel, onSaved }) {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <button type="button" onClick={onCancel}
+      <button type="button" onClick={leave}
               className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-ink">
-        <IconArrowLeft size={17} /> Back to the bill
+        <IconArrowLeft size={17} /> {confirmLeave ? 'Tap again to discard your changes' : 'Back to the bill'}
       </button>
 
       <form onSubmit={save} className="space-y-6">
@@ -673,8 +683,9 @@ function BillEditor({ bill, currency, onCancel, onSaved }) {
           <Button type="submit" disabled={saving || !lines.length || shortfalls.length > 0} className="px-6">
             {saving ? <><Spinner /> Saving…</> : 'Save corrections'}
           </Button>
-          <button type="button" onClick={onCancel} className="text-sm font-medium text-muted hover:text-ink">
-            Cancel
+          <button type="button" onClick={leave}
+                  className={`text-sm font-medium ${confirmLeave ? 'text-dues' : 'text-muted hover:text-ink'}`}>
+            {confirmLeave ? 'Discard changes?' : 'Cancel'}
           </button>
         </div>
       </form>

@@ -12,7 +12,7 @@ import { buildSlipPdf, sharePdf } from '../../lib/pdf'
 import { buildInvoiceModel, viewInvoice, printInvoice } from '../../lib/invoiceTemplate'
 import { Button, Badge, Spinner, Img, PhotoPlaceholder } from '../../components/ui'
 import SupplySlip from '../../components/SupplySlip'
-import { PAYMENT_META } from './Sales'
+import { PAYMENT_META, paymentKey } from './Sales'
 
 // Every column a sale LINE needs here — used both for the line the URL names
 // and for its siblings on the same bill.
@@ -38,6 +38,7 @@ export default function SaleDetail() {
   const [bill, setBill] = useState(null)
   const [lines, setLines] = useState([])
   const [picks, setPicks] = useState([])
+  const [paidNow, setPaidNow] = useState(0)
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -88,6 +89,17 @@ export default function SaleDetail() {
     const billLines = rows?.length ? rows : [saleRow]
     setLines(billLines)
     loadBill(billLines)
+    loadPaidAtBilling(billLines)
+  }
+
+  // Money taken when the bill was made (056) — tells "part paid" from udhaar.
+  async function loadPaidAtBilling(billLines) {
+    const { data } = await supabase
+      .from('payments')
+      .select('amount')
+      .eq('at_billing', true)
+      .in('linked_sale_id', billLines.map((l) => l.id))
+    setPaidNow(round2((data ?? []).reduce((t, p) => t + Number(p.amount || 0), 0)))
   }
 
   // The finalize-bill breakdown (023): discount + shipping/packing/other, shown
@@ -138,7 +150,8 @@ export default function SaleDetail() {
   if (!sale) return <div className="grid place-items-center py-20 text-muted"><Spinner /></div>
 
   const item = sale.item
-  const pay = PAYMENT_META[sale.payment_type] || { label: sale.payment_type, tone: 'muted' }
+  const payKey = paymentKey(sale.payment_type, paidNow)
+  const pay = PAYMENT_META[payKey] || { label: sale.payment_type, tone: 'muted' }
 
   // Whole bill, not just the line in the URL. Until the siblings land, the one
   // line we have IS the bill as far as the page is concerned.
@@ -246,7 +259,10 @@ export default function SaleDetail() {
               <Badge tone={sale.buyer_type === 'dealer' ? 'peacock' : 'muted'} className="ml-1.5">{sale.buyer_type}</Badge>
             </>} />
           <Row label="Phone" value={<span className="fig">{sale.buyer?.phone || '—'}</span>} />
-          <Row label="Payment" value={<Badge tone={pay.tone}>{pay.label}</Badge>} />
+          <Row label="Payment" value={<>
+            <Badge tone={pay.tone}>{pay.label}</Badge>
+            {payKey === 'part' && <span className="fig ml-1.5 text-xs text-muted">{money(paidNow)} paid at billing</span>}
+          </>} />
           {!multi && <>
             <Row label="Category" value={sale.category?.name || '—'} />
             <Row label="Item No" value={<span className="fig">{item?.item_no || sale.item_no || '—'}</span>} />

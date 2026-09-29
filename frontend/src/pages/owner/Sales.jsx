@@ -15,7 +15,7 @@ import useQueryState from '../../hooks/useQueryState'
 // the filters SPEC §6.5 calls for: date, buyer, payment type, category. Owner is
 // the only role that sees profit (Golden Rule #3), so the totals show it here.
 const PAYMENT_FILTERS = [
-  ['', 'All'], ['cash', 'Cash'], ['upi', 'UPI'], ['udhaar', 'Udhaar'],
+  ['', 'All'], ['cash', 'Cash'], ['upi', 'UPI'], ['part', 'Part paid'], ['udhaar', 'Udhaar'],
 ]
 
 // Column order of the CSV export (see exportCsv below).
@@ -48,8 +48,22 @@ function csvDateTime(ts) {
 export const PAYMENT_META = {
   cash:   { label: 'Cash',   tone: 'profit' },
   upi:    { label: 'UPI',    tone: 'peacock' },
+  part:   { label: 'Part paid', tone: 'saffron' },
   udhaar: { label: 'Udhaar', tone: 'dues' },
 }
+
+// How a bill was settled AT BILLING (056). payment_type 'udhaar' covers both
+// "nothing paid" and "part paid" — the money taken at the counter is a payments
+// row (at_billing, linked to the bill), so it takes that to tell them apart.
+// Returns the PAYMENT_META key.
+export function paymentKey(paymentType, paidAtBilling) {
+  if (paymentType === 'udhaar' && Number(paidAtBilling) > 0) return 'part'
+  return paymentType
+}
+
+// A counter bill is several sale rows sharing bill_id; money taken at billing
+// links to one of them, so paid amounts are keyed by the bill, not the row.
+export const billKeyOf = (s) => s.bill_id || s.id
 
 export default function Sales() {
   const { categories } = useShop()
@@ -65,6 +79,7 @@ export default function Sales() {
   const [from, setFrom] = useQueryState('from')
   const [to, setTo] = useQueryState('to')
   const [invoiceNos, setInvoiceNos] = useState({ bySale: new Map(), byBill: new Map() })
+  const [paidAtBilling, setPaidAtBilling] = useState(new Map()) // bill key → ₹ paid at billing
   const [menu, setMenu] = useState(false)
 
   // Quick ranges fill the From/To boxes rather than holding a state of their own,
@@ -114,6 +129,20 @@ export default function Sales() {
     if (error) setErr(error.message)
     else setSales(data ?? [])
 
+    // Money taken at billing (056), to tell part-paid bills from plain udhaar.
+    const { data: atBill } = await fetchAll(() => supabase
+      .from('payments')
+      .select('id, linked_sale_id, amount')
+      .eq('at_billing', true).not('linked_sale_id', 'is', null)
+      .order('id'))
+    const keyBySale = new Map((data ?? []).map((row) => [row.id, billKeyOf(row)]))
+    const paid = new Map()
+    for (const p of atBill ?? []) {
+      const k = keyBySale.get(p.linked_sale_id) || p.linked_sale_id
+      paid.set(k, (paid.get(k) || 0) + Number(p.amount || 0))
+    }
+    setPaidAtBilling(paid)
+
     // Invoice numbers live on the separate `invoices` row (016), linked by
     // sale_id for a shopfront sale and by bill_id for a counter bill — and
     // bill_id carries no FK, so this can't be a PostgREST embed. One extra read,
@@ -136,6 +165,7 @@ export default function Sales() {
   const invoiceFor = (s) =>
     invoiceNos.bySale.get(s.id) || (s.bill_id ? invoiceNos.byBill.get(s.bill_id) : null) || null
   const invoiceNoFor = (s) => invoiceFor(s)?.invoice_no || ''
+  const payKeyFor = (s) => paymentKey(s.payment_type, paidAtBilling.get(billKeyOf(s)))
 
   const filtered = useMemo(() => {
     if (!sales) return []
@@ -145,7 +175,7 @@ export default function Sales() {
     const toTs = to ? new Date(`${to}T23:59:59.999`).getTime() : null
     return sales.filter((s) => {
       if (buyerType && s.buyer_type !== buyerType) return false
-      if (payment && s.payment_type !== payment) return false
+      if (payment && payKeyFor(s) !== payment) return false
       if (categoryId && s.category_id !== categoryId) return false
       if (fromTs || toTs) {
         const t = new Date(s.created_at).getTime()
@@ -158,7 +188,7 @@ export default function Sales() {
       }
       return true
     })
-  }, [sales, q, buyerType, payment, categoryId, from, to, invoiceNos])
+  }, [sales, q, buyerType, payment, categoryId, from, to, invoiceNos, paidAtBilling])
 
   // How many of the rows on screen belong to each book — shown on the export
   // menu so the owner knows what a choice will produce before clicking it.
@@ -217,7 +247,7 @@ export default function Sales() {
       'Amount': Number(s.amount || 0),
       'Purchase Rate': Number(s.purchase_rate || 0),
       'Profit': Number(s.profit || 0),
-      'Payment': PAYMENT_META[s.payment_type]?.label || s.payment_type || '',
+      'Payment': PAYMENT_META[payKeyFor(s)]?.label || s.payment_type || '',
     }))
     // Totals row, so the file stands on its own when it is mailed to the CA.
     rows.push({
@@ -341,7 +371,7 @@ export default function Sales() {
       ) : (
         <ul className="space-y-2.5">
           {filtered.map((s) => {
-            const pay = PAYMENT_META[s.payment_type] || { label: s.payment_type, tone: 'muted' }
+            const pay = PAYMENT_META[payKeyFor(s)] || { label: s.payment_type, tone: 'muted' }
             const invNo = invoiceNoFor(s)
             return (
               <li key={s.id}>

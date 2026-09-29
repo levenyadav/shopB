@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { IconSearch, IconInbox } from '@tabler/icons-react'
 import { supabase, fetchAll } from '../../lib/supabase'
 import { money, qty, dateTime } from '../../lib/format'
-import { OrderStatusBadge, InProcessBadge, IN_PROCESS_STATUSES, Badge, Spinner, PhotoThumb } from '../../components/ui'
+import { OrderStatusBadge, Badge, Spinner, PhotoThumb } from '../../components/ui'
 
 // SPEC §6.4 — Order Management. All orders, newest first, with filters. The
 // owner taps through to approve/reject. Pending orders are surfaced first with a
@@ -12,7 +12,7 @@ import { OrderStatusBadge, InProcessBadge, IN_PROCESS_STATUSES, Badge, Spinner, 
 // packed (sale booked, not yet handed over); "Done" = delivered or picked up.
 const STATUS_TABS = [
   ['pending', 'To approve', (s) => s === 'pending'],
-  ['process', 'In process', (s) => s === 'approved' || s === 'packed'],
+  ['process', 'Being packed', (s) => s === 'approved' || s === 'packed'],
   ['done', 'Done', (s) => s === 'delivered' || s === 'picked_up'],
   ['rejected', 'Rejected', (s) => s === 'rejected'],
   ['all', 'All', () => true],
@@ -161,6 +161,15 @@ export default function OrderManagement() {
         </select>
       </div>
 
+      {/* Orders is where you approve; Fulfilment is where goods get packed and
+          handed over. This tab only watches that work — say so, and point there. */}
+      {status === 'process' && (
+        <p className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-paper-2 px-4 py-2.5 text-sm text-ink/80">
+          <span>These are approved and waiting to be packed or handed over. Staff do that in Fulfilment.</span>
+          <Link to="/owner/fulfilment" className="font-semibold text-peacock hover:underline">Open Fulfilment →</Link>
+        </p>
+      )}
+
       {err && <p className="rounded-lg bg-dues/10 px-4 py-3 text-sm text-dues">{err}</p>}
 
       {orders === null ? (
@@ -207,9 +216,8 @@ export default function OrderManagement() {
                   <p className="fig font-semibold">{money(o.amount)}</p>
                   <p className="text-xs text-muted"><span className="fig">{qty(o.quantity)}</span> pcs</p>
                 </div>
-                <div className="flex shrink-0 flex-col items-end gap-1">
+                <div className="shrink-0">
                   <OrderStatusBadge status={o.status} />
-                  {IN_PROCESS_STATUSES.includes(o.status) && <InProcessBadge />}
                 </div>
               </Link>
             </li>

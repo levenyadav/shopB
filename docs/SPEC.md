@@ -438,6 +438,10 @@ shopfront order needed. (Routes `/owner/counter-sale`, `/staff/counter-sale`.)
   and made-to-order items. The staff console keeps its own Stock screen.
 - **Item history (2026-09):** `/owner/inventory/:id` shows one product's rates,
   stock per warehouse, and every purchase line (in) and sale (out).
+- **Stock corrections log (migration 057):** a hand correction of quantity from
+  Inventory → Edit is recorded in `stock_adjustments` (old → new, who, when) by
+  triggers only — told apart from purchases/sales by `pg_trigger_depth() = 1`.
+  Item history lists these as "Stock corrected" rows. Owner read-only.
 
 ---
 
