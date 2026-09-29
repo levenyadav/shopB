@@ -21,6 +21,27 @@ export function darken(hex, amount = 0.22) {
   return '#' + ch.map((v) => v.toString(16).padStart(2, '0')).join('')
 }
 
+// Relative luminance of a #rrggbb colour (WCAG 2).
+function luminance(hex) {
+  const n = parseInt(hex.slice(1), 16)
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+    const c = v / 255
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+// The brand colour darkened just enough for white text on it (and it as text on
+// white) to pass WCAG AA with room to spare. A light brand colour — rose gold —
+// is lovely as an accent but too pale for buttons and prices; the storefront
+// uses this "ink" shade for those and keeps the original as the accent.
+export function brandInk(hex) {
+  if (!/^#[0-9a-f]{6}$/i.test(hex || '')) return hex
+  let out = hex
+  for (let a = 0; a <= 0.8 && 1.05 / (luminance(out) + 0.05) < 5.5; a += 0.04) out = darken(hex, a)
+  return out
+}
+
 function mimeFromUrl(url) {
   const u = (url || '').split('?')[0].toLowerCase()
   if (u.endsWith('.png')) return 'image/png'
@@ -106,6 +127,12 @@ export function applyThemeColor(shop) {
   const root = document.documentElement
   root.style.setProperty('--color-peacock', theme)
   root.style.setProperty('--color-peacock-700', darken(theme))
+  // Storefront pair (index.css .storefront): the original stays the accent,
+  // the ink shade carries actions and prices.
+  const ink = brandInk(theme)
+  root.style.setProperty('--color-brand', theme)
+  root.style.setProperty('--color-brand-ink', ink)
+  root.style.setProperty('--color-brand-ink-700', darken(ink, 0.15))
   setMeta('theme-color', theme)
 }
 

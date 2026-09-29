@@ -48,11 +48,11 @@ export default function QtyStepper({
   }
 
   const sm = size === 'sm'
-  const btn = `grid place-items-center text-muted hover:text-ink disabled:opacity-40 ${sm ? 'h-8 w-8' : 'h-10 w-10'}`
+  const btn = `grid place-items-center text-muted transition-colors duration-150 hover:text-ink disabled:opacity-40 ${sm ? 'h-10 w-10' : 'h-11 w-11'}`
 
   return (
     <div>
-      <div className="inline-flex items-center rounded-lg border border-line">
+      <div className="inline-flex items-center rounded-lg border border-line bg-card">
         <button type="button" disabled={disabled} aria-label={`Less ${step}`}
                 onClick={() => onChange(snapToMoq(value - step, step, cap))}
                 className={btn}>
@@ -65,7 +65,7 @@ export default function QtyStepper({
           onFocus={(e) => { setTyping(true); e.target.select() }}
           onBlur={commit}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
-          className={`fig border-x border-line text-center outline-none ${sm ? 'w-12 py-1.5 text-sm' : 'w-14 py-2'}`}
+          className={`fig self-stretch border-x border-line bg-transparent text-center outline-none ${sm ? 'w-12 text-sm' : 'w-14'}`}
         />
         <button type="button" disabled={disabled} aria-label={`More ${step}`}
                 onClick={() => onChange(snapToMoq(value + step, step, cap))}

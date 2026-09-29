@@ -18,6 +18,11 @@
   --color-profit:     #2E7D52;  /* ledger: money owed to the shop           */
   --color-dues:       #B0102A;  /* ledger: dues / red margin                */
 
+  /* Storefront brand pair — pwa.js overwrites both from the shop's theme colour. */
+  --color-brand:      #B76E79;  /* accent only: logo, active chip, focus    */
+  --color-brand-ink:  #8E4A55;  /* actions + prices (AA on white)           */
+  --color-brand-ink-700: #793F48;
+
   --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
   --font-sans:    "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
   --font-mono:    "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
@@ -123,6 +128,45 @@ body {
 }
 @media (prefers-reduced-motion: reduce) {
   .posted-stamp { animation: none; }
+}
+
+/* -----------------------------------------------------------------------------
+   Storefront — the buyer-facing shop (ShopLayout + Login). Same components as
+   the console, re-toned for retail: the ledger look (mono figures, rubber-stamp
+   badges, the rotated seal) stays in the back office. Primary actions use the
+   contrast-safe ink shade of the brand colour; the brand colour itself is kept
+   for accents. Surfaces are neutral warm grey, and amber (not red) means
+   "attention" — red is reserved for errors and dues.
+   ---------------------------------------------------------------------------*/
+.storefront {
+  --color-peacock:     var(--color-brand-ink);
+  --color-peacock-700: var(--color-brand-ink-700);
+  --color-paper:   #FAF8F7;
+  --color-paper-2: #F3EFED;
+  --color-line:    #EAE3E0;
+  --color-muted:   #72605C;
+  --color-saffron: #9A5B13;
+  background: var(--color-paper);
+}
+.storefront .fig { font-family: var(--font-sans); font-variant-numeric: tabular-nums; }
+.storefront .stamp {
+  border-color: transparent; border-radius: 9999px;
+  padding: .125rem .5rem; font-size: .75rem;
+  letter-spacing: 0; text-transform: none;
+}
+.storefront .shop-stamp {
+  border: 0; box-shadow: none; transform: none; padding: 0; opacity: 1;
+  color: var(--color-ink); letter-spacing: -.01em; text-transform: none;
+  font-size: 1.125rem; line-height: 1.2;
+}
+.storefront :focus-visible { outline: 2px solid var(--color-brand-ink); outline-offset: 2px; }
+/* Scroll-snap rails (category chips, banners, gallery) — swipe without a scrollbar. */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .storefront *, .storefront *::before, .storefront *::after {
+    transition-duration: 0s !important; animation: none !important; scroll-behavior: auto !important;
+  }
 }
 
 /* Order Supply Slip (SPEC §13) — browser-native print, no special hardware.

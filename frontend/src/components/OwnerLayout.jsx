@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
   IconLayoutDashboard, IconShoppingCartPlus, IconBoxSeam, IconClipboardList,
@@ -142,7 +142,8 @@ export default function OwnerLayout() {
         </header>
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8">
-          <Outlet />
+          {/* Pages load on demand (App.jsx) — keep the sidebar up meanwhile. */}
+          <Suspense fallback={null}><Outlet /></Suspense>
         </main>
       </div>
     </div>

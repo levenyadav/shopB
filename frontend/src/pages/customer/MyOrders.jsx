@@ -6,7 +6,6 @@ import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
 import { shippingFeeFor } from '../../lib/helpers'
 import { OrderStatusBadge, Spinner, Img } from '../../components/ui'
-import { BackLink } from '../../components/BackButton'
 import { useOrdersTick } from '../../lib/useOrdersTick'
 
 // SPEC §6.3 / §10.2 — buyer's own order list, newest first. RLS (orders_buyer_
@@ -64,29 +63,28 @@ export default function MyOrders() {
 
   return (
     <div className="space-y-5">
-      <BackLink />
-      <div>
-        <h1 className="font-[var(--font-display)] text-3xl font-bold">My orders</h1>
-        <p className="text-muted">Track every order you’ve placed and its status.</p>
-      </div>
+      <h1 className="font-[var(--font-display)] text-2xl font-bold text-ink sm:text-3xl">My orders</h1>
 
       {err && <p className="rounded-lg bg-dues/10 px-4 py-3 text-sm text-dues">{err}</p>}
 
       {orders === null ? (
         <div className="grid place-items-center py-16 text-muted"><Spinner /></div>
       ) : orders.length === 0 ? (
-        <div className="grid place-items-center gap-3 rounded-lg border border-dashed border-line py-16 text-center text-muted">
-          <IconReceipt2 size={38} stroke={1.3} />
-          <p>No orders yet.</p>
-          <Link to="/" className="font-semibold text-peacock hover:underline">Browse the shop →</Link>
+        <div className="flex flex-col items-center py-16 text-center">
+          <IconReceipt2 size={38} stroke={1.3} className="text-muted" aria-hidden />
+          <p className="mt-3 font-semibold text-ink">No orders yet</p>
+          <p className="mt-1 text-sm text-muted">Orders you place will show here with their status.</p>
+          <Link to="/" className="mt-5 inline-flex h-11 items-center rounded-lg bg-peacock px-6 text-sm font-semibold text-white transition-colors duration-150 hover:bg-peacock-700">
+            Browse the shop
+          </Link>
         </div>
       ) : (
-        <ul className="space-y-3">
+        <ul className="divide-y divide-line border-y border-line">
           {orders.map((g) => (
             <li key={g.id}>
               <Link
                 to={`/orders/${g.id}`}
-                className="flex items-center gap-4 rounded-lg border border-line bg-card p-3 transition hover:border-ink/20"
+                className="-mx-2 flex items-center gap-4 rounded-lg px-2 py-3 transition-colors duration-150 hover:bg-paper-2"
               >
                 <Thumb url={g.lines[0]?.item?.photo_url} />
                 <div className="min-w-0 flex-1">
@@ -158,9 +156,9 @@ function groupOrders(rows) {
 
 function Thumb({ url }) {
   return (
-    <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-line bg-paper-2">
+    <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-paper-2">
       {url ? (
-        <Img src={url} thumb alt="" className="h-full w-full object-cover" />
+        <Img src={url} thumb alt="" className="h-full w-full object-contain mix-blend-multiply" />
       ) : (
         <div className="grid h-full w-full place-items-center text-muted"><IconPhoto size={22} /></div>
       )}

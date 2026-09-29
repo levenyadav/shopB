@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { IconArrowLeft } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
@@ -10,56 +10,59 @@ import { useShop } from '../../context/ShopContext'
 // SPEC §4.3/§4.4 — buyers sign in with their MOBILE NUMBER + a one-time SMS code
 // (phone OTP). Email is an optional contact field, never the login handle.
 //
-// Two modes share one screen:
-//   sign in   — existing buyer; `send` texts a code (known, active profile only).
-//   register  — new buyer; `register` texts a code, then `verify` creates an
-//               ACTIVE retail customer (SPEC §4.3/§6.3). Dealers stay owner-made.
-// Both finish the same way: `verify` checks the code and returns a one-time
-// `token_hash` we redeem for a real Supabase session.
+// One flow, no "sign in vs register" choice up front:
+//   phone → `send` texts a code to a known, active number.
+//         → unknown number (`not_found`) → ask for a name → `register` texts a
+//           code, and `verify` creates an ACTIVE retail customer (SPEC §4.3).
+//           Dealers stay owner-made.
+//   code  → `verify` returns a one-time `token_hash` we redeem for a real
+//           Supabase session. The /login route (App.jsx) then sends the user on
+//           — to ?next= (e.g. back to the cart) for buyers, else their home.
+const RESEND_SECONDS = 30
+
 export default function Login() {
   const { shop } = useShop()
-  const [mode, setMode] = useState('signin')  // 'signin' | 'register'
-  const [step, setStep] = useState('phone')    // 'phone' → 'otp'
-  const [name, setName] = useState('')         // register only
+  const [step, setStep] = useState('phone')   // 'phone' | 'name' | 'otp'
+  const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [code, setCode] = useState('')
-  const [e164, setE164] = useState('')        // normalised phone the OTP was sent to
+  const [sent, setSent] = useState(null)      // { phone: e164, payload } the code went out with
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
+  const [wait, setWait] = useState(0)          // seconds until "Resend" is allowed
 
-  const registering = mode === 'register'
+  useEffect(() => {
+    if (wait <= 0) return
+    const t = setTimeout(() => setWait((w) => w - 1), 1000)
+    return () => clearTimeout(t)
+  }, [wait])
 
-  // Flip between sign-in and register, clearing any in-flight step/messages.
-  function switchMode(next, msg = '') {
-    setMode(next)
-    setStep('phone'); setCode(''); setError(''); setNotice(msg)
+  // Ask the Edge Function to text a code. Returns an error code the caller can
+  // route on ('not_found' / 'exists'), or null when the SMS went out.
+  async function requestCode(payload) {
+    const { data, error: fnErr } = await supabase.functions.invoke('phone-otp', { body: payload })
+    if (fnErr) {
+      const { message, code: errCode } = await readFnError(fnErr)
+      if (errCode === 'not_found' || errCode === 'exists') return errCode
+      throw new Error(message)
+    }
+    if (!data?.ok) throw new Error(data?.error || 'Could not send the code. Please try again.')
+    setSent({ phone: payload.phone, payload })
+    setCode('')
+    setStep('otp')
+    setWait(RESEND_SECONDS)
+    return null
   }
 
-  async function sendCode(e) {
+  async function submitPhone(e) {
     e.preventDefault()
-    setError(''); setNotice('')
-    const trimmedName = name.trim()
-    if (registering && !trimmedName) { setError('Enter your name.'); return }
-    const phoneE164 = toE164India(phone)
-    if (!phoneE164) { setError('Enter a valid 10-digit mobile number.'); return }
+    setError('')
+    const e164 = toE164India(phone)
+    if (!e164) { setError('Enter a valid 10-digit mobile number.'); return }
     setBusy(true)
     try {
-      const payload = registering
-        ? { action: 'register', phone: phoneE164, full_name: trimmedName }
-        : { action: 'send', phone: phoneE164 }
-      const { data, error: fnErr } = await supabase.functions.invoke('phone-otp', { body: payload })
-      if (fnErr) {
-        const { message, code: errCode } = await readFnError(fnErr)
-        // Guide the buyer to the right mode instead of a dead end.
-        if (errCode === 'exists') { switchMode('signin', 'You already have an account — sign in below.'); return }
-        if (errCode === 'not_found') { switchMode('register', 'No account yet — create one below.'); return }
-        throw new Error(message)
-      }
-      if (!data?.ok) throw new Error(data?.error || 'Could not send the code. Please try again.')
-      setE164(phoneE164)
-      setStep('otp')
-      setNotice(`We sent a 6-digit code to ${phoneE164}.`)
+      const res = await requestCode({ action: 'send', phone: e164 })
+      if (res === 'not_found') setStep('name')
     } catch (err) {
       setError(humanError(err?.message))
     } finally {
@@ -67,148 +70,193 @@ export default function Login() {
     }
   }
 
-  async function verifyCode(e) {
+  async function submitName(e) {
     e.preventDefault()
-    setError(''); setNotice('')
-    if (!/^\d{6}$/.test(code.trim())) { setError('Enter the 6-digit code from the SMS.'); return }
+    setError('')
+    const fullName = name.trim()
+    if (!fullName) { setError('Enter your name.'); return }
+    setBusy(true)
+    try {
+      const e164 = toE164India(phone)
+      const res = await requestCode({ action: 'register', phone: e164, full_name: fullName })
+      // Registered in the meantime (another tab) — just sign in.
+      if (res === 'exists') await requestCode({ action: 'send', phone: e164 })
+    } catch (err) {
+      setError(humanError(err?.message))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function resend() {
+    if (!sent || wait > 0) return
+    setError(''); setBusy(true)
+    try { await requestCode(sent.payload) } catch (err) { setError(humanError(err?.message)) } finally { setBusy(false) }
+  }
+
+  async function verify(value = code) {
+    setError('')
+    if (!/^\d{6}$/.test(value)) { setError('Enter the 6-digit code from the SMS.'); return }
     setBusy(true)
     try {
       const { data, error: fnErr } = await supabase.functions.invoke(
-        'phone-otp', { body: { action: 'verify', phone: e164, code: code.trim() } },
+        'phone-otp', { body: { action: 'verify', phone: sent.phone, code: value } },
       )
       if (fnErr) throw new Error((await readFnError(fnErr)).message)
       if (!data?.token_hash) throw new Error(data?.error || 'Login failed. Please try again.')
       // Redeem the one-time token for a real Supabase session (RLS-protected
-      // data loads); AuthContext then loads the profile.
-      const { error } = await supabase.auth.verifyOtp({
-        token_hash: data.token_hash,
-        type: 'email',
-      })
+      // data loads); AuthContext then loads the profile and App redirects.
+      const { error } = await supabase.auth.verifyOtp({ token_hash: data.token_hash, type: 'email' })
       if (error) throw error
-      // Session is now set; AuthContext loads the profile and the /login route
-      // redirects to the right home for this role (owner/staff console or shop).
     } catch (err) {
       setError(humanError(err?.message))
-    } finally {
       setBusy(false)
     }
   }
 
+  function changeNumber() {
+    setStep('phone'); setCode(''); setError(''); setSent(null)
+  }
+
+  const shopName = shop?.name || 'our shop'
+
   return (
-    <div className="min-h-screen grid md:grid-cols-2">
-      {/* Left — the khata page */}
-      <aside className="relative hidden md:flex flex-col justify-between p-12 khata-page">
-        <div className="pl-12">
-          <Brand shop={shop} maxWords={3} textClassName="text-sm" logoClassName="h-10" />
-        </div>
-        <div className="pl-12 max-w-md">
-          <h1 className="font-[var(--font-display)] text-4xl leading-tight font-extrabold text-ink">
-            Khattri Card Pratham
-          </h1>
-        </div>
-      </aside>
+    <div className="storefront flex min-h-screen flex-col">
+      <header className="mx-auto flex w-full max-w-md items-center px-4 pt-3">
+        <Link to="/" className="-ml-2 inline-flex h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-muted hover:text-ink">
+          <IconArrowLeft size={18} aria-hidden /> Back to shop
+        </Link>
+      </header>
 
-      {/* Right — sign in */}
-      <main className="flex items-center justify-center p-6 sm:p-12 bg-paper">
-        <div className="w-full max-w-sm">
-          {/* This screen has no header, so this is the only way back to the shop —
-              shown at every width, not just mobile (SPEC §3 — no dead ends). A
-              buyer who tapped Sign in from the cart can get back to browsing. */}
-          <Link
-            to="/"
-            className="mb-6 -ml-1 inline-flex items-center gap-1.5 rounded-lg px-1 py-1 text-sm font-medium text-muted hover:text-ink"
-          >
-            <IconArrowLeft size={18} /> Back to shop
-          </Link>
-
-          {/* mobile brand — logo can be image-only (Brand drops the text
-              wordmark once a logo_url is set), so name the shop explicitly
-              here too instead of relying on Brand's text fallback. */}
-          <div className="md:hidden mb-8">
-            <Brand shop={shop} maxWords={3} textClassName="text-xs" logoClassName="h-9" />
-            <h1 className="font-[var(--font-display)] text-xl font-extrabold text-ink mt-3">
-              {shop?.name || 'Khattri Card Pratham'}
-            </h1>
+      <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-4 pb-10">
+        <div className="rounded-2xl bg-card p-6 ring-1 ring-line sm:p-8">
+          <div className="mb-6 flex justify-center">
+            <Brand shop={shop} maxWords={3} logoClassName="h-12" />
           </div>
 
-          <h2 className="font-[var(--font-display)] text-2xl font-bold mb-1">
-            {registering ? 'Create your account' : 'Welcome back'}
-          </h2>
-          <p className="text-muted text-sm mb-6">
-            {step === 'otp'
-              ? 'Enter the code we sent to your phone.'
-              : registering
-                ? 'Sign up with your name and mobile number to place orders.'
-                : 'Sign in with your mobile number.'}
+          <h1 className="text-center font-[var(--font-display)] text-2xl font-bold text-ink">
+            {step === 'otp' ? 'Enter the code' : step === 'name' ? 'Create your account' : `Sign in to ${shopName}`}
+          </h1>
+          <p className="mt-1 text-center text-sm text-muted">
+            {step === 'otp' ? (
+              <>Sent by SMS to <span className="fig text-ink">{prettyPhone(sent?.phone)}</span></>
+            ) : step === 'name' ? (
+              <>New number — tell us your name and we’ll text you a code.</>
+            ) : (
+              <>We’ll text you a code. No password needed.</>
+            )}
           </p>
 
-          {step === 'phone' ? (
-            <form onSubmit={sendCode} className="space-y-4">
-              {registering && (
-                <Field label="Your name" value={name}
-                       onChange={(e) => setName(e.target.value)}
-                       type="text" autoComplete="name"
-                       placeholder="Full name" required />
-              )}
-              <Field label="Mobile number" value={phone}
-                     onChange={(e) => setPhone(e.target.value)}
-                     type="tel" autoComplete="tel" inputMode="numeric"
-                     placeholder="98765 43210" required />
+          <div className="mt-6">
+            {step === 'phone' && (
+              <form onSubmit={submitPhone} className="space-y-4" noValidate>
+                <label className="block">
+                  <span className="mb-1.5 block text-sm font-medium text-ink">Mobile number</span>
+                  <span className="flex h-12 items-center rounded-lg border border-line bg-card transition-colors duration-150 focus-within:border-ink/40">
+                    <span className="fig pl-3 pr-2 text-muted">+91</span>
+                    <input
+                      value={phone} onChange={(e) => setPhone(e.target.value)} autoFocus
+                      type="tel" autoComplete="tel-national" inputMode="numeric" placeholder="98765 43210"
+                      aria-invalid={!!error} aria-describedby={error ? 'login-error' : undefined}
+                      className="fig h-full min-w-0 flex-1 bg-transparent pr-3 text-base text-ink outline-none"
+                    />
+                  </span>
+                </label>
+                <ErrorLine error={error} />
+                <SubmitButton busy={busy} busyLabel="Sending code…">Get code</SubmitButton>
+              </form>
+            )}
 
-              {error && <Alert tone="dues">{error}</Alert>}
-              {notice && <Alert tone="peacock">{notice}</Alert>}
+            {step === 'name' && (
+              <form onSubmit={submitName} className="space-y-4" noValidate>
+                <label className="block">
+                  <span className="mb-1.5 block text-sm font-medium text-ink">Your name</span>
+                  <input
+                    value={name} onChange={(e) => setName(e.target.value)} autoFocus
+                    type="text" autoComplete="name" placeholder="Full name"
+                    aria-invalid={!!error} aria-describedby={error ? 'login-error' : undefined}
+                    className="h-12 w-full rounded-lg border border-line bg-card px-3 text-base text-ink outline-none transition-colors duration-150 focus:border-ink/40"
+                  />
+                </label>
+                <ErrorLine error={error} />
+                <SubmitButton busy={busy} busyLabel="Sending code…">Get code</SubmitButton>
+                <TextButton onClick={changeNumber}>Use a different number</TextButton>
+              </form>
+            )}
 
-              <button type="submit" disabled={busy} className={btnClass}>
-                {busy ? 'Sending…' : registering ? 'Create account' : 'Send code'}
-              </button>
-
-              <p className="text-center text-xs text-muted">
-                {registering ? 'Already have an account? ' : 'New here? '}
-                <button
-                  type="button"
-                  onClick={() => switchMode(registering ? 'signin' : 'register')}
-                  className="font-semibold text-peacock hover:underline"
-                >
-                  {registering ? 'Sign in' : 'Create an account'}
-                </button>
-              </p>
-            </form>
-          ) : (
-            <form onSubmit={verifyCode} className="space-y-4">
-              <Field label="6-digit code" value={code}
-                     onChange={(e) => setCode(e.target.value)}
-                     type="tel" inputMode="numeric" autoComplete="one-time-code"
-                     placeholder="••••••" required />
-
-              {error && <Alert tone="dues">{error}</Alert>}
-              {notice && <Alert tone="peacock">{notice}</Alert>}
-
-              <button type="submit" disabled={busy} className={btnClass}>
-                {busy ? 'Verifying…' : 'Verify & continue'}
-              </button>
-              <button
-                type="button"
-                onClick={() => { setStep('phone'); setCode(''); setError(''); setNotice('') }}
-                className="w-full text-sm text-muted hover:text-ink"
-              >
-                ← Change number
-              </button>
-            </form>
-          )}
-
-          <div className="mt-8 text-center">
-            <Credit />
+            {step === 'otp' && (
+              <form onSubmit={(e) => { e.preventDefault(); verify() }} className="space-y-4" noValidate>
+                <label className="block">
+                  <span className="sr-only">6-digit code</span>
+                  <input
+                    value={code} autoFocus
+                    onChange={(e) => {
+                      const v = e.target.value.replace(/\D/g, '').slice(0, 6)
+                      setCode(v)
+                      if (v.length === 6 && !busy) verify(v) // SMS autofill → straight in
+                    }}
+                    type="text" inputMode="numeric" autoComplete="one-time-code" placeholder="••••••"
+                    aria-invalid={!!error} aria-describedby={error ? 'login-error' : undefined}
+                    className="fig h-14 w-full rounded-lg border border-line bg-card text-center text-2xl tracking-[0.5em] text-ink outline-none transition-colors duration-150 placeholder:text-line focus:border-ink/40"
+                  />
+                </label>
+                <ErrorLine error={error} />
+                <SubmitButton busy={busy} busyLabel="Verifying…">Continue</SubmitButton>
+                <div className="flex items-center justify-between text-sm">
+                  <TextButton onClick={changeNumber}>Change number</TextButton>
+                  {wait > 0 ? (
+                    <span className="text-muted">Resend in <span className="fig">0:{String(wait).padStart(2, '0')}</span></span>
+                  ) : (
+                    <TextButton onClick={resend} disabled={busy}>Resend code</TextButton>
+                  )}
+                </div>
+              </form>
+            )}
           </div>
         </div>
       </main>
+
+      <footer className="pb-6 text-center">
+        <Credit />
+      </footer>
     </div>
   )
+}
+
+function SubmitButton({ busy, busyLabel, children }) {
+  return (
+    <button
+      type="submit" disabled={busy}
+      className="h-12 w-full rounded-lg bg-peacock text-[15px] font-semibold text-white transition-colors duration-150 hover:bg-peacock-700 disabled:opacity-60"
+    >
+      {busy ? busyLabel : children}
+    </button>
+  )
+}
+
+function TextButton({ children, ...props }) {
+  return (
+    <button type="button" {...props} className="inline-flex min-h-11 items-center font-medium text-muted hover:text-ink disabled:opacity-50">
+      {children}
+    </button>
+  )
+}
+
+function ErrorLine({ error }) {
+  if (!error) return null
+  return <p id="login-error" role="alert" className="rounded-lg bg-dues/10 px-3 py-2 text-sm text-dues">{error}</p>
+}
+
+// +919876543210 → +91 98765 43210
+function prettyPhone(e164) {
+  const m = /^\+91(\d{5})(\d{5})$/.exec(e164 || '')
+  return m ? `+91 ${m[1]} ${m[2]}` : e164 || ''
 }
 
 // The Edge Function returns { error, code? } with a non-2xx status; supabase-js
 // wraps that in a FunctionsHttpError whose real body is on the Response. Return
 // both the human message and the machine `code` (e.g. 'exists'/'not_found') so
-// the caller can bounce the buyer to the right mode.
+// the caller can route the buyer to the right step.
 async function readFnError(fnErr) {
   try {
     const body = await fnErr?.context?.json?.()
@@ -217,37 +265,11 @@ async function readFnError(fnErr) {
   return { message: fnErr?.message || 'Login failed. Please try again.', code: undefined }
 }
 
-const btnClass =
-  'w-full rounded-lg bg-peacock hover:bg-peacock-700 disabled:opacity-60 ' +
-  'text-white font-semibold py-2.5 transition'
-
-function Field({ label, ...props }) {
-  return (
-    <label className="block">
-      <span className="block text-sm font-medium text-ink mb-1.5">{label}</span>
-      <input
-        {...props}
-        className="w-full rounded-lg border border-line bg-card px-3 py-2.5 text-ink
-                   outline-none focus:border-peacock focus:ring-1 focus:ring-peacock"
-      />
-    </label>
-  )
-}
-
-function Alert({ tone, children }) {
-  const cls = tone === 'dues'
-    ? 'text-dues bg-dues/10 border-dues/30'
-    : 'text-peacock bg-peacock/10 border-peacock/30'
-  return <p className={`text-sm border rounded-md px-3 py-2 ${cls}`}>{children}</p>
-}
-
 function humanError(msg) {
   if (!msg) return 'Something went wrong. Please try again.'
-  if (/token has expired|expired|invalid.*(otp|token)/i.test(msg)) return 'That code is wrong or expired. Request a new one.'
-  if (/already.*(account|registered)/i.test(msg)) return 'This number already has an account. Please sign in.'
-  if (/no account|signups? not allowed|user not found/i.test(msg)) return 'No account for this number yet. Tap “Create an account” to sign up.'
-  if (/disabled/i.test(msg)) return 'This account is disabled. Contact the shop.'
+  if (/token has expired|expired|invalid.*(otp|token|code)|wrong code/i.test(msg)) return 'That code is wrong or has expired. Check the SMS or tap Resend code.'
+  if (/disabled/i.test(msg)) return 'This account is disabled. Please contact the shop.'
   if (/too-many-requests|rate limit|too many/i.test(msg)) return 'Too many attempts. Wait a minute and try again.'
-  if (/could not send|sms|not configured/i.test(msg)) return 'Could not send the code right now. Please try again.'
+  if (/could not send|sms|not configured/i.test(msg)) return 'We couldn’t send the SMS right now. Please try again in a minute.'
   return msg
 }

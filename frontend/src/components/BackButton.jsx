@@ -73,7 +73,7 @@ export default function BackButton({ label = 'Back' }) {
       type="button"
       onClick={goBack}
       aria-label={label}
-      className="-ml-1.5 grid h-9 w-9 shrink-0 place-items-center rounded-lg text-ink/80 hover:bg-paper-2"
+      className="-ml-2.5 grid h-11 w-11 shrink-0 place-items-center rounded-lg text-ink/80 hover:bg-paper-2"
     >
       <IconChevronLeft size={24} stroke={1.8} />
     </button>

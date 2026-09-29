@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import {
-  IconPhoto, IconCircleCheck, IconCircle, IconCircleX,
+  IconPhoto, IconCircleCheck, IconCircleX, IconCheck,
   IconEye, IconPrinter,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
@@ -10,16 +10,15 @@ import { money, qty, dateTime } from '../../lib/format'
 import { round2, itemGstRate, gstBreakupByRate, shippingFeeFor } from '../../lib/helpers'
 import { buildInvoiceModel, viewInvoice, printInvoice } from '../../lib/invoiceTemplate'
 import { Button, OrderStatusBadge, Spinner, Img } from '../../components/ui'
-import { BackLink } from '../../components/BackButton'
 import { useOrdersTick } from '../../lib/useOrdersTick'
 
 // SPEC §10.2 — a buyer's view of one order: what they bought, the locked rate,
 // and how far it's progressed. Read-only; status is driven by the owner/staff.
 const STEPS = [
-  { key: 'pending',   label: 'Order placed' },
-  { key: 'approved',  label: 'Confirmed by shop' },
+  { key: 'pending',   label: 'Placed' },
+  { key: 'approved',  label: 'Confirmed' },
   { key: 'packed',    label: 'Packed' },
-  { key: 'delivered', label: 'Delivered / Picked up' },
+  { key: 'delivered', label: 'Delivered' },
 ]
 const ORDER = ['pending', 'approved', 'packed', 'delivered', 'picked_up']
 
@@ -43,6 +42,8 @@ export default function MyOrderDetail() {
   const [err, setErr] = useState('')
   const tick = useOrdersTick()   // re-read when the shop changes an order
   const [missing, setMissing] = useState(false)
+  const [params] = useSearchParams()
+  const placed = params.get('placed') === '1'   // just checked out (Cart)
 
   useEffect(() => {
     let active = true
@@ -168,20 +169,73 @@ export default function MyOrderDetail() {
   const currentStep = Math.min(reachedIndex, STEPS.length - 1)
 
   return (
-    <div className="mx-auto max-w-xl space-y-5">
-      <BackLink />
-
-      <div className="rounded-lg border border-line bg-card p-5">
-        <div className="flex items-center justify-between gap-3">
+    <div className="mx-auto max-w-2xl space-y-4">
+      {placed && (
+        <div role="status" className="flex gap-3 rounded-xl bg-profit/10 p-4">
+          <IconCircleCheck size={22} className="mt-0.5 shrink-0 text-profit" aria-hidden />
           <div>
-            <p className="text-lg font-semibold">{isGroup ? `Order · ${lines.length} items` : (lines[0].item?.name || lines[0].item_name || 'Item')}</p>
-            <p className="text-xs text-muted">Placed {dateTime(order.created_at)}</p>
+            <p className="font-semibold text-ink">Order placed</p>
+            <p className="text-sm text-ink/80">
+              The shop will confirm it shortly — the status below updates by itself. Nothing is charged until then.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Status first — the one thing a buyer opens this page to learn. */}
+      <section className="rounded-xl bg-card p-5 ring-1 ring-line">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="font-[var(--font-display)] text-xl font-bold text-ink">
+              {isGroup ? `Order · ${lines.length} items` : (lines[0].item?.name || lines[0].item_name || 'Order')}
+            </h1>
+            <p className="text-sm text-muted">Placed {dateTime(order.created_at)}</p>
           </div>
           <OrderStatusBadge status={groupStatus} audience="buyer" />
         </div>
 
+        {rejected ? (
+          <div className="mt-4 flex gap-2 rounded-lg bg-dues/10 p-3 text-sm">
+            <IconCircleX size={20} className="shrink-0 text-dues" aria-hidden />
+            <p className="text-ink/80">
+              <span className="font-semibold text-dues">Order not accepted. </span>
+              {order.rejection_reason ? `Reason: ${order.rejection_reason}` : 'The shop could not accept this order. Nothing was charged.'}
+            </p>
+          </div>
+        ) : (
+          <>
+            <p className="mt-3 text-sm text-ink/80">
+              {STATUS_NOTE[groupStatus] || ''}
+              {lines.find((l) => l.packed_by_name) && (
+                <> Packed by <span className="font-medium text-ink">{lines.find((l) => l.packed_by_name).packed_by_name}</span>.</>
+              )}
+            </p>
+            <ol className="mt-5 grid grid-cols-4" aria-label="Order progress">
+              {STEPS.map((step, i) => {
+                const done = i <= currentStep        // reached or passed this step
+                const isCurrent = i === currentStep  // where the order is right now
+                return (
+                  <li key={step.key} className="relative flex flex-col items-center text-center" aria-current={isCurrent ? 'step' : undefined}>
+                    {i > 0 && (
+                      <span aria-hidden className={`absolute right-1/2 top-[9px] h-0.5 w-full ${done ? 'bg-profit' : 'bg-line'}`} />
+                    )}
+                    <span aria-hidden className={`relative grid h-5 w-5 place-items-center rounded-full ${done ? 'bg-profit text-white' : 'border-2 border-line bg-card'}`}>
+                      {done && <IconCheck size={12} stroke={3} />}
+                    </span>
+                    <span className={`mt-2 text-xs ${isCurrent ? 'font-semibold text-ink' : done ? 'text-ink/70' : 'text-muted'}`}>
+                      {step.label}
+                    </span>
+                  </li>
+                )
+              })}
+            </ol>
+          </>
+        )}
+      </section>
+
+      <section className="rounded-xl bg-card p-5 ring-1 ring-line" aria-label="Items and bill">
         {/* Line items */}
-        <ul className="mt-4 divide-y divide-line">
+        <ul className="divide-y divide-line">
           {lines.map((l) => {
             const inv = invoices[l.id]
             const lineGst = itemGstRate(inv?.item_gst_rate ?? l.item?.gst_rate, shop?.gst_rate)
@@ -214,13 +268,13 @@ export default function MyOrderDetail() {
                   {isGroup && <p className="mt-1"><OrderStatusBadge status={l.status} audience="buyer" /></p>}
                   {l.notes && <p className="mt-0.5 text-xs text-muted">Note: {l.notes}</p>}
                   {model && (
-                    <div className="mt-1.5 flex flex-wrap items-center gap-3">
+                    <div className="-my-1.5 flex flex-wrap items-center gap-x-4">
                       <span className="text-xs text-muted">Invoice <span className="fig text-ink">{inv.invoice_no}</span></span>
-                      <button onClick={() => viewInvoice(model)} className="inline-flex items-center gap-1 text-xs font-medium text-peacock hover:underline">
+                      <button onClick={() => viewInvoice(model)} className="inline-flex min-h-11 items-center gap-1 text-sm font-medium text-peacock hover:underline">
                         <IconEye size={14} /> View
                       </button>
-                      <button onClick={() => printInvoice(model)} className="inline-flex items-center gap-1 text-xs font-medium text-muted hover:text-ink">
-                        <IconPrinter size={14} /> Download
+                      <button onClick={() => printInvoice(model)} className="inline-flex min-h-11 items-center gap-1 text-sm font-medium text-muted hover:text-ink">
+                        <IconPrinter size={14} /> Print / save PDF
                       </button>
                     </div>
                   )}
@@ -237,7 +291,7 @@ export default function MyOrderDetail() {
         {/* Amount details — what makes up the total, so the buyer never has to
             ask why it differs from the item prices (SPEC §3: no dead ends). */}
         <dl className="mt-3 space-y-1.5 border-t border-line pt-3 text-sm">
-          <Charge label={`Items (${charged.length} ${charged.length === 1 ? 'item' : 'items'})`} value={c(itemsTotal)} />
+          <Charge label={`Items (${charged.length})`} value={c(itemsTotal)} />
           {fees.discount > 0 && <Charge label="Discount" value={`− ${c(fees.discount)}`} good />}
           {handling > 0 && (
             <Charge
@@ -247,18 +301,22 @@ export default function MyOrderDetail() {
           )}
         </dl>
 
-        <div className="mt-3 flex items-center justify-between border-t border-line pt-3 text-sm">
-          <span className="font-semibold">Total amount</span>
-          <span className="fig text-lg font-bold">{c(totalAmount)}</span>
+        <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
+          <span className="font-semibold">Total</span>
+          <span className="fig text-lg font-semibold">{c(totalAmount)}</span>
         </div>
 
         {gst && (
-          <p className="mt-1 text-xs text-muted">
-            Includes GST <span className="fig">{c(gst.tax)}</span>
-            {' '}(CGST <span className="fig">{c(gst.cgst)}</span> + SGST <span className="fig">{c(gst.sgst)}</span>)
-            {gst.rate ? <> at <span className="fig">{gst.rate}%</span></> : ' across the rates above'} —
-            already inside the item prices, not added on top.
-          </p>
+          <details className="mt-1 text-xs text-muted">
+            <summary className="cursor-pointer py-1 hover:text-ink">
+              Includes GST <span className="fig">{c(gst.tax)}</span>
+            </summary>
+            <p className="pb-1">
+              CGST <span className="fig">{c(gst.cgst)}</span> + SGST <span className="fig">{c(gst.sgst)}</span>
+              {gst.rate ? <> at <span className="fig">{gst.rate}%</span></> : ' across the rates above'} —
+              already inside the item prices, not added on top.
+            </p>
+          </details>
         )}
         {groupStatus === 'pending' && (
           <p className="mt-1 text-xs text-muted">
@@ -267,53 +325,7 @@ export default function MyOrderDetail() {
               : 'Any shipping or handling fee is added when the shop confirms this order.'}
           </p>
         )}
-      </div>
-
-      {/* Status */}
-      {rejected ? (
-        <div className="rounded-lg border border-dues/30 bg-dues/10 p-5">
-          <div className="flex items-center gap-2 text-dues">
-            <IconCircleX size={20} />
-            <p className="font-semibold">Order not accepted</p>
-          </div>
-          <p className="mt-1 text-sm text-ink/80">
-            {order.rejection_reason
-              ? `Reason: ${order.rejection_reason}`
-              : 'The shop could not accept this order. Nothing was charged.'}
-          </p>
-        </div>
-      ) : (
-        <div className="rounded-lg border border-line bg-card p-5">
-          <p className="text-sm font-semibold">Progress</p>
-          <p className="mb-4 mt-0.5 text-sm text-muted">{STATUS_NOTE[groupStatus] || ''}</p>
-          {lines.find((l) => l.packed_by_name) && (
-            <p className="-mt-3 mb-4 text-xs text-muted">
-              Packed by <span className="font-medium text-ink">{lines.find((l) => l.packed_by_name).packed_by_name}</span>
-            </p>
-          )}
-          <ol className="space-y-3">
-            {STEPS.map((step, i) => {
-              const done = i <= currentStep        // reached or passed this step
-              const isCurrent = i === currentStep  // where the order is right now
-              return (
-                <li key={step.key} className="flex items-center gap-3">
-                  {done
-                    ? <IconCircleCheck size={20} className="text-profit" />
-                    : <IconCircle size={20} className="text-line" />}
-                  <span className={isCurrent ? 'font-semibold text-ink' : done ? 'text-ink/70' : 'text-muted'}>
-                    {step.label}
-                  </span>
-                  {isCurrent && (
-                    <span className="rounded-full bg-peacock/10 px-2 py-0.5 text-[11px] font-semibold text-peacock">
-                      Now
-                    </span>
-                  )}
-                </li>
-              )
-            })}
-          </ol>
-        </div>
-      )}
+      </section>
     </div>
   )
 }

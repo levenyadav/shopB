@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, Suspense } from 'react'
 import { Outlet, Link, NavLink, useLocation } from 'react-router-dom'
 import {
   IconBuildingStore, IconLogout, IconClipboardCheck, IconCashRegister,
@@ -80,7 +80,8 @@ export default function StaffLayout() {
               {profile?.full_name ? `${profile.full_name.split(' ')[0]}, p` : 'P'}ack approved orders and mark them out.
             </p>
           )}
-          <Outlet />
+          {/* Pages load on demand (App.jsx) — keep the sidebar up meanwhile. */}
+          <Suspense fallback={null}><Outlet /></Suspense>
         </main>
       </div>
     </div>

@@ -1,8 +1,7 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { lazy, Suspense } from 'react'
+import { Routes, Route, Navigate, useSearchParams, useLocation } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
-import OwnerLayout from './components/OwnerLayout'
-import StaffLayout from './components/StaffLayout'
 import ShopLayout from './components/ShopLayout'
 import Login from './pages/public/Login'
 import Shopfront from './pages/public/Shopfront'
@@ -12,27 +11,32 @@ import ContentPage from './pages/public/ContentPage'
 import MyOrders from './pages/customer/MyOrders'
 import MyOrderDetail from './pages/customer/MyOrderDetail'
 import MyAccount from './pages/customer/MyAccount'
-import Dashboard from './pages/owner/Dashboard'
-import PurchaseEntry from './pages/owner/PurchaseEntry'
-import PurchaseHistory from './pages/owner/PurchaseHistory'
-import PurchaseBillDetail from './pages/owner/PurchaseBillDetail'
-import BulkPurchase from './pages/owner/BulkPurchase'
-import Inventory from './pages/owner/Inventory'
-import StockInquiry from './pages/owner/StockInquiry'
-import OrderManagement from './pages/owner/OrderManagement'
-import OrderDetail from './pages/owner/OrderDetail'
-import PaymentEntry from './pages/owner/PaymentEntry'
-import Parties from './pages/owner/Parties'
-import PartyDetail from './pages/owner/PartyDetail'
-import Fulfilment from './pages/shared/Fulfilment'
-import FulfilmentDetail from './pages/shared/FulfilmentDetail'
-import StaffInventory from './pages/shared/StaffInventory'
-import StaffStockInquiry from './pages/shared/StaffStockInquiry'
-import Reports from './pages/owner/Reports'
-import Settings from './pages/owner/Settings'
-import Sales from './pages/owner/Sales'
-import SaleDetail from './pages/owner/SaleDetail'
-import CounterSale from './pages/shared/CounterSale'
+
+// The owner/staff consoles (PDF, spreadsheet, barcode libraries) load only when
+// opened, so a buyer's phone downloads just the shop.
+const OwnerLayout = lazy(() => import('./components/OwnerLayout'))
+const StaffLayout = lazy(() => import('./components/StaffLayout'))
+const Dashboard = lazy(() => import('./pages/owner/Dashboard'))
+const PurchaseEntry = lazy(() => import('./pages/owner/PurchaseEntry'))
+const PurchaseHistory = lazy(() => import('./pages/owner/PurchaseHistory'))
+const PurchaseBillDetail = lazy(() => import('./pages/owner/PurchaseBillDetail'))
+const BulkPurchase = lazy(() => import('./pages/owner/BulkPurchase'))
+const Inventory = lazy(() => import('./pages/owner/Inventory'))
+const StockInquiry = lazy(() => import('./pages/owner/StockInquiry'))
+const OrderManagement = lazy(() => import('./pages/owner/OrderManagement'))
+const OrderDetail = lazy(() => import('./pages/owner/OrderDetail'))
+const PaymentEntry = lazy(() => import('./pages/owner/PaymentEntry'))
+const Parties = lazy(() => import('./pages/owner/Parties'))
+const PartyDetail = lazy(() => import('./pages/owner/PartyDetail'))
+const Fulfilment = lazy(() => import('./pages/shared/Fulfilment'))
+const FulfilmentDetail = lazy(() => import('./pages/shared/FulfilmentDetail'))
+const StaffInventory = lazy(() => import('./pages/shared/StaffInventory'))
+const StaffStockInquiry = lazy(() => import('./pages/shared/StaffStockInquiry'))
+const Reports = lazy(() => import('./pages/owner/Reports'))
+const Settings = lazy(() => import('./pages/owner/Settings'))
+const Sales = lazy(() => import('./pages/owner/Sales'))
+const SaleDetail = lazy(() => import('./pages/owner/SaleDetail'))
+const CounterSale = lazy(() => import('./pages/shared/CounterSale'))
 
 // Where each role belongs after login. Owner/staff get their consoles; buyers
 // (customer/dealer) and anyone else land on the public shopfront.
@@ -42,12 +46,30 @@ function roleHome(role) {
   return '/'
 }
 
+// /login. Signed out → the form. Signed in → on to where they belong: a buyer
+// who started from the cart goes back to it (?next=/cart); owner/staff always
+// land on their console. Only same-site paths are honoured for ?next=.
+function LoginRoute() {
+  const { session, role, loading } = useAuth()
+  const [params] = useSearchParams()
+  if (loading) return null
+  if (!session) return <Login />
+  // Session is up but the profile (hence role) may still be loading — wait
+  // rather than bounce to '/', so owner/staff land on their console.
+  if (!role) return null
+  const next = params.get('next') || ''
+  const buyer = role === 'customer' || role === 'dealer'
+  const safeNext = /^\/(?!\/)/.test(next) ? next : ''
+  return <Navigate to={buyer && safeNext ? safeNext : roleHome(role)} replace />
+}
+
 // Guards buyer-only routes (My Orders / Account). Browsing is public; these
 // require a customer/dealer login. Owner is sent to the console, others home.
 function BuyerOnly({ children }) {
   const { session, role, loading } = useAuth()
+  const { pathname } = useLocation()
   if (loading) return null
-  if (!session) return <Navigate to="/login" replace />
+  if (!session) return <Navigate to={`/login?next=${encodeURIComponent(pathname)}`} replace />
   if (role === 'owner') return <Navigate to="/owner" replace />
   if (role !== 'customer' && role !== 'dealer') return <Navigate to="/" replace />
   return children
@@ -72,20 +94,10 @@ function StaffOnly({ children }) {
 }
 
 export default function App() {
-  const { session, role, loading } = useAuth()
   return (
+    <Suspense fallback={null}>
     <Routes>
-      <Route
-        path="/login"
-        element={
-          loading ? null
-            : !session ? <Login />
-            // Session is up but the profile (hence role) may still be loading —
-            // wait rather than bounce to '/', so owner/staff land on their console.
-            : !role ? null
-            : <Navigate to={roleHome(role)} replace />
-        }
-      />
+      <Route path="/login" element={<LoginRoute />} />
 
       {/* Public shopfront + buyer area (SPEC §10.1–§10.2) — no login to browse */}
       <Route element={<ShopLayout />}>
@@ -154,5 +166,6 @@ export default function App() {
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </Suspense>
   )
 }

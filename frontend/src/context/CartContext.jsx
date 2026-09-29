@@ -26,6 +26,10 @@ function load() {
 
 export function CartProvider({ children }) {
   const [lines, setLines] = useState(load)
+  // The last add, for the one "Added · View cart" toast ShopLayout shows. A new
+  // object per add so adding the same item twice still re-shows it.
+  const [lastAdded, setLastAdded] = useState(null)
+  const dismissAdded = useCallback(() => setLastAdded(null), [])
 
   useEffect(() => {
     try { localStorage.setItem(KEY, JSON.stringify(lines)) } catch { /* quota / private mode */ }
@@ -36,6 +40,7 @@ export function CartProvider({ children }) {
   // `notes` (buyer's note for the shop) is stored on the line; a later add with
   // a fresh note replaces the old one.
   const add = useCallback((item, n = 1, notes = null) => {
+    setLastAdded({ name: item.name, at: Date.now() })
     setLines((prev) => {
       // Made-to-order items are produced on demand, so the buyer may order any
       // quantity — we don't cap against on-hand stock (which is a placeholder).
@@ -120,7 +125,7 @@ export function CartProvider({ children }) {
   const count = useMemo(() => lines.reduce((s, l) => s + l.qty, 0), [lines])
   const distinctCount = lines.length
 
-  const value = { lines, add, setQty, remove, sync, clear, count, distinctCount }
+  const value = { lines, add, setQty, remove, sync, clear, count, distinctCount, lastAdded, dismissAdded }
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>
 }
 

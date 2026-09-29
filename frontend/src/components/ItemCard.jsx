@@ -1,17 +1,21 @@
 import { Link } from 'react-router-dom'
-import { IconPhoto, IconShoppingCartPlus, IconCheck } from '@tabler/icons-react'
+import { IconPhoto, IconPlus, IconCheck } from '@tabler/icons-react'
 import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useShop } from '../context/ShopContext'
 import { useCart } from '../context/CartContext'
 import { money } from '../lib/format'
 import { rateForBuyer } from '../lib/helpers'
-import { Badge, Img } from './ui'
+import { Img } from './ui'
 
-// One product tile on the shopfront (SPEC §6.3). Shows photo, name, category and
-// the price the viewer pays — dealers see Dealer Rate, everyone else the Rate.
-// Purchase rate is NEVER shown here. Low stock gets a "Limited Stock" ribbon.
-export default function ItemCard({ item, categoryName }) {
+// One product tile on the shopfront (SPEC §6.3): image → name → price → one
+// line of MOQ / stock status → Add. The price is the one this viewer pays —
+// dealers see Dealer Rate, everyone else the Rate. Purchase rate is NEVER shown.
+//
+// The name's link is stretched over the whole tile (after:inset-0), so the tile
+// is one big target while the Add button stays a real sibling button — never a
+// <button> nested inside an <a>.
+export default function ItemCard({ item, priority = false }) {
   const { role } = useAuth()
   const { currency } = useShop()
   const { add } = useCart()
@@ -27,76 +31,81 @@ export default function ItemCard({ item, categoryName }) {
   // multiples of MOQ). Made-to-order is produced on demand, so always orderable.
   const canAdd = role !== 'owner' && role !== 'staff' && (mto || Number(item.quantity) >= moq)
 
-  function onAdd(e) {
-    e.preventDefault()  // the tile is a Link — don't navigate
-    e.stopPropagation()
+  function onAdd() {
     add(item, moq)
     setAdded(true)
-    setTimeout(() => setAdded(false), 1200)
+    setTimeout(() => setAdded(false), 1500)
   }
 
   return (
-    <Link
-      to={`/item/${item.id}`}
-      className="group flex flex-col overflow-hidden rounded-lg border border-line bg-card transition hover:-translate-y-0.5 hover:border-ink/25"
-    >
-      <div className="relative aspect-square overflow-hidden bg-paper-2">
+    <article className="group relative flex flex-col rounded-xl has-[a:focus-visible]:outline-2 has-[a:focus-visible]:outline-offset-4 has-[a:focus-visible]:outline-peacock">
+      <div className="relative aspect-square overflow-hidden rounded-xl bg-paper-2">
         {item.photo_url ? (
           <Img
             src={item.photo_url}
             thumb
-            alt={item.name}
-            // object-contain (not cover) so landscape/portrait photos show in full
-            // inside the square tile instead of being cropped; the paper-2 bg fills
-            // the letterbox area.
-            className="h-full w-full object-contain transition group-hover:scale-105"
+            eager={priority}
+            fetchPriority={priority ? 'high' : undefined}
+            alt=""
+            // object-contain so the whole product shows; multiply melts a
+            // photo's white studio background into the tile.
+            className="h-full w-full object-contain mix-blend-multiply transition-opacity duration-150 group-hover:opacity-90"
           />
         ) : (
-          <div className="grid h-full w-full place-items-center text-muted">
-            <IconPhoto size={40} stroke={1.3} />
+          <div className="grid h-full w-full place-items-center text-muted/60">
+            <IconPhoto size={36} stroke={1.2} aria-hidden />
           </div>
-        )}
-        {mto ? (
-          <span className="absolute left-2 top-2">
-            <Badge tone="peacock">Make to Order</Badge>
-          </span>
-        ) : low && (
-          <span className="absolute left-2 top-2">
-            <Badge tone="saffron">Limited Stock</Badge>
-          </span>
-        )}
-        {role === 'dealer' && (
-          <span className="absolute right-2 top-2">
-            <Badge tone="peacock">Dealer rate</Badge>
-          </span>
         )}
       </div>
 
-      <div className="flex flex-1 flex-col gap-1 p-3">
-        <p className="text-[11px] uppercase tracking-wide text-muted">
-          {categoryName || item.category?.name || ' '}
-        </p>
-        <p className="line-clamp-2 font-medium text-ink">{item.name}</p>
-        <div className="mt-auto flex items-center justify-between gap-2 pt-1">
-          <span className="fig text-lg font-bold text-peacock">
-            {money(price).replace('₹', currency)}
-          </span>
+      <div className="flex flex-1 flex-col pt-2.5">
+        <h3 className="line-clamp-2 text-sm leading-snug text-ink sm:text-[15px]">
+          <Link
+            to={`/item/${item.id}`}
+            state={{ item }}
+            className="outline-none after:absolute after:inset-0 after:rounded-xl"
+          >
+            {item.name}
+          </Link>
+        </h3>
+        <div className="mt-auto flex items-end justify-between gap-2 pt-1.5">
+          <div className="min-w-0">
+            <p className="fig text-base font-semibold text-peacock sm:text-[17px]">
+              {money(price).replace('₹', currency)}
+            </p>
+            <Meta mto={mto} low={low} moq={moq} />
+          </div>
           {canAdd && (
             <button
               type="button"
               onClick={onAdd}
-              aria-label={`Add ${item.name} to cart`}
-              className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg border transition ${
+              aria-label={moq > 1 ? `Add ${moq} × ${item.name} to cart` : `Add ${item.name} to cart`}
+              className={`relative z-10 grid h-11 w-11 shrink-0 place-items-center rounded-full border transition-colors duration-150 ${
                 added
-                  ? 'border-profit bg-profit/10 text-profit'
-                  : 'border-line bg-card text-muted hover:border-peacock hover:text-peacock'
+                  ? 'border-profit bg-profit text-white'
+                  : 'border-line bg-card text-peacock hover:border-peacock hover:bg-peacock hover:text-white'
               }`}
             >
-              {added ? <IconCheck size={18} /> : <IconShoppingCartPlus size={18} />}
+              {added ? <IconCheck size={20} aria-hidden /> : <IconPlus size={20} aria-hidden />}
             </button>
           )}
         </div>
       </div>
-    </Link>
+    </article>
+  )
+}
+
+// One quiet line under the price: the minimum pack, and stock status only when
+// it matters (low / made to order). Nothing when there's nothing to say.
+function Meta({ mto, low, moq }) {
+  const parts = []
+  if (moq > 1) parts.push(<span key="moq">Min <span className="fig">{moq}</span> pcs</span>)
+  if (mto) parts.push(<span key="s">Made to order</span>)
+  else if (low) parts.push(<span key="s" className="text-saffron">Few left</span>)
+  if (parts.length === 0) return null
+  return (
+    <p className="mt-0.5 truncate text-xs text-muted">
+      {parts.reduce((acc, p, i) => (i ? [...acc, ' · ', p] : [p]), [])}
+    </p>
   )
 }
