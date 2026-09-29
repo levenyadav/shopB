@@ -184,61 +184,74 @@ export default function CounterSale() {
             ) : (
               <ul className="divide-y divide-line">
                 {cart.map((l) => (
-                  <li key={l.id} className="flex items-center gap-3 px-3 py-2.5">
-                    <PhotoThumb url={l.photo_url} size="h-10 w-10" alt={l.name} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{l.name}</p>
-                      <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted">
+                  // Two lines, so nothing has to share a 22rem column: what it is
+                  // and what it costs on top, the controls that change it below.
+                  <li key={l.id} className="flex gap-3 px-3 py-3">
+                    <PhotoThumb url={l.photo_url} size="h-11 w-11" alt={l.name} />
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="flex items-start gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="line-clamp-2 text-sm font-medium leading-snug">{l.name}</p>
+                          {(l.made_to_order || Number(l.quantity) > l.stock) && (
+                            <div className="mt-1">
+                              {l.made_to_order
+                                ? <Badge tone="peacock">Make to order</Badge>
+                                : <Badge tone="dues">Over stock · {qty(l.stock)} left</Badge>}
+                            </div>
+                          )}
+                        </div>
+                        <span className="shrink-0 fig text-sm font-semibold">{m(round2(l.charge * l.quantity))}</span>
+                        <button onClick={() => removeLine(l.id)} className="-mr-1 -mt-1 grid h-8 w-8 shrink-0 place-items-center rounded text-muted hover:text-dues" aria-label={`Remove ${l.name}`}>
+                          <IconTrash size={16} />
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
                         {/* The owner may re-price a line at the counter (SPEC
                             §6.5a). A walk-in bill is quoted and rung up in the
                             same breath, so there is no earlier rate to protect
                             (#5); staff bill at the tier rate, read-only. */}
                         {isOwner ? (
-                          <span className="flex items-center gap-1">
-                            <span>{currency}</span>
-                            <input
-                              value={l.charge}
-                              // Keep the typed text: coercing each keystroke to a
-                              // number ate the "." and made 16.50 impossible.
-                              onChange={(e) => {
-                                const v = e.target.value.replace(/[^\d.]/g, '')
-                                if (/^\d*\.?\d{0,2}$/.test(v)) setLine(l.id, { charge: v })
-                              }}
-                              className="w-16 rounded border border-line bg-paper-2 px-1 py-0.5 text-right fig text-xs text-ink"
-                              inputMode="decimal"
-                              aria-label={`Rate for ${l.name}`}
-                            />
-                            <span>each</span>
-                          </span>
+                          <label className="flex items-center gap-1.5 text-xs text-muted">
+                            <span>Rate</span>
+                            <span className="relative">
+                              <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 fig">{currency}</span>
+                              <input
+                                value={l.charge}
+                                // Keep the typed text: coercing each keystroke to a
+                                // number ate the "." and made 16.50 impossible.
+                                onChange={(e) => {
+                                  const v = e.target.value.replace(/[^\d.]/g, '')
+                                  if (/^\d*\.?\d{0,2}$/.test(v)) setLine(l.id, { charge: v })
+                                }}
+                                className="ring-focus h-8 w-20 rounded border border-line bg-card pl-5 pr-2 text-right fig text-sm text-ink"
+                                inputMode="decimal"
+                                aria-label={`Rate for ${l.name}`}
+                              />
+                            </span>
+                          </label>
                         ) : (
-                          <><span className="fig">{m(Number(l.charge))}</span> each</>
+                          <span className="text-xs text-muted">Rate <span className="fig text-ink">{m(Number(l.charge))}</span></span>
                         )}
-                        {l.made_to_order
-                          ? <Badge tone="peacock">Make to order</Badge>
-                          : Number(l.quantity) > l.stock && <Badge tone="dues">Over stock</Badge>}
+                        <div className="flex items-center gap-1">
+                          <StepBtn label={`Less ${l.name}`} onClick={() => setLine(l.id, { quantity: Math.max(1, (Number(l.quantity) || 0) - 1) })}><IconMinus size={15} /></StepBtn>
+                          <input
+                            value={l.quantity}
+                            // May be '' mid-typing: forcing it back to 1 turned "500"
+                            // into "1500". confirm() rejects a blank line.
+                            onChange={(e) => {
+                              const v = e.target.value.replace(/\D/g, '')
+                              setLine(l.id, { quantity: v === '' ? '' : Number(v) })
+                            }}
+                            className="ring-focus h-8 w-12 rounded border border-line bg-card text-center fig text-sm"
+                            inputMode="numeric"
+                            aria-label={`Quantity of ${l.name}`}
+                          />
+                          <StepBtn label={`More ${l.name}`} onClick={() => setLine(l.id, {
+                            quantity: l.made_to_order ? (Number(l.quantity) || 0) + 1 : Math.min(l.stock, (Number(l.quantity) || 0) + 1),
+                          })}><IconPlus size={15} /></StepBtn>
+                        </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <StepBtn onClick={() => setLine(l.id, { quantity: Math.max(1, (Number(l.quantity) || 0) - 1) })}><IconMinus size={15} /></StepBtn>
-                      <input
-                        value={l.quantity}
-                        // May be '' mid-typing: forcing it back to 1 turned "500"
-                        // into "1500". confirm() rejects a blank line.
-                        onChange={(e) => {
-                          const v = e.target.value.replace(/\D/g, '')
-                          setLine(l.id, { quantity: v === '' ? '' : Number(v) })
-                        }}
-                        className="w-14 rounded border border-line bg-paper-2 py-1 text-center fig text-sm"
-                        inputMode="numeric"
-                      />
-                      <StepBtn onClick={() => setLine(l.id, {
-                        quantity: l.made_to_order ? (Number(l.quantity) || 0) + 1 : Math.min(l.stock, (Number(l.quantity) || 0) + 1),
-                      })}><IconPlus size={15} /></StepBtn>
-                    </div>
-                    <span className="w-16 text-right fig text-sm font-semibold">{m(round2(l.charge * l.quantity))}</span>
-                    <button onClick={() => removeLine(l.id)} className="text-muted hover:text-dues" aria-label="Remove">
-                      <IconTrash size={16} />
-                    </button>
                   </li>
                 ))}
               </ul>
@@ -249,12 +262,14 @@ export default function CounterSale() {
                 <>
                   <Row label="Subtotal" value={<span className="fig text-sm">{m(total)}</span>} />
                   <div className="flex items-center justify-between gap-3 py-1">
-                    <span className="text-sm text-muted">Discount on this bill</span>
-                    <Field
-                      prefix={currency} inputMode="decimal" type="number" min={0} step="1"
-                      placeholder="0" className="w-28 py-1.5 text-right"
-                      value={discount} onChange={(e) => setDiscount(e.target.value)}
-                    />
+                    <span className="text-sm text-muted">Discount</span>
+                    <div className="w-32 shrink-0">
+                      <Field
+                        prefix={currency} inputMode="decimal" type="number" min={0} step="1"
+                        placeholder="0" className="py-1.5 text-right" aria-label="Discount on this bill"
+                        value={discount} onChange={(e) => setDiscount(e.target.value)}
+                      />
+                    </div>
                   </div>
                   {discountOver && (
                     <p className="pb-1 text-right text-xs text-dues">
@@ -590,9 +605,9 @@ function ReceiptScreen({ bill, shop, currency, onNew, home, navigate }) {
 }
 
 // ---- small bits --------------------------------------------------------------
-function StepBtn({ onClick, children }) {
+function StepBtn({ onClick, label, children }) {
   return (
-    <button onClick={onClick} className="grid h-7 w-7 place-items-center rounded border border-line bg-paper-2 text-ink hover:border-peacock">
+    <button type="button" onClick={onClick} aria-label={label} className="ring-focus grid h-8 w-8 place-items-center rounded border border-line bg-paper-2 text-ink hover:border-peacock">
       {children}
     </button>
   )

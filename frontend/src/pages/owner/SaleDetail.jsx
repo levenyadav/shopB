@@ -10,7 +10,7 @@ import { money, qty, dateTime, dateShort } from '../../lib/format'
 import { round2 } from '../../lib/helpers'
 import { buildSlipPdf, sharePdf } from '../../lib/pdf'
 import { buildInvoiceModel, viewInvoice, printInvoice } from '../../lib/invoiceTemplate'
-import { Button, Badge, Spinner, Img } from '../../components/ui'
+import { Button, Badge, Spinner, Img, PhotoPlaceholder } from '../../components/ui'
 import SupplySlip from '../../components/SupplySlip'
 import { PAYMENT_META } from './Sales'
 
@@ -407,7 +407,7 @@ function Field({ label, value, onChange, placeholder, full }) {
 function Thumb({ url }) {
   return (
     <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-line bg-paper-2">
-      {url ? <Img src={url} thumb alt="" className="h-full w-full object-cover" />
+      {url ? <Img src={url} thumb alt="" className="h-full w-full object-cover" fallback={<PhotoPlaceholder size={20} />} />
            : <div className="grid h-full w-full place-items-center text-muted"><IconPhoto size={22} /></div>}
     </div>
   )

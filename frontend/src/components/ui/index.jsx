@@ -306,8 +306,8 @@ export function PhotoThumb({ url, size = 'h-14 w-14', alt = '' }) {
   const stop = (e) => { e.preventDefault(); e.stopPropagation() }
   if (!url) {
     return (
-      <div className={`grid ${size} shrink-0 place-items-center rounded-lg border border-line bg-paper-2 text-muted`}>
-        <IconPhoto size={22} />
+      <div className={`grid ${size} shrink-0 place-items-center rounded-md border border-line bg-paper-2 text-muted/50`} role="img" aria-label="No photo">
+        <IconPhoto size={20} stroke={1.2} aria-hidden />
       </div>
     )
   }
@@ -321,7 +321,8 @@ export function PhotoThumb({ url, size = 'h-14 w-14', alt = '' }) {
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { stop(e); setOpen(true) } }}
         className={`group ${size} block shrink-0 cursor-pointer overflow-hidden rounded-md border border-line bg-paper-2 transition-colors hover:border-peacock`}
       >
-        <Img src={url} thumb alt={alt} className="h-full w-full object-cover transition group-hover:scale-105" />
+        <Img src={url} thumb alt={alt} fallback={<PhotoPlaceholder size={20} />}
+             className="h-full w-full object-cover transition group-hover:scale-105" />
       </span>
       {open && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-ink/70 p-4" onClick={(e) => { stop(e); setOpen(false) }}>

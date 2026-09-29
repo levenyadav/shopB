@@ -10,7 +10,7 @@ import { useShop } from '../../context/ShopContext'
 import { money, qty } from '../../lib/format'
 import { round2, stockValue, isDuplicateCompanyNo, splitGstRate, combineGstRate } from '../../lib/helpers'
 import { printBarcodeLabels, barcodeValue, DEFAULT_LABEL_OPTS } from '../../lib/barcodeLabel'
-import { Button, Field, Select, Textarea, StockBadge, Badge, Spinner, TagsInput, ImagesInput, Img } from '../../components/ui'
+import { Button, Field, Select, Textarea, StockBadge, Badge, Spinner, TagsInput, ImagesInput, Img, PhotoPlaceholder } from '../../components/ui'
 import { uploadPhoto } from '../../lib/images'
 
 // SPEC §6.2 — Inventory master list. Owner sees all items, searches/filters,
@@ -670,6 +670,7 @@ function Thumb({ url, onZoom }) {
           src={url}
           thumb
           alt=""
+          fallback={<PhotoPlaceholder size={20} />}
           className="h-full w-full object-cover transition group-hover:scale-105"
         />
       </button>
