@@ -7,6 +7,7 @@ import { money, qty, dateTime } from '../../lib/format'
 import { shippingFeeFor } from '../../lib/helpers'
 import { OrderStatusBadge, Spinner, Img } from '../../components/ui'
 import { BackLink } from '../../components/BackButton'
+import { useOrdersTick } from '../../lib/useOrdersTick'
 
 // SPEC §6.3 / §10.2 — buyer's own order list, newest first. RLS (orders_buyer_
 // select) already scopes rows to this buyer, so no extra filter is needed.
@@ -16,6 +17,7 @@ export default function MyOrders() {
   const { currency } = useShop()
   const [orders, setOrders] = useState(null)
   const [err, setErr] = useState('')
+  const tick = useOrdersTick()   // re-read when the shop changes an order
 
   useEffect(() => {
     let active = true
@@ -58,7 +60,7 @@ export default function MyOrders() {
     }
     load()
     return () => { active = false }
-  }, [])
+  }, [tick])
 
   return (
     <div className="space-y-5">

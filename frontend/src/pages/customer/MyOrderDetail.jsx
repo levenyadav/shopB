@@ -11,6 +11,7 @@ import { round2, itemGstRate, gstBreakupByRate, shippingFeeFor } from '../../lib
 import { buildInvoiceModel, viewInvoice, printInvoice } from '../../lib/invoiceTemplate'
 import { Button, OrderStatusBadge, Spinner, Img } from '../../components/ui'
 import { BackLink } from '../../components/BackButton'
+import { useOrdersTick } from '../../lib/useOrdersTick'
 
 // SPEC §10.2 — a buyer's view of one order: what they bought, the locked rate,
 // and how far it's progressed. Read-only; status is driven by the owner/staff.
@@ -40,6 +41,7 @@ export default function MyOrderDetail() {
   const [invoices, setInvoices] = useState({}) // order_id -> customer_invoices row
   const [bills, setBills] = useState({})       // order_id -> customer_bills row
   const [err, setErr] = useState('')
+  const tick = useOrdersTick()   // re-read when the shop changes an order
   const [missing, setMissing] = useState(false)
 
   useEffect(() => {
@@ -104,7 +106,7 @@ export default function MyOrderDetail() {
     }
     load()
     return () => { active = false }
-  }, [id])
+  }, [id, tick])
 
   if (missing) return <Empty>Order not found. <Link to="/orders" className="font-medium text-peacock hover:underline">Back to my orders</Link>.</Empty>
   if (err) return <Empty>{err}</Empty>
@@ -283,7 +285,7 @@ export default function MyOrderDetail() {
       ) : (
         <div className="rounded-lg border border-line bg-card p-5">
           <p className="text-sm font-semibold">Progress</p>
-          <p className="mb-4 mt-0.5 text-sm text-muted">{STATUS_NOTE[order.status] || ''}</p>
+          <p className="mb-4 mt-0.5 text-sm text-muted">{STATUS_NOTE[groupStatus] || ''}</p>
           {lines.find((l) => l.packed_by_name) && (
             <p className="-mt-3 mb-4 text-xs text-muted">
               Packed by <span className="font-medium text-ink">{lines.find((l) => l.packed_by_name).packed_by_name}</span>
