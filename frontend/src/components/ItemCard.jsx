@@ -1,12 +1,12 @@
 import { Link } from 'react-router-dom'
-import { IconPhoto, IconPlus, IconCheck } from '@tabler/icons-react'
+import { IconPlus, IconCheck } from '@tabler/icons-react'
 import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useShop } from '../context/ShopContext'
 import { useCart } from '../context/CartContext'
 import { money } from '../lib/format'
 import { rateForBuyer } from '../lib/helpers'
-import { Img } from './ui'
+import { Img, PhotoPlaceholder } from './ui'
 
 // One product tile on the shopfront (SPEC §6.3): image → name → price → one
 // line of MOQ / stock status → Add. The price is the one this viewer pays —
@@ -40,22 +40,17 @@ export default function ItemCard({ item, priority = false }) {
   return (
     <article className="group relative flex flex-col rounded-xl has-[a:focus-visible]:outline-2 has-[a:focus-visible]:outline-offset-4 has-[a:focus-visible]:outline-peacock">
       <div className="relative aspect-square overflow-hidden rounded-xl bg-paper-2">
-        {item.photo_url ? (
-          <Img
-            src={item.photo_url}
-            thumb
-            eager={priority}
-            fetchPriority={priority ? 'high' : undefined}
-            alt=""
-            // object-contain so the whole product shows; multiply melts a
-            // photo's white studio background into the tile.
-            className="h-full w-full object-contain mix-blend-multiply transition-opacity duration-150 group-hover:opacity-90"
-          />
-        ) : (
-          <div className="grid h-full w-full place-items-center text-muted/60">
-            <IconPhoto size={36} stroke={1.2} aria-hidden />
-          </div>
-        )}
+        <Img
+          src={item.photo_url}
+          thumb
+          eager={priority}
+          fetchPriority={priority ? 'high' : undefined}
+          alt=""
+          // object-contain so the whole product shows; multiply melts a
+          // photo's white studio background into the tile.
+          className="h-full w-full object-contain mix-blend-multiply transition-opacity duration-150 group-hover:opacity-90"
+          fallback={<PhotoPlaceholder size={36} />}
+        />
       </div>
 
       <div className="flex flex-1 flex-col pt-2.5">

@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { IconPhoto, IconReceipt2 } from '@tabler/icons-react'
+import { IconReceipt2 } from '@tabler/icons-react'
 import { supabase, fetchIn } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
 import { shippingFeeFor } from '../../lib/helpers'
-import { OrderStatusBadge, Spinner, Img } from '../../components/ui'
+import { OrderStatusBadge, Spinner, Img, PhotoPlaceholder } from '../../components/ui'
 import { useOrdersTick } from '../../lib/useOrdersTick'
 
 // SPEC §6.3 / §10.2 — buyer's own order list, newest first. RLS (orders_buyer_
@@ -157,11 +157,7 @@ function groupOrders(rows) {
 function Thumb({ url }) {
   return (
     <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-paper-2">
-      {url ? (
-        <Img src={url} thumb alt="" className="h-full w-full object-contain mix-blend-multiply" />
-      ) : (
-        <div className="grid h-full w-full place-items-center text-muted"><IconPhoto size={22} /></div>
-      )}
+      <Img src={url} thumb alt="" className="h-full w-full object-contain mix-blend-multiply" fallback={<PhotoPlaceholder size={22} />} />
     </div>
   )
 }

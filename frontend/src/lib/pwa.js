@@ -160,6 +160,9 @@ export function applyBranding(shop) {
 // the browser to offer "Install app"). No-op where unsupported.
 export function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return
+  // Not in `vite dev`: its module URLs aren't content-hashed, so the worker's
+  // stale-while-revalidate would serve yesterday's code after an edit.
+  if (import.meta.env.DEV) return
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch(() => {})
   })

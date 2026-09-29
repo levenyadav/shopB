@@ -263,10 +263,14 @@ export function Spinner({ className = '' }) {
 // view) and, with `thumb`, fetches the ~20 KB thumbnail instead of the full
 // photo — falling back to the full photo if no thumbnail exists. Keeps the
 // photo traffic small; see lib/images.js.
-export function Img({ src, thumb = false, alt = '', eager = false, ...rest }) {
+//
+// `fallback` is rendered instead when there is no photo OR it fails to load
+// (a deleted file, a blocked host) — never a broken-image icon.
+export function Img({ src, thumb = false, alt = '', eager = false, fallback = null, ...rest }) {
   const small = thumb ? thumbUrl(src) : src
   const [failed, setFailed] = useState(false)
-  if (!src) return null
+  const [broken, setBroken] = useState(false)
+  if (!src || (broken && fallback)) return fallback
   return (
     <img
       src={failed ? src : small}
@@ -276,9 +280,19 @@ export function Img({ src, thumb = false, alt = '', eager = false, ...rest }) {
       {...rest}
       onError={(e) => {
         if (!failed && small !== src) setFailed(true)
-        else rest.onError?.(e)
+        else { setBroken(true); rest.onError?.(e) }
       }}
     />
+  )
+}
+
+// Stand-in for a product with no photo (or one that won't load): a quiet tile
+// in the image's own box, so grids and rows keep their shape.
+export function PhotoPlaceholder({ size = 28, className = '' }) {
+  return (
+    <div className={`grid h-full w-full place-items-center bg-paper-2 text-muted/50 ${className}`} role="img" aria-label="No photo">
+      <IconPhoto size={size} stroke={1.2} aria-hidden />
+    </div>
   )
 }
 

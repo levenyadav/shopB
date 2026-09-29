@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { IconPhoto, IconTrash, IconShoppingBag } from '@tabler/icons-react'
+import { IconTrash, IconShoppingBag } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { useCart } from '../../context/CartContext'
 import { money } from '../../lib/format'
 import { rateForBuyer, round2, shippingFeeFor } from '../../lib/helpers'
-import { Spinner, Img } from '../../components/ui'
+import { Spinner, Img, PhotoPlaceholder } from '../../components/ui'
 import QtyStepper from '../../components/QtyStepper'
 
 // SPEC §6.3 — the cart. A cart is client-side only (CartContext); nothing touches
@@ -227,8 +227,7 @@ export default function Cart() {
 function Thumb({ url }) {
   return (
     <div className="h-20 w-20 overflow-hidden rounded-lg bg-paper-2">
-      {url ? <Img src={url} thumb alt="" className="h-full w-full object-contain mix-blend-multiply" />
-           : <div className="grid h-full w-full place-items-center text-muted/60"><IconPhoto size={22} /></div>}
+      <Img src={url} thumb alt="" className="h-full w-full object-contain mix-blend-multiply" fallback={<PhotoPlaceholder size={22} />} />
     </div>
   )
 }

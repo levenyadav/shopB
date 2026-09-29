@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import {
-  IconPhoto, IconCircleCheck, IconCircleX, IconCheck,
+  IconCircleCheck, IconCircleX, IconCheck,
   IconEye, IconPrinter,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
@@ -9,7 +9,7 @@ import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
 import { round2, itemGstRate, gstBreakupByRate, shippingFeeFor } from '../../lib/helpers'
 import { buildInvoiceModel, viewInvoice, printInvoice } from '../../lib/invoiceTemplate'
-import { Button, OrderStatusBadge, Spinner, Img } from '../../components/ui'
+import { Button, OrderStatusBadge, Spinner, Img, PhotoPlaceholder } from '../../components/ui'
 import { useOrdersTick } from '../../lib/useOrdersTick'
 
 // SPEC §10.2 — a buyer's view of one order: what they bought, the locked rate,
@@ -350,9 +350,8 @@ function Row({ label, value, full }) {
 
 function Thumb({ url }) {
   return (
-    <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-line bg-paper-2">
-      {url ? <Img src={url} thumb alt="" className="h-full w-full object-cover" />
-           : <div className="grid h-full w-full place-items-center text-muted"><IconPhoto size={22} /></div>}
+    <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-paper-2">
+      <Img src={url} thumb alt="" className="h-full w-full object-contain mix-blend-multiply" fallback={<PhotoPlaceholder size={22} />} />
     </div>
   )
 }

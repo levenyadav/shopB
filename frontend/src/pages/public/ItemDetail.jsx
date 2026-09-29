@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
-import { IconPhoto, IconCheck, IconShoppingBagPlus } from '@tabler/icons-react'
+import { IconCheck, IconShoppingBagPlus } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { useCart } from '../../context/CartContext'
 import { money } from '../../lib/format'
 import { rateForBuyer, round2 } from '../../lib/helpers'
-import { Img } from '../../components/ui'
+import { Img, PhotoPlaceholder } from '../../components/ui'
 import QtyStepper from '../../components/QtyStepper'
 
 // SPEC §6.3 — item detail + add to cart. Buyers see the price for their tier
@@ -175,8 +175,8 @@ function Gallery({ item }) {
 
   if (photos.length === 0) {
     return (
-      <div className="-mx-4 grid aspect-square place-items-center bg-paper-2 text-muted/60 sm:mx-0 sm:rounded-xl">
-        <IconPhoto size={56} stroke={1.2} aria-hidden />
+      <div className="-mx-4 aspect-square overflow-hidden sm:mx-0 sm:rounded-xl">
+        <PhotoPlaceholder size={56} />
       </div>
     )
   }
@@ -193,7 +193,8 @@ function Gallery({ item }) {
           {photos.map((p, i) => (
             <div key={p + i} className="aspect-square w-full shrink-0 snap-center">
               <Img src={p} eager={i === 0} alt={i === 0 ? item.name : `${item.name}, photo ${i + 1}`}
-                   className="h-full w-full object-contain mix-blend-multiply" />
+                   className="h-full w-full object-contain mix-blend-multiply"
+                   fallback={<PhotoPlaceholder size={56} />} />
             </div>
           ))}
         </div>
@@ -215,7 +216,7 @@ function Gallery({ item }) {
                 i === active ? 'ring-2 ring-ink' : 'hover:ring-1 hover:ring-line'
               }`}
             >
-              <Img src={p} thumb alt="" className="h-full w-full object-cover" />
+              <Img src={p} thumb alt="" className="h-full w-full object-cover" fallback={<PhotoPlaceholder size={20} />} />
             </button>
           ))}
         </div>
