@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   IconUpload, IconFileSpreadsheet, IconDownload, IconCircleCheck,
   IconAlertTriangle, IconArrowLeft, IconPlus,
 } from '@tabler/icons-react'
-import { supabase } from '../../lib/supabase'
+import { supabase, fetchAll } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { money } from '../../lib/format'
@@ -38,6 +38,15 @@ export default function BulkPurchase() {
   const [importing, setImporting] = useState(false)
   const [results, setResults] = useState(null) // { ok, failed, newSuppliers, newCategories }
 
+  // Names already in the catalogue. This screen only CREATES products, so a row
+  // whose product exists would make a second copy (and stock it) — which is
+  // exactly what re-uploading a file to retry a few failed rows used to do.
+  const [existingNames, setExistingNames] = useState(null)
+  useEffect(() => {
+    fetchAll(() => supabase.from('items').select('name').order('id'))
+      .then(({ data }) => setExistingNames(new Set((data ?? []).map((i) => i.name.trim().toLowerCase()))))
+  }, [results])
+
   // Case-insensitive name -> existing record id.
   const supplierByName = nameMap(suppliers)
   const categoryByName = nameMap(categories)
@@ -70,6 +79,9 @@ export default function BulkPurchase() {
         for (const row of validated) {
           const key = row.company_no.toLowerCase()
           if (key && seen.get(key) > 1) row.errors.push(`duplicate company_no "${row.company_no}" in file`)
+          if (existingNames?.has(row.name.trim().toLowerCase())) {
+            row.errors.push('already in your catalogue — restock it from Purchase Entry instead')
+          }
         }
         setRows(validated)
       } catch (err) {
@@ -188,7 +200,8 @@ export default function BulkPurchase() {
         <span className="text-xs text-muted">
           Columns: {COLUMNS.join(', ')}
         </span>
-        <input type="file" accept=".csv,text/csv" className="hidden" onChange={onFile} />
+        {/* Waits for the catalogue names so the duplicate check always runs. */}
+        <input type="file" accept=".csv,text/csv" className="hidden" onChange={onFile} disabled={existingNames === null} />
       </label>
 
       {/* Preview */}

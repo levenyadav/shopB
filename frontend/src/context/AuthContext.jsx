@@ -22,6 +22,14 @@ export function AuthProvider({ children }) {
     // A failed read (e.g. a migration not yet applied) must not silently look
     // like "not signed in" — surface it so the cause is visible, not hidden.
     if (error) console.error('Failed to load profile:', error.message)
+    // Disabled by the owner: the database already refuses everything (055), so
+    // sign out rather than leave them on screens that load empty. Signing in
+    // again tells them "This account is disabled. Contact the shop."
+    if (data && data.is_active === false) {
+      setProfile(null)
+      await supabase.auth.signOut()
+      return
+    }
     setProfile(data ?? null)
   }, [])
 
