@@ -37,7 +37,7 @@ const TABS = [
 ]
 
 export default function Parties() {
-  const { currency, shop, suppliers } = useShop()
+  const { currency, shop, suppliers, refreshSuppliers } = useShop()
   const { profile } = useAuth()
   const [buyers, setBuyers] = useState(null)
   const [err, setErr] = useState('')
@@ -45,6 +45,10 @@ export default function Parties() {
   const [q, setQ] = useState('')
   const [duesOnly, setDuesOnly] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
+
+  // Supplier dues come from ShopContext (loaded at app start) — re-read so the
+  // list and the "we owe" total include bills entered since.
+  useEffect(() => { refreshSuppliers() }, [refreshSuppliers])
 
   useEffect(() => {
     let active = true

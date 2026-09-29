@@ -4,7 +4,7 @@ import {
   IconPhone, IconCashBanknote, IconDeviceFloppy,
   IconFileText, IconBrandWhatsapp, IconAlertTriangle, IconCheck,
 } from '@tabler/icons-react'
-import { supabase } from '../../lib/supabase'
+import { supabase, fetchAll } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { useAuth } from '../../context/AuthContext'
 import { money, dateShort, dateTime } from '../../lib/format'
@@ -72,15 +72,17 @@ export default function PartyDetail() {
           .eq('party_id', id).eq('party_type', type).maybeSingle(),
         // Ascending: the statement needs chronological order to foot, and the
         // on-screen ledger simply reverses it.
-        supabase.from('ledger_entries').select('*')
+        // Paged: a busy supplier passes 1000 entries, and a cut-off ledger
+        // makes the statement's opening balance wrong (see fetchAll).
+        fetchAll(() => supabase.from('ledger_entries').select('*')
           .eq('party_id', id).eq('party_type', type)
-          .order('created_at', { ascending: true }),
+          .order('created_at', { ascending: true }).order('id')),
         supabase.from('party_open_bills').select('*')
           .eq('party_id', id).eq('party_type', type)
           .order('billed_at', { ascending: true }),
-        supabase.from('party_bills').select('*')
+        fetchAll(() => supabase.from('party_bills').select('*')
           .eq('party_id', id).eq('party_type', type)
-          .order('billed_at', { ascending: false }),
+          .order('billed_at', { ascending: false }).order('bill_key')),
       ])
       if (!active) return
 
