@@ -107,12 +107,13 @@ export default function Fulfilment({ detailBase }) {
           <button
             type="button"
             onClick={() => setShowDone((v) => !v)}
-            className="text-sm font-medium text-muted hover:text-ink"
+            aria-expanded={showDone}
+            className="inline-flex min-h-11 items-center text-sm font-medium text-muted hover:text-ink"
           >
             {showDone ? 'Hide' : 'Show'} completed ({done.length})
           </button>
           {showDone && (
-            <ul className="mt-3 space-y-2.5">
+            <ul className="mt-3 divide-y divide-line overflow-hidden rounded-lg border border-line bg-card">
               {done.map((j) => <JobCard key={j.id} job={j} detailBase={detailBase} />)}
             </ul>
           )}
@@ -132,11 +133,11 @@ function Section({ title, count, tone, empty, children }) {
         <Badge tone={tone}>{count}</Badge>
       </div>
       {isEmpty ? (
-        <p className="rounded-lg border border-dashed border-line bg-paper-2 px-5 py-8 text-center text-sm text-muted">
+        <p className="rounded-lg border border-line bg-card px-5 py-6 text-center text-sm text-muted">
           {empty}
         </p>
       ) : (
-        <ul className="space-y-2.5">{items}</ul>
+        <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-card">{items}</ul>
       )}
     </section>
   )
@@ -148,7 +149,7 @@ function JobCard({ job, detailBase }) {
     <li>
       <Link
         to={`${detailBase}/${job.id}`}
-        className="flex items-center gap-4 rounded-lg border border-line bg-card p-3 transition hover:border-ink/20"
+        className="flex items-center gap-3 p-3 transition-colors duration-150 hover:bg-paper-2 sm:gap-4"
       >
         <PhotoThumb url={job.photo_url} />
         <div className="min-w-0 flex-1">

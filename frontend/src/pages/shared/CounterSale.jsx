@@ -13,7 +13,6 @@ import { Button, Field, Spinner, Badge, PhotoThumb } from '../../components/ui'
 import BarcodeScanner from '../../components/BarcodeScanner'
 import CounterReceipt from '../../components/CounterReceipt'
 import { buildInvoiceModel, printInvoice } from '../../lib/invoiceTemplate'
-import { BackLink } from '../../components/BackButton'
 
 // POS / Counter Sale (SPEC §6.5a — walk-in billing). Owner OR staff ring up a
 // walk-in on the spot: scan/search items into a cart, pick or quick-add a named
@@ -152,7 +151,6 @@ export default function CounterSale() {
 
   return (
     <div className="mx-auto max-w-5xl">
-      <BackLink className="mb-4" />
 
       <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
         {/* ---- Left: item picker ---- */}

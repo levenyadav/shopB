@@ -12,7 +12,6 @@ import { buildSlipPdf, sharePdf } from '../../lib/pdf'
 import { Button, Textarea, Badge, Spinner, Img } from '../../components/ui'
 import SupplySlip from '../../components/SupplySlip'
 import { FULFIL_STATUS } from './Fulfilment'
-import { BackLink } from '../../components/BackButton'
 
 // SPEC §6.6 / §13 — one packing job. Staff packs, then owner/staff marks how it
 // left (delivered or picked up). Status side-effects (timestamps, order status)
@@ -82,7 +81,6 @@ export default function FulfilmentDetail({ listPath }) {
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
-      <BackLink className="no-print" />
 
       {/* Job summary */}
       <div className="rounded-lg border border-line bg-card p-5">

@@ -1,28 +1,26 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  IconShoppingCartPlus, IconBoxSeam, IconAlertTriangle, IconBuildingWarehouse,
-  IconReceipt2, IconCoin, IconTrendingUp, IconCash, IconUserDollar,
+  IconCashRegister, IconShoppingCartPlus, IconCash, IconChevronRight,
+  IconReceipt2, IconPackage, IconAlertTriangle, IconCircleCheck,
 } from '@tabler/icons-react'
 import { supabase, fetchAll } from '../../lib/supabase'
-import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { money, qty } from '../../lib/format'
 import { stockValue } from '../../lib/helpers'
 import { startOfToday } from '../../lib/dates'
-import { Spinner } from '../../components/ui'
 
-// Owner home (SPEC §10.5). Pulls the few numbers an owner checks first thing:
-// pending orders, today's sales & profit, low stock, the biggest udhaar owed to
-// the shop, and the biggest due the shop owes a supplier. Every figure is a tap
-// into the screen that acts on it (SPEC §3.4 — no dead ends).
+// Owner home (SPEC §10.5), in the order the owner uses it:
+//   1. the three things they start (Counter Sale, Purchase, Payment),
+//   2. what's waiting on them — only the lines that aren't zero,
+//   3. today's takings, then 4. where the money stands.
+// Every figure is a tap into the screen that acts on it (SPEC §3.4).
 export default function Dashboard() {
-  const { profile } = useAuth()
   const { suppliers, refreshSuppliers } = useShop()
   const [stats, setStats] = useState(null)
   const [err, setErr] = useState('')
 
-  // The supplier-due tile reads ShopContext, loaded once at app start; purchase
+  // The supplier-due figure reads ShopContext, loaded once at app start; purchase
   // bills since then raised balances it wouldn't show. Re-read on every visit.
   useEffect(() => { refreshSuppliers() }, [refreshSuppliers])
 
@@ -30,158 +28,160 @@ export default function Dashboard() {
     let active = true
     async function load() {
       const todayISO = startOfToday().toISOString()
-      const [itemsRes, ordersRes, salesRes, udhaarRes] = await Promise.all([
-        // Stock snapshot — active items for count + low, all rows for valuation.
+      const [itemsRes, ordersRes, packRes, salesRes, udhaarRes] = await Promise.all([
+        // Stock snapshot — active items for low stock, all rows for valuation.
         fetchAll(() => supabase.from('items').select('quantity, purchase_rate, low_stock_threshold, is_active').order('id')),
         // Orders awaiting approval.
         supabase.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+        // Approved orders (shopfront + counter) not yet packed.
+        supabase.from('fulfilment').select('id', { count: 'exact', head: true }).eq('status', 'pending_pack'),
         // Today's sales (amount + profit) since local midnight.
         supabase.from('sales').select('amount, profit').gte('created_at', todayISO),
-        // Largest outstanding buyer balance (udhaar).
-        supabase.from('profiles').select('id, full_name, role, balance_due')
+        // Everyone who owes the shop (udhaar), biggest first.
+        fetchAll(() => supabase.from('profiles').select('id, full_name, balance_due')
           .in('role', ['customer', 'dealer']).gt('balance_due', 0)
-          .order('balance_due', { ascending: false }).limit(1),
+          .order('balance_due', { ascending: false }).order('id')),
       ])
       if (!active) return
 
-      const firstErr = itemsRes.error || ordersRes.error || salesRes.error || udhaarRes.error
+      const firstErr = itemsRes.error || ordersRes.error || packRes.error || salesRes.error || udhaarRes.error
       if (firstErr) { setErr(firstErr.message); return }
 
       const items = itemsRes.data ?? []
-      const active_ = items.filter((i) => i.is_active)
       const sales = salesRes.data ?? []
+      const owing = udhaarRes.data ?? []
 
       setStats({
         pending: ordersRes.count ?? 0,
+        toPack: packRes.count ?? 0,
+        low: items.filter((i) => i.is_active && Number(i.quantity) < Number(i.low_stock_threshold)).length,
         salesToday: sales.reduce((s, r) => s + Number(r.amount || 0), 0),
         profitToday: sales.reduce((s, r) => s + Number(r.profit || 0), 0),
-        low: active_.filter((i) => Number(i.quantity) < Number(i.low_stock_threshold)).length,
+        billsToday: sales.length,
         stockValue: items.reduce((s, i) => s + stockValue(i), 0),
-        topUdhaar: udhaarRes.data?.[0] ?? null,
+        udhaarTotal: owing.reduce((s, p) => s + Number(p.balance_due || 0), 0),
+        udhaarCount: owing.length,
+        topUdhaar: owing[0] ?? null,
       })
     }
     load()
     return () => { active = false }
   }, [])
 
-  const topSupplier = [...suppliers]
-    .filter((s) => Number(s.balance_due) > 0)
-    .sort((a, b) => Number(b.balance_due) - Number(a.balance_due))[0]
+  const owed = suppliers.filter((s) => Number(s.balance_due) > 0)
+  const supplierTotal = owed.reduce((s, x) => s + Number(x.balance_due), 0)
+
+  const todo = stats ? [
+    { n: stats.pending, to: '/owner/orders', icon: IconReceipt2, label: (n) => (n === 1 ? 'order to approve' : 'orders to approve') },
+    { n: stats.toPack, to: '/owner/fulfilment', icon: IconPackage, label: (n) => (n === 1 ? 'order to pack' : 'orders to pack') },
+    { n: stats.low, to: '/owner/stock', icon: IconAlertTriangle, label: (n) => (n === 1 ? 'item low on stock' : 'items low on stock') },
+  ].filter((t) => t.n > 0) : []
 
   return (
-    <div className="space-y-6">
-      <div>
-        <p className="text-muted">Welcome back,</p>
-        <h2 className="font-[var(--font-display)] text-3xl font-bold">
-          {profile?.full_name || 'Owner'}
-        </h2>
+    <div className="mx-auto max-w-5xl space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <p className="text-sm text-muted">
+          {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
+        </p>
+        {/* The three things an owner starts from here (SPEC §10.5). */}
+        <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+          <Action to="/owner/counter-sale" icon={IconCashRegister} primary className="basis-full sm:basis-auto">Counter Sale</Action>
+          <Action to="/owner/purchase" icon={IconShoppingCartPlus}>New Purchase</Action>
+          <Action to="/owner/payments" icon={IconCash}>Record Payment</Action>
+        </div>
       </div>
 
-      {err && <p className="rounded-lg bg-dues/10 px-4 py-3 text-sm text-dues">{err}</p>}
+      {err && <p role="alert" className="rounded-lg bg-dues/10 px-4 py-3 text-sm text-dues">Couldn’t load the dashboard: {err}. Refresh to try again.</p>}
 
-      {/* Today + queue — what the owner acts on first */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat
-          icon={IconReceipt2} tone="saffron" label="Pending orders"
-          value={stats ? qty(stats.pending) : <Dash />}
-          sub={stats?.pending ? 'Waiting for approval' : 'All caught up'}
-          to="/owner/orders"
-        />
-        <Stat
-          icon={IconCoin} tone="peacock" label="Today's sales"
-          value={stats ? money(stats.salesToday) : <Dash />} to="/owner/reports"
-        />
-        <Stat
-          icon={IconTrendingUp} tone="profit" label="Today's profit"
-          value={stats ? money(stats.profitToday) : <Dash />} to="/owner/reports"
-        />
-        <Stat
-          icon={IconAlertTriangle} tone="saffron" label="Low on stock"
-          value={stats ? qty(stats.low) : <Dash />}
-          sub={stats?.low ? 'Tap to reorder' : 'Stock healthy'}
-          to="/owner/stock"
-        />
-      </div>
+      {/* Needs attention — a short to-do list, or one calm line. */}
+      <section aria-labelledby="todo-h">
+        <h2 id="todo-h" className="eyebrow mb-2">Needs attention</h2>
+        {!stats ? (
+          <div className="h-14 animate-pulse rounded-lg bg-paper-2" />
+        ) : todo.length === 0 ? (
+          <p className="flex items-center gap-2 rounded-lg border border-line bg-card px-4 py-3.5 text-sm text-ink/80">
+            <IconCircleCheck size={20} className="text-profit" aria-hidden /> All caught up — nothing waiting on you.
+          </p>
+        ) : (
+          <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-card">
+            {todo.map((t) => (
+              <li key={t.to}>
+                <Link to={t.to} className="flex min-h-14 items-center gap-3 px-4 transition-colors duration-150 hover:bg-paper-2">
+                  <t.icon size={20} className="shrink-0 text-saffron" aria-hidden />
+                  <span className="flex-1 font-medium text-ink">
+                    <span className="fig">{qty(t.n)}</span> {t.label(t.n)}
+                  </span>
+                  <IconChevronRight size={18} className="text-muted" aria-hidden />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
-      {/* Standing position — stock value + who owes whom */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Stat
-          icon={IconBuildingWarehouse} tone="peacock" label="Stock value (at cost)"
-          value={stats ? money(stats.stockValue) : <Dash />} to="/owner/inventory"
-        />
-        <Stat
-          icon={IconUserDollar} tone="dues" label="Top udhaar owed to shop"
-          value={stats ? money(stats.topUdhaar?.balance_due || 0) : <Dash />}
-          sub={stats?.topUdhaar?.full_name || 'No udhaar pending'}
-          to="/owner/parties"
-        />
-        <Stat
-          icon={IconBuildingWarehouse} tone="dues" label="Top supplier due"
-          value={topSupplier ? money(topSupplier.balance_due) : '₹0'}
-          sub={topSupplier?.name || 'Nothing owed'}
-          to="/owner/parties"
-        />
-      </div>
+      {/* Today */}
+      <section aria-labelledby="today-h">
+        <h2 id="today-h" className="eyebrow mb-2">Today</h2>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+          <Stat label="Today’s sales" value={stats && money(stats.salesToday)}
+                sub={stats && `${qty(stats.billsToday)} ${stats.billsToday === 1 ? 'bill' : 'bills'}`} to="/owner/sales" />
+          <Stat label="Today’s profit" value={stats && money(stats.profitToday)} tone="profit" to="/owner/reports" />
+        </div>
+      </section>
 
-      {/* Quick actions (SPEC §10.5) */}
-      <section className="rounded-lg border border-line bg-card p-5">
-        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">
-          Quick actions
-        </h3>
-        <div className="flex flex-wrap gap-3">
-          <QuickAction to="/owner/purchase" icon={IconShoppingCartPlus} primary>
-            New Purchase
-          </QuickAction>
-          <QuickAction to="/owner/orders" icon={IconReceipt2}>
-            View Orders
-          </QuickAction>
-          <QuickAction to="/owner/payments" icon={IconCash}>
-            Record Payment
-          </QuickAction>
+      {/* Where the money stands */}
+      <section aria-labelledby="money-h">
+        <h2 id="money-h" className="eyebrow mb-2">Money & stock</h2>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+          <Stat
+            label="Udhaar to collect" value={stats && money(stats.udhaarTotal)} tone={stats?.udhaarTotal > 0 ? 'dues' : null}
+            sub={stats && (stats.udhaarCount
+              ? `${qty(stats.udhaarCount)} ${stats.udhaarCount === 1 ? 'buyer' : 'buyers'} · most: ${stats.topUdhaar?.full_name || '—'}`
+              : 'Nobody owes the shop')}
+            to="/owner/parties"
+          />
+          <Stat
+            label="You owe suppliers" value={money(supplierTotal)}
+            sub={owed.length ? `${qty(owed.length)} ${owed.length === 1 ? 'supplier' : 'suppliers'}` : 'Nothing owed'}
+            to="/owner/parties"
+          />
+          <Stat label="Stock value (at cost)" value={stats && money(stats.stockValue)} to="/owner/inventory"
+                className="col-span-2 lg:col-span-1" />
         </div>
       </section>
     </div>
   )
 }
 
-const STAT_TONES = {
-  peacock: 'bg-peacock/10 text-peacock',
-  saffron: 'bg-saffron/15 text-saffron',
-  profit: 'bg-profit/10 text-profit',
-  dues: 'bg-dues/10 text-dues',
-}
+const TONE = { profit: 'text-profit', dues: 'text-dues' }
 
-function Dash() {
-  return <Spinner className="text-muted" />
-}
-
-function Stat({ icon: Icon, tone, label, value, sub, to }) {
+// A labelled figure that opens the screen behind it. `value` null = loading.
+function Stat({ label, value, sub, tone, to, className = '' }) {
   return (
     <Link
       to={to}
-      className="group rounded-lg border border-line bg-card p-5 transition hover:border-peacock/40 hover:border-ink/20"
+      className={`rounded-lg border border-line bg-card p-4 transition-colors duration-150 hover:border-ink/25 ${className}`}
     >
-      <div className={`mb-3 grid h-10 w-10 place-items-center rounded-lg ${STAT_TONES[tone]}`}>
-        <Icon size={20} />
-      </div>
       <p className="text-sm text-muted">{label}</p>
-      <p className="fig mt-0.5 text-2xl font-bold">{value}</p>
+      {value == null
+        ? <div className="mt-1.5 h-7 w-24 animate-pulse rounded bg-paper-2" />
+        : <p className={`fig mt-0.5 text-2xl font-semibold ${TONE[tone] || 'text-ink'}`}>{value}</p>}
       {sub && <p className="mt-0.5 truncate text-xs text-muted">{sub}</p>}
     </Link>
   )
 }
 
-function QuickAction({ to, icon: Icon, primary, children }) {
+function Action({ to, icon: Icon, primary, className = '', children }) {
   return (
     <Link
       to={to}
-      className={`inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
+      className={`inline-flex h-11 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-4 text-sm font-semibold transition-colors duration-150 sm:flex-none ${className} ${
         primary
           ? 'bg-peacock text-white hover:bg-peacock-700'
-          : 'border border-line bg-card hover:bg-paper-2'
+          : 'border border-line bg-card text-ink hover:bg-paper-2'
       }`}
     >
-      <Icon size={18} /> {children}
+      <Icon size={18} aria-hidden /> {children}
     </Link>
   )
 }

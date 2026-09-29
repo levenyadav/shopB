@@ -173,6 +173,14 @@ body {
   }
 }
 
+/* Consoles (ConsoleShell) — keep the ledger look, but buttons, links and the
+   active nav use the contrast-safe ink shade of the brand colour, so a pale
+   theme colour (rose gold) still gives readable white-on-colour buttons. */
+.console {
+  --color-peacock:     var(--color-brand-ink);
+  --color-peacock-700: var(--color-brand-ink-700);
+}
+
 /* Order Supply Slip (SPEC §13) — browser-native print, no special hardware.
    The slip lives hidden in the page; on print everything else is hidden and
    only the slip is inked. No print-specific component tree to keep in sync. */

@@ -19,7 +19,6 @@ import {
   Section, Row, createProductFromLine,
 } from '../../components/purchase'
 import { stockShortfalls, costRateChanges, billEditProblem } from '../../lib/purchaseEdit'
-import { BackLink } from '../../components/BackButton'
 
 // SPEC §6.1 / §6.7.1 — one supplier bill, in full. Reached from the supplier's
 // ledger (the `purchase` entry links straight here) and from Purchase History.
@@ -172,7 +171,6 @@ export default function PurchaseBillDetail() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
-      <BackLink className="no-print" />
 
       {/* What the last correction did to the books, in plain words. */}
       {saved && (

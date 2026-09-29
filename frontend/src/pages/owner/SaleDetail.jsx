@@ -13,7 +13,6 @@ import { buildInvoiceModel, viewInvoice, printInvoice } from '../../lib/invoiceT
 import { Button, Badge, Spinner, Img } from '../../components/ui'
 import SupplySlip from '../../components/SupplySlip'
 import { PAYMENT_META } from './Sales'
-import { BackLink } from '../../components/BackButton'
 
 // Every column a sale LINE needs here — used both for the line the URL names
 // and for its siblings on the same bill.
@@ -222,7 +221,6 @@ export default function SaleDetail() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
-      <BackLink className="no-print" />
 
       {/* Sale summary */}
       <div className="relative rounded-lg border border-line bg-card p-5">

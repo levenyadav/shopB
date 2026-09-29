@@ -12,7 +12,6 @@ import { round2, toE164India } from '../../lib/helpers'
 import { buildStatementModel, viewStatement, printStatement } from '../../lib/statementTemplate'
 import { Badge, Spinner, Button, Field, Textarea, Select } from '../../components/ui'
 import LedgerTable from '../../components/LedgerTable'
-import { BackLink } from '../../components/BackButton'
 
 // SPEC §6.7 / §6.10 — Party detail. Everything the owner needs about one party
 // on ONE screen (SPEC §3.2): who they are, what they have done with the shop,
@@ -138,7 +137,6 @@ export default function PartyDetail() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-5">
-      <BackLink />
 
       <PartyHeader
         summary={summary} type={type} currency={currency} shop={shop}

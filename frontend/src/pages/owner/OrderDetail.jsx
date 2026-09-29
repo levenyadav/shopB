@@ -12,7 +12,6 @@ import { lineProfit, round2, toE164India, shippingFeeFor } from '../../lib/helpe
 import {
   Button, Textarea, Field, OrderStatusBadge, InProcessBadge, IN_PROCESS_STATUSES, Badge, Spinner, Img,
 } from '../../components/ui'
-import { BackLink } from '../../components/BackButton'
 
 // Owner-side fulfilment timeline (post-approval). orders.status advances
 // approved → packed → delivered/picked_up via the fulfilment trigger, so it
@@ -82,7 +81,6 @@ export default function OrderDetail() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
-      <BackLink />
 
       {/* Order summary */}
       <div className="relative rounded-lg border border-line bg-card p-5">
@@ -165,6 +163,9 @@ export default function OrderDetail() {
       ) : (
         <ApprovedTracker order={order} />
       )}
+
+      {/* The rest of this cart — after the actions, so Approve stays first. */}
+      {order.order_group_id && <CartSiblings order={order} />}
 
       {err && order && <p className="rounded-lg bg-dues/10 px-4 py-3 text-sm text-dues">{err}</p>}
     </div>
@@ -479,6 +480,68 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
         </Button>
       </div>
     </div>
+  )
+}
+
+// The other lines of the same shopfront cart (they share order_group_id). A
+// cart is approved line by line, so this is the owner's route through it:
+// every line with its status, and the next one still waiting, one tap away.
+function CartSiblings({ order }) {
+  const { currency } = useShop()
+  const [lines, setLines] = useState(null)
+  useEffect(() => {
+    let active = true
+    supabase
+      .from('orders')
+      .select('id, status, quantity, amount, item_name, item:items(name)')
+      .eq('order_group_id', order.order_group_id)
+      .order('created_at').order('id')
+      .then(({ data }) => { if (active) setLines(data ?? []) })
+    return () => { active = false }
+  }, [order.order_group_id, order.status])
+
+  if (!lines || lines.length < 2) return null
+  const next = lines.find((l) => l.status === 'pending' && l.id !== order.id)
+  const total = lines.filter((l) => l.status !== 'rejected').reduce((s, l) => s + Number(l.amount || 0), 0)
+
+  return (
+    <section className="rounded-lg border border-line bg-card" aria-label="Items in this order">
+      <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
+        <p className="text-sm font-semibold">
+          This order has <span className="fig">{lines.length}</span> items
+          <span className="ml-2 font-normal text-muted">Total <span className="fig">{money(total).replace('₹', currency)}</span></span>
+        </p>
+        {next && (
+          <Link to={`/owner/orders/${next.id}`} className="shrink-0 text-sm font-semibold text-peacock hover:underline">
+            Next to approve →
+          </Link>
+        )}
+      </div>
+      <ul className="divide-y divide-line">
+        {lines.map((l, i) => {
+          const here = l.id === order.id
+          const row = (
+            <>
+              <span className="fig w-5 shrink-0 text-xs text-muted">{i + 1}</span>
+              <span className={`min-w-0 flex-1 truncate ${here ? 'font-semibold text-ink' : 'text-ink/80'}`}>
+                {l.item?.name || l.item_name || 'Item'}
+              </span>
+              <span className="fig shrink-0 text-xs text-muted">{qty(l.quantity)} pcs</span>
+              <OrderStatusBadge status={l.status} />
+            </>
+          )
+          return (
+            <li key={l.id}>
+              {here ? (
+                <div className="flex min-h-11 items-center gap-3 bg-paper-2 px-4 py-2 text-sm" aria-current="true">{row}</div>
+              ) : (
+                <Link to={`/owner/orders/${l.id}`} className="flex min-h-11 items-center gap-3 px-4 py-2 text-sm hover:bg-paper-2">{row}</Link>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </section>
   )
 }
 
