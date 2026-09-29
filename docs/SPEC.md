@@ -138,7 +138,7 @@
   (`NINZASMS_API_KEY` + `NINZASMS_SENDER_ID` secrets). NinzaSMS fills a
   DLT-approved template, so the function supplies only the 6-digit code — it
   cannot word the message.
-- **File Storage:** Supabase Storage (item photos)
+- **File Storage:** Cloudflare R2 (item photos, shop branding) — uploaded via signed links from the `r2-upload` Edge Function. Moved off Supabase Storage in Sept 2026 (free-plan egress cap).
 - **Real-time:** Supabase Realtime (live order notifications)
 - **Server Logic:** Supabase Edge Functions (PDF generation, QR codes, notifications)
 - **Security:** Supabase Row Level Security (RLS)
@@ -190,7 +190,7 @@
 | 7 | Purchase Rate | Currency | Cost price — what owner paid |
 | 8 | Dealer Rate | Currency | Wholesale price for dealers |
 | 9 | Rate | Currency | Retail price for customers |
-| 10 | Photo | Image upload | Stored in Supabase Storage (`item-photos` bucket) |
+| 10 | Photo | Image upload | Stored in Cloudflare R2 (`item-photos/` folder), shrunk to 1200px + 320px thumbnail |
 | 11 | Barcode / QR | Scan or generate | For fast lookup |
 | 12 | Low Stock Threshold | Number | Below this → item flagged Low (default 10) |
 
@@ -544,7 +544,7 @@ quantity              numeric     DEFAULT 0 NOT NULL
 purchase_rate         numeric     NOT NULL  -- cost price
 dealer_rate           numeric     NOT NULL  -- wholesale price
 rate                  numeric     NOT NULL  -- retail price
-photo_url             text        -- Supabase Storage URL
+photo_url             text        -- public R2 photo URL
 barcode               text        -- scanned or generated
 low_stock_threshold   numeric     DEFAULT 10
 is_active             boolean     DEFAULT true

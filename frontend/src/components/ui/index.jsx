@@ -262,7 +262,7 @@ export function Spinner({ className = '' }) {
 // Every stored photo goes through this. Loads lazily (only when scrolled into
 // view) and, with `thumb`, fetches the ~20 KB thumbnail instead of the full
 // photo — falling back to the full photo if no thumbnail exists. Keeps the
-// Supabase cached-egress quota alive; see lib/images.js.
+// photo traffic small; see lib/images.js.
 export function Img({ src, thumb = false, alt = '', eager = false, ...rest }) {
   const small = thumb ? thumbUrl(src) : src
   const [failed, setFailed] = useState(false)

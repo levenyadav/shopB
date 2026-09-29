@@ -1,15 +1,19 @@
 import { supabase } from './supabase'
 
-// Photos are the only thing that eats the Supabase "cached egress" quota: the
-// free plan allows 5 GB a month and has no server-side image resizing. Raw phone
-// photos (2–9 MB each) shown as 56px tiles blew through it in September 2026 and
-// the whole project was restricted. So every upload is shrunk in the browser and
-// a small thumbnail is stored beside it; list screens show only the thumbnail.
+// Photos live in Cloudflare R2, not Supabase Storage. Supabase's free plan
+// allows 5 GB of photo traffic a month; raw phone photos blew through it in
+// September 2026 and the whole project was restricted. R2 gives 10 GB free and
+// charges nothing for traffic. Every upload is still shrunk in the browser and a
+// small thumbnail stored beside it, so screens load fast on shop Wi-Fi.
 //
-// Storage layout (item-photos and brand-assets buckets):
-//   <shopId>/<uuid>.jpg      full photo, longest side ≤ 1200px (~100–200 KB)
-//   <shopId>/<uuid>.t.jpg    thumbnail, longest side ≤ 320px (~15–30 KB)
-// Paths are unique per upload and never overwritten, so browsers may keep them
+// Upload flow: the r2-upload Edge Function checks the caller (owner/staff, own
+// shop) and returns short-lived signed PUT links; the browser uploads straight
+// to R2. The R2 secret key never reaches the browser.
+//
+// Key layout (one R2 bucket, old Supabase bucket names kept as the first folder):
+//   <bucket>/<shopId>/<uuid>.jpg      full photo, longest side ≤ 1200px (~100–200 KB)
+//   <bucket>/<shopId>/<uuid>.t.jpg    thumbnail, longest side ≤ 320px (~15–30 KB)
+// Keys are unique per upload and never overwritten, so browsers may keep them
 // for a year.
 
 const FULL_MAX = 1200
@@ -48,41 +52,63 @@ export async function shrinkImage(file, max = FULL_MAX, quality = 0.8, type = 'i
 
 // Shrink + upload a photo and its thumbnail. Returns the full photo's public URL.
 // `keepTransparency` stores a single PNG (brand logos/icons) at up to `max` px.
-export async function uploadPhoto(bucket, shopId, file, { keepTransparency = false, max = FULL_MAX } = {}) {
+// `folder` is the shop id, optionally followed by a subfolder (`<shopId>/banners`).
+export async function uploadPhoto(bucket, folder, file, { keepTransparency = false, max = FULL_MAX } = {}) {
   if (!file) return null
-  const id = crypto.randomUUID()
-  const store = supabase.storage.from(bucket)
 
   if (keepTransparency) {
     const png = await shrinkImage(file, max, undefined, 'image/png')
-    const path = `${shopId}/${id}.png`
-    const { error } = await store.upload(path, png, {
-      upsert: false, contentType: png.type || 'image/png', cacheControl: CACHE_ONE_YEAR,
-    })
-    if (error) throw new Error('Photo upload failed: ' + error.message)
-    return store.getPublicUrl(path).data.publicUrl
+    const [link] = await signUploads(bucket, folder, ['png'])
+    await putFile(link.url, png, 'image/png')
+    return link.publicUrl
   }
 
   const [full, thumb] = await Promise.all([
     shrinkImage(file, max, 0.8),
     shrinkImage(file, THUMB_MAX, 0.75),
   ])
-  const path = `${shopId}/${id}.jpg`
+  const [fullLink, thumbLink] = await signUploads(bucket, folder, ['jpg', 't.jpg'])
   // contentType follows the blob: shrinkImage hands back the original file if the
   // browser couldn't decode it (e.g. HEIC on some desktops).
-  const opts = (b) => ({ upsert: false, contentType: b.type || 'image/jpeg', cacheControl: CACHE_ONE_YEAR })
-  const { error } = await store.upload(path, full, opts(full))
-  if (error) throw new Error('Photo upload failed: ' + error.message)
+  await putFile(fullLink.url, full, full.type || 'image/jpeg')
   // A missing thumbnail only costs bandwidth (thumbUrl falls back), so don't fail the save.
-  await store.upload(`${shopId}/${id}.t.jpg`, thumb, opts(thumb))
-  return store.getPublicUrl(path).data.publicUrl
+  await putFile(thumbLink.url, thumb, thumb.type || 'image/jpeg').catch(() => {})
+  return fullLink.publicUrl
 }
 
-// The thumbnail URL for a photo stored by uploadPhoto (or the backfill script).
-// Anything else — pasted links, the thumbnail itself — is returned unchanged.
-// Render with onError falling back to the full URL (see <Img>).
+async function signUploads(bucket, folder, files) {
+  const { data, error } = await supabase.functions.invoke('r2-upload', {
+    body: { bucket, folder, files },
+  })
+  if (error) {
+    // functions.invoke hides the function's own message inside error.context.
+    let msg = error.message
+    try { msg = (await error.context.json()).error || msg } catch { /* keep generic */ }
+    throw new Error('Photo upload failed: ' + msg)
+  }
+  return data.uploads
+}
+
+async function putFile(url, blob, contentType) {
+  let res
+  try {
+    res = await fetch(url, {
+      method: 'PUT',
+      body: blob,
+      headers: { 'Content-Type': contentType, 'Cache-Control': `public, max-age=${CACHE_ONE_YEAR}, immutable` },
+    })
+  } catch {
+    throw new Error('Photo upload failed: no internet connection. Check the connection and save again.')
+  }
+  if (!res.ok) throw new Error(`Photo upload failed (error ${res.status}). Try saving again.`)
+}
+
+// The thumbnail URL for a photo stored by uploadPhoto (or the migration script),
+// in R2 or in old Supabase Storage. Anything else — pasted links, the thumbnail
+// itself — is returned unchanged. Render with onError falling back to the full
+// URL (see <Img>).
 export function thumbUrl(url) {
-  if (!url || !/\/storage\/v1\/object\/public\/(item-photos|brand-assets)\//.test(url)) return url
+  if (!url || !/\/(item-photos|brand-assets)\//.test(url)) return url
   if (/\.t\.jpg$/i.test(url)) return url
   return url.replace(/\.(jpe?g|png|webp|heic|heif|gif)$/i, '.t.jpg')
 }

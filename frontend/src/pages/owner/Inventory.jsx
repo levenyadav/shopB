@@ -788,7 +788,7 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
     setPreview('')
   }
 
-  async function uploadPhoto() {
+  async function savePhoto() {
     if (!photoFile) return photoUrl.trim() || null
     return uploadPhoto('item-photos', shopId, photoFile)
   }
@@ -798,7 +798,7 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
     if (!f.name.trim()) { setErr('Item name is required.'); return }
     setBusy(true); setErr('')
     try {
-      const photo_url = await uploadPhoto()
+      const photo_url = await savePhoto()
       const { error } = await supabase
         .from('items')
         .update({
