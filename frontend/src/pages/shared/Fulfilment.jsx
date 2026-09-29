@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import {
   IconPackage, IconTruckDelivery, IconChecks, IconMapPin, IconBuildingWarehouse,
 } from '@tabler/icons-react'
-import { supabase } from '../../lib/supabase'
+import { supabase, fetchAll } from '../../lib/supabase'
 import { qty, dateTime } from '../../lib/format'
 import { Badge, Spinner, PhotoThumb } from '../../components/ui'
 
@@ -27,10 +27,12 @@ export default function Fulfilment({ detailBase }) {
   async function load() {
     setErr('')
     setPicksErr('')
-    const { data, error } = await supabase
+    // Paged: the board keeps finished jobs too, and PostgREST silently stops
+    // at 1000 rows (see fetchAll).
+    const { data, error } = await fetchAll(() => supabase
       .from('fulfilment_queue')
       .select('*')
-      .order('created_at', { ascending: true })
+      .order('created_at', { ascending: true }).order('id'))
     if (error) { setErr(error.message); return }
     const rows = data ?? []
 
@@ -38,15 +40,17 @@ export default function Fulfilment({ detailBase }) {
     // rather than a column on fulfilment_queue, see that migration's §5.
     const saleIds = rows.map((j) => j.sale_id).filter(Boolean)
     let picksBySale = {}
-    if (saleIds.length) {
+    // In batches: every id goes into the request URL, and a few hundred uuids
+    // pass the URL length limit — the whole lookup would fail.
+    for (let i = 0; i < saleIds.length; i += 100) {
       const { data: picks, error: pErr } = await supabase
         .from('fulfilment_picks')
         .select('sale_id, warehouse, quantity')
-        .in('sale_id', saleIds)
+        .in('sale_id', saleIds.slice(i, i + 100))
       // Never swallow this: without it the board silently drops the "pick from"
       // line and looks like a shop with no warehouses, which is exactly how a
       // missing migration 050 used to present itself.
-      if (pErr) setPicksErr(pErr.message)
+      if (pErr) { setPicksErr(pErr.message); break }
       for (const p of picks ?? []) (picksBySale[p.sale_id] ||= []).push(p)
     }
     setJobs(rows.map((j) => ({ ...j, picks: picksBySale[j.sale_id] ?? [] })))

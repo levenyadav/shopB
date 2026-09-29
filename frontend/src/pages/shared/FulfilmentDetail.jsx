@@ -58,9 +58,14 @@ export default function FulfilmentDetail({ listPath }) {
     const patch = { status }
     if (status === 'packed') patch.packed_by = profile.id
     else { patch.completed_by = profile.id; if (note.trim()) patch.delivery_note = note.trim() }
-    const { error } = await supabase.from('fulfilment').update(patch).eq('id', job.id)
+    // Only move the job on from the status this screen shows. Two people on
+    // the same job (or a screen left open) could otherwise push a delivered
+    // job back to "packed" — and the buyer's order with it.
+    const { data, error } = await supabase.from('fulfilment').update(patch)
+      .eq('id', job.id).eq('status', job.status).select('id')
     setBusy(false)
     if (error) { setErr(error.message); return }
+    if (!data?.length) setErr('Someone already updated this job — showing its latest status now.')
     load()
   }
 

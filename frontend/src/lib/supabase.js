@@ -24,3 +24,16 @@ export async function fetchAll(build, pageSize = 1000) {
     if (!data || data.length < pageSize) return { data: rows, error: null }
   }
 }
+
+// `.in(column, ids)` puts every id in the request URL; a few hundred uuids pass
+// the URL length limit and the whole read fails. Run it in batches instead.
+// `build(chunk)` returns a query already filtered with .in(column, chunk).
+export async function fetchIn(ids, build, size = 100) {
+  const rows = []
+  for (let i = 0; i < ids.length; i += size) {
+    const { data, error } = await build(ids.slice(i, i + size))
+    if (error) return { data: null, error }
+    rows.push(...(data ?? []))
+  }
+  return { data: rows, error: null }
+}

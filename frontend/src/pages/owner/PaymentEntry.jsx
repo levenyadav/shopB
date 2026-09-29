@@ -42,6 +42,11 @@ export default function PaymentEntry() {
   const [err, setErr] = useState('')
   const [done, setDone] = useState(null) // { name, paid, balanceAfter }
 
+  // Supplier balances live in ShopContext, loaded once when the app opens —
+  // every purchase bill since then raised a balance this list doesn't show.
+  // Re-read them here so "We currently owe" is today's figure.
+  useEffect(() => { refreshSuppliers() }, [refreshSuppliers])
+
   useEffect(() => {
     let active = true
     supabase

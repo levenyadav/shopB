@@ -18,9 +18,13 @@ import { Spinner } from '../../components/ui'
 // into the screen that acts on it (SPEC §3.4 — no dead ends).
 export default function Dashboard() {
   const { profile } = useAuth()
-  const { suppliers } = useShop()
+  const { suppliers, refreshSuppliers } = useShop()
   const [stats, setStats] = useState(null)
   const [err, setErr] = useState('')
+
+  // The supplier-due tile reads ShopContext, loaded once at app start; purchase
+  // bills since then raised balances it wouldn't show. Re-read on every visit.
+  useEffect(() => { refreshSuppliers() }, [refreshSuppliers])
 
   useEffect(() => {
     let active = true

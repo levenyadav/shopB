@@ -291,6 +291,9 @@ function BillEntry() {
         tax: billCharges.tax,
         grandTotal: rows.length ? billCharges.grand : 0,
       })
+      // The bill raised this supplier's balance (trigger 033); refresh the
+      // shared supplier list so Payment Out / Dashboard show the new due.
+      refreshSuppliers()
       // Bill is safely written — drop the autosaved draft and its stashed photos.
       for (const l of lines) if (l.photoRef) delBlob(l.photoRef)
       clearBillDraft()

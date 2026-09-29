@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { IconPhoto, IconReceipt2 } from '@tabler/icons-react'
-import { supabase } from '../../lib/supabase'
+import { supabase, fetchIn } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
 import { shippingFeeFor } from '../../lib/helpers'
@@ -35,10 +35,10 @@ export default function MyOrders() {
       const ids = [...new Set((rows ?? []).map((o) => o.item_id))]
       const byId = {}
       if (ids.length) {
-        const { data: items } = await supabase
+        const { data: items } = await fetchIn(ids, (chunk) => supabase
           .from('shopfront_items')
           .select('id, name, photo_url')
-          .in('id', ids)
+          .in('id', chunk))
         for (const it of items ?? []) byId[it.id] = it
       }
       // Shipping / packing / other (023), so a card's total is the same figure
@@ -46,10 +46,10 @@ export default function MyOrders() {
       const billable = (rows ?? []).filter((o) => o.status !== 'pending' && o.status !== 'rejected')
       const billById = {}
       if (billable.length) {
-        const { data: bls } = await supabase
+        const { data: bls } = await fetchIn(billable.map((o) => o.id), (chunk) => supabase
           .from('customer_bills')
           .select('order_id, discount_amount, shipping_fee, packing_fee, other_charge')
-          .in('order_id', billable.map((o) => o.id))
+          .in('order_id', chunk))
         for (const b of bls ?? []) billById[b.order_id] = b
       }
 
