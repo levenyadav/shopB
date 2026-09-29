@@ -2,7 +2,6 @@ import { Link } from 'react-router-dom'
 import { IconPlus, IconCheck } from '@tabler/icons-react'
 import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { useShop } from '../context/ShopContext'
 import { useCart } from '../context/CartContext'
 import { money } from '../lib/format'
 import { rateForBuyer } from '../lib/helpers'
@@ -17,7 +16,6 @@ import { Img, PhotoPlaceholder } from './ui'
 // <button> nested inside an <a>.
 export default function ItemCard({ item, priority = false }) {
   const { role } = useAuth()
-  const { currency } = useShop()
   const { add } = useCart()
   const [added, setAdded] = useState(false)
   const price = rateForBuyer(item, role)
@@ -66,7 +64,7 @@ export default function ItemCard({ item, priority = false }) {
         <div className="mt-auto flex items-end justify-between gap-2 pt-1.5">
           <div className="min-w-0">
             <p className="fig text-base font-semibold text-peacock sm:text-[17px]">
-              {money(price).replace('₹', currency)}
+              {money(price)}
             </p>
             <Meta mto={mto} low={low} moq={moq} />
           </div>

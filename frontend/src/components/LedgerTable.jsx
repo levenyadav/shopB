@@ -98,7 +98,7 @@ export default function LedgerTable({ entries, currency = '₹', emptyText }) {
                 <span className={`fig font-semibold ${
                   !moved ? 'text-muted' : owesMore ? 'text-dues' : 'text-profit'
                 }`}>
-                  {moved ? (owesMore ? '+' : '−') : ''}{money(Math.abs(signed)).replace('₹', currency)}
+                  {moved ? (owesMore ? '+' : '−') : ''}{money(Math.abs(signed))}
                 </span>
               </div>
 
@@ -106,7 +106,7 @@ export default function LedgerTable({ entries, currency = '₹', emptyText }) {
                 {moved ? (
                   <>
                     <span className="sm:hidden mr-1 text-xs text-muted">Balance after</span>
-                    <span className="fig text-ink">{money(e.running_balance).replace('₹', currency)}</span>
+                    <span className="fig text-ink">{money(e.running_balance)}</span>
                   </>
                 ) : (
                   // A pre-056 counter bill settled on the spot — it never

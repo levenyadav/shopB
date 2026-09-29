@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { IconReceipt2 } from '@tabler/icons-react'
 import { supabase, fetchIn } from '../../lib/supabase'
-import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
 import { shippingFeeFor } from '../../lib/helpers'
 import { OrderStatusBadge, Spinner, Img, PhotoPlaceholder } from '../../components/ui'
@@ -13,7 +12,6 @@ import { useOrdersTick } from '../../lib/useOrdersTick'
 // Item names are joined; an item that has since gone out of stock/inactive falls
 // back to a neutral label because buyer RLS only exposes active, in-stock items.
 export default function MyOrders() {
-  const { currency } = useShop()
   const [orders, setOrders] = useState(null)
   const [err, setErr] = useState('')
   const tick = useOrdersTick()   // re-read when the shop changes an order
@@ -94,7 +92,7 @@ export default function MyOrders() {
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="fig font-semibold">{money(g.totalAmount).replace('₹', currency)}</p>
+                  <p className="fig font-semibold">{money(g.totalAmount)}</p>
                   <div className="mt-1"><OrderStatusBadge status={g.status} audience="buyer" /></div>
                 </div>
               </Link>

@@ -20,7 +20,7 @@ const SALE_COLS =
   'id, order_id, bill_id, quantity, rate_charged, amount, purchase_rate, profit, payment_type, buyer_type, created_at, ' +
   'item_no, item_name, ' +
   'item:items(name, item_no, photo_url, location, hsn_sac, gst_rate), ' +
-  'buyer:profiles!sales_buyer_id_fkey(full_name, phone, balance_due, gstin, address, state_name, state_code), ' +
+  'buyer:profiles!sales_buyer_id_fkey(id, full_name, phone, balance_due, gstin, address, state_name, state_code), ' +
   'category:categories(name), ' +
   'order:orders!sales_order_id_fkey(notes, created_at, order_group_id)'
 
@@ -240,7 +240,9 @@ export default function SaleDetail() {
 
         <dl className="mt-5 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
           <Row label="Buyer" value={
-            <>{sale.buyer?.full_name || '—'}
+            <>{sale.buyer?.id
+                ? <Link to={`/owner/parties/${sale.buyer_type}/${sale.buyer.id}`} className="font-medium text-peacock hover:underline">{sale.buyer.full_name || 'Buyer'}</Link>
+                : '—'}
               <Badge tone={sale.buyer_type === 'dealer' ? 'peacock' : 'muted'} className="ml-1.5">{sale.buyer_type}</Badge>
             </>} />
           <Row label="Phone" value={<span className="fig">{sale.buyer?.phone || '—'}</span>} />
@@ -249,10 +251,10 @@ export default function SaleDetail() {
             <Row label="Category" value={sale.category?.name || '—'} />
             <Row label="Item No" value={<span className="fig">{item?.item_no || sale.item_no || '—'}</span>} />
             <Row label="Rack / Location" value={<span className="inline-flex items-center gap-1">{item?.location ? <><IconMapPin size={15} /> {item.location}</> : '—'}</span>} />
-            <Row label={`${sale.buyer_type === 'dealer' ? 'Dealer ' : ''}rate (each)`} value={<span className="fig">{money(sale.rate_charged).replace('₹', currency)}</span>} />
+            <Row label={`${sale.buyer_type === 'dealer' ? 'Dealer ' : ''}rate (each)`} value={<span className="fig">{money(sale.rate_charged)}</span>} />
           </>}
           <Row label="Quantity" value={<span className="fig">{qty(billQty)} pcs</span>} />
-          <Row label={multi ? 'Bill total' : 'Amount'} value={<span className="fig font-semibold">{money(billAmount).replace('₹', currency)}</span>} />
+          <Row label={multi ? 'Bill total' : 'Amount'} value={<span className="fig font-semibold">{money(billAmount)}</span>} />
         </dl>
 
         {/* Every line on this bill. Rate is the one locked at order time
@@ -276,20 +278,20 @@ export default function SaleDetail() {
                       <span className="ml-2 fig text-xs text-muted">{l.item?.item_no || l.item_no || ''}</span>
                     </td>
                     <td className="fig py-2 text-right">{qty(l.quantity)}</td>
-                    <td className="fig py-2 text-right">{money(l.rate_charged).replace('₹', currency)}</td>
-                    <td className="fig py-2 text-right font-medium">{money(l.amount).replace('₹', currency)}</td>
+                    <td className="fig py-2 text-right">{money(l.rate_charged)}</td>
+                    <td className="fig py-2 text-right font-medium">{money(l.amount)}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 <tr>
                   <td className="py-2 text-xs text-muted" colSpan={3}>Goods total</td>
-                  <td className="fig py-2 text-right font-semibold">{money(billAmount).replace('₹', currency)}</td>
+                  <td className="fig py-2 text-right font-semibold">{money(billAmount)}</td>
                 </tr>
                 {Number(bill?.discount_amount) > 0 && (
                   <tr>
                     <td className="py-1 text-xs text-muted" colSpan={3}>Less discount</td>
-                    <td className="fig py-1 text-right">−{money(bill.discount_amount).replace('₹', currency)}</td>
+                    <td className="fig py-1 text-right">−{money(bill.discount_amount)}</td>
                   </tr>
                 )}
               </tfoot>
@@ -299,10 +301,10 @@ export default function SaleDetail() {
 
         {/* Owner-only economics (Golden Rules #3, #4 — never on slip or invoice) */}
         <div className="mt-4 flex flex-wrap items-center gap-4 rounded-lg bg-paper-2 px-4 py-3 text-sm">
-          <span className="text-muted">Cost <span className="fig text-ink">{money(cost).replace('₹', currency)}</span></span>
-          <span className="text-muted">Profit <span className="fig font-semibold text-profit">{money(billProfit).replace('₹', currency)}</span></span>
+          <span className="text-muted">Cost <span className="fig text-ink">{money(cost)}</span></span>
+          <span className="text-muted">Profit <span className="fig font-semibold text-profit">{money(billProfit)}</span></span>
           {sale.payment_type === 'udhaar' && (
-            <span className="text-muted">Buyer udhaar now <span className="fig text-dues">{money(sale.buyer?.balance_due).replace('₹', currency)}</span></span>
+            <span className="text-muted">Buyer udhaar now <span className="fig text-dues">{money(sale.buyer?.balance_due)}</span></span>
           )}
         </div>
       </div>
@@ -433,7 +435,7 @@ function Empty({ children }) {
 const CORRECTION_LABEL = { mark_unpaid: 'Moved to udhaar (money not received)', discount: 'Discount after billing' }
 
 function CorrectBill({ firstLineId, lineIds, billAmount, billValue, paymentType, buyerName, currency, onDone }) {
-  const m = (n) => money(n).replace('₹', currency)
+  const m = (n) => money(n)
   const [open, setOpen] = useState(false)
   const [action, setAction] = useState('mark_unpaid')
   const [amount, setAmount] = useState('')

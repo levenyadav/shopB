@@ -33,7 +33,7 @@ export default function CounterSale() {
   const navigate = useNavigate()
   const isOwner = profile?.role === 'owner'
   const home = isOwner ? '/owner' : '/staff'
-  const m = (n) => money(n).replace('₹', currency)
+  const m = (n) => money(n)
 
   const [cart, setCart] = useState([])   // { id, item_no, name, category_id, photo_url, stock, rate, dealer_rate, purchase_rate, quantity, charge }
   const [buyer, setBuyer] = useState(null) // { id, full_name, phone, role }
@@ -332,7 +332,7 @@ function ItemPicker({ shopId, isOwner, onAdd, currency }) {
   const [scan, setScan] = useState(false)
   const [flash, setFlash] = useState('')
   const seq = useRef(0)
-  const m = (n) => money(n).replace('₹', currency)
+  const m = (n) => money(n)
 
   useEffect(() => {
     const id = ++seq.current
@@ -556,7 +556,7 @@ function BuyerPanel({ buyer, setBuyer, shopId }) {
 
 // ---- Receipt / success screen ------------------------------------------------
 function ReceiptScreen({ bill, shop, currency, onNew, home, navigate }) {
-  const m = (n) => money(n).replace('₹', currency)
+  const m = (n) => money(n)
   // The bill's reference: the real gap-free invoice number (016/019) when we have
   // it, else the short bill_id — kept as a graceful fallback for pre-019 DBs.
   const ref = bill.invoice_no || `#${bill.bill_id?.slice(0, 8).toUpperCase()}`

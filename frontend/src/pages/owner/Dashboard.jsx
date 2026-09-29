@@ -7,8 +7,8 @@ import {
 import { supabase, fetchAll } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty } from '../../lib/format'
-import { stockValue } from '../../lib/helpers'
-import { startOfToday } from '../../lib/dates'
+import { stockValue, needsReorder } from '../../lib/helpers'
+import { startOfToday, toInputDate } from '../../lib/dates'
 
 // Owner home (SPEC §10.5), in the order the owner uses it:
 //   1. the three things they start (Counter Sale, Purchase, Payment),
@@ -29,14 +29,15 @@ export default function Dashboard() {
     async function load() {
       const todayISO = startOfToday().toISOString()
       const [itemsRes, ordersRes, packRes, salesRes, udhaarRes] = await Promise.all([
-        // Stock snapshot — active items for low stock, all rows for valuation.
-        fetchAll(() => supabase.from('items').select('quantity, purchase_rate, low_stock_threshold, is_active').order('id')),
+        // Stock snapshot — reorder count (shared rule, same as Stock Inquiry)
+        // and valuation.
+        fetchAll(() => supabase.from('items').select('quantity, purchase_rate, low_stock_threshold, discontinued, made_to_order').order('id')),
         // Orders awaiting approval.
         supabase.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
         // Approved orders (shopfront + counter) not yet packed.
         supabase.from('fulfilment').select('id', { count: 'exact', head: true }).eq('status', 'pending_pack'),
         // Today's sales (amount + profit) since local midnight.
-        supabase.from('sales').select('amount, profit').gte('created_at', todayISO),
+        supabase.from('sales').select('id, bill_id, amount, profit').gte('created_at', todayISO),
         // Everyone who owes the shop (udhaar), biggest first.
         fetchAll(() => supabase.from('profiles').select('id, full_name, balance_due')
           .in('role', ['customer', 'dealer']).gt('balance_due', 0)
@@ -54,10 +55,11 @@ export default function Dashboard() {
       setStats({
         pending: ordersRes.count ?? 0,
         toPack: packRes.count ?? 0,
-        low: items.filter((i) => i.is_active && Number(i.quantity) < Number(i.low_stock_threshold)).length,
+        low: items.filter(needsReorder).length,
         salesToday: sales.reduce((s, r) => s + Number(r.amount || 0), 0),
         profitToday: sales.reduce((s, r) => s + Number(r.profit || 0), 0),
-        billsToday: sales.length,
+        // A counter bill is several sale rows sharing bill_id — count bills, not rows.
+        billsToday: new Set(sales.map((r) => r.bill_id || r.id)).size,
         stockValue: items.reduce((s, i) => s + stockValue(i), 0),
         udhaarTotal: owing.reduce((s, p) => s + Number(p.balance_due || 0), 0),
         udhaarCount: owing.length,
@@ -72,9 +74,9 @@ export default function Dashboard() {
   const supplierTotal = owed.reduce((s, x) => s + Number(x.balance_due), 0)
 
   const todo = stats ? [
-    { n: stats.pending, to: '/owner/orders', icon: IconReceipt2, label: (n) => (n === 1 ? 'order to approve' : 'orders to approve') },
+    { n: stats.pending, to: '/owner/orders?status=pending', icon: IconReceipt2, label: (n) => (n === 1 ? 'order to approve' : 'orders to approve') },
     { n: stats.toPack, to: '/owner/fulfilment', icon: IconPackage, label: (n) => (n === 1 ? 'order to pack' : 'orders to pack') },
-    { n: stats.low, to: '/owner/stock', icon: IconAlertTriangle, label: (n) => (n === 1 ? 'item low on stock' : 'items low on stock') },
+    { n: stats.low, to: '/owner/stock?low=1', icon: IconAlertTriangle, label: (n) => (n === 1 ? 'item to reorder (low or out of stock)' : 'items to reorder (low or out of stock)') },
   ].filter((t) => t.n > 0) : []
 
   return (
@@ -124,7 +126,7 @@ export default function Dashboard() {
         <h2 id="today-h" className="eyebrow mb-2">Today</h2>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
           <Stat label="Today’s sales" value={stats && money(stats.salesToday)}
-                sub={stats && `${qty(stats.billsToday)} ${stats.billsToday === 1 ? 'bill' : 'bills'}`} to="/owner/sales" />
+                sub={stats && `${qty(stats.billsToday)} ${stats.billsToday === 1 ? 'bill' : 'bills'}`} to={`/owner/sales?from=${toInputDate(new Date())}&to=${toInputDate(new Date())}`} />
           <Stat label="Today’s profit" value={stats && money(stats.profitToday)} tone="profit" to="/owner/reports" />
         </div>
       </section>
@@ -138,12 +140,12 @@ export default function Dashboard() {
             sub={stats && (stats.udhaarCount
               ? `${qty(stats.udhaarCount)} ${stats.udhaarCount === 1 ? 'buyer' : 'buyers'} · most: ${stats.topUdhaar?.full_name || '—'}`
               : 'Nobody owes the shop')}
-            to="/owner/parties"
+            to="/owner/parties?tab=buyers&dues=1"
           />
           <Stat
             label="You owe suppliers" value={money(supplierTotal)}
             sub={owed.length ? `${qty(owed.length)} ${owed.length === 1 ? 'supplier' : 'suppliers'}` : 'Nothing owed'}
-            to="/owner/parties"
+            to="/owner/parties?tab=supplier&dues=1"
           />
           <Stat label="Stock value (at cost)" value={stats && money(stats.stockValue)} to="/owner/inventory"
                 className="col-span-2 lg:col-span-1" />

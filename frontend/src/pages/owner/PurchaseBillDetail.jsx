@@ -150,7 +150,7 @@ export default function PurchaseBillDetail() {
   if (err && !bill) return <Empty>{err}</Empty>
   if (!bill) return <div className="grid place-items-center py-20 text-muted"><Spinner /></div>
 
-  const c = (n) => money(n).replace('₹', currency)
+  const c = (n) => money(n)
   const hasCharges = bill.postage > 0 || bill.cgst > 0 || bill.sgst > 0
   const doc = buildPurchaseBillModel({ shop, bill })
 
@@ -394,7 +394,7 @@ export default function PurchaseBillDetail() {
 // while typing, not after pressing Save.
 // ---------------------------------------------------------------------------
 function BillEditor({ bill, currency, onCancel, onSaved }) {
-  const c = (n) => money(n).replace('₹', currency)
+  const c = (n) => money(n)
 
   // A bill line becomes a Purchase Entry line, plus `rowId` — the purchases row
   // it came from. Lines added here have no rowId until the RPC creates them.
@@ -738,7 +738,7 @@ function BackfillCharges({ bill, currency, onSaved }) {
     onSaved()
   }
 
-  const c = (n) => money(n).replace('₹', currency)
+  const c = (n) => money(n)
 
   if (!open) {
     return (

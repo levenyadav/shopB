@@ -269,16 +269,16 @@ export default function PurchaseHistory() {
         <Stat label="Items bought" value={<span className="fig">{qty(totals.lines)}</span>} />
         <Stat
           label="Total paid to suppliers"
-          value={<span className="fig text-profit">{money(totals.grand).replace('₹', currency)}</span>}
+          value={<span className="fig text-profit">{money(totals.grand)}</span>}
           hint={totals.postage > 0 || totals.tax > 0
-            ? `Goods ${money(totals.amount).replace('₹', currency)}${totals.postage > 0 ? ` · postage ${money(totals.postage).replace('₹', currency)}` : ''}${totals.tax > 0 ? ` · GST ${money(totals.tax).replace('₹', currency)}` : ''}`
+            ? `Goods ${money(totals.amount)}${totals.postage > 0 ? ` · postage ${money(totals.postage)}` : ''}${totals.tax > 0 ? ` · GST ${money(totals.tax)}` : ''}`
             : null}
           accent
         />
         {totals.tax > 0 && (
           <Stat
             label="GST paid (input credit)"
-            value={<span className="fig">{money(totals.tax).replace('₹', currency)}</span>}
+            value={<span className="fig">{money(totals.tax)}</span>}
             hint="Claimable back — not part of product cost"
           />
         )}
@@ -413,9 +413,9 @@ function BillCard({ bill, expanded, onToggle, currency }) {
           </p>
         </div>
         <div className="shrink-0 text-right">
-          <p className="fig font-semibold">{money(bill.grand).replace('₹', currency)}</p>
+          <p className="fig font-semibold">{money(bill.grand)}</p>
           {(bill.postage > 0 || bill.tax > 0) && (
-            <p className="text-xs text-muted">goods {money(bill.total).replace('₹', currency)}</p>
+            <p className="text-xs text-muted">goods {money(bill.total)}</p>
           )}
         </div>
       </button>
@@ -430,10 +430,10 @@ function BillCard({ bill, expanded, onToggle, currency }) {
                 <p className="text-xs text-muted">
                   {(l.item_no || l.item?.item_no) && <span className="fig">{l.item_no || l.item?.item_no} · </span>}
                   <span className="fig">{qty(l.quantity)}</span> ×{' '}
-                  <span className="fig">{money(l.purchase_rate).replace('₹', currency)}</span>
+                  <span className="fig">{money(l.purchase_rate)}</span>
                 </p>
               </div>
-              <p className="fig shrink-0 text-sm font-semibold">{money(l.total_cost).replace('₹', currency)}</p>
+              <p className="fig shrink-0 text-sm font-semibold">{money(l.total_cost)}</p>
             </li>
           ))}
 
@@ -441,13 +441,13 @@ function BillCard({ bill, expanded, onToggle, currency }) {
               product cost above. */}
           {(bill.postage > 0 || bill.tax > 0) && (
             <li className="space-y-1 bg-paper-2 px-4 py-2.5 text-sm">
-              <ChargeRow label="Goods" value={money(bill.total).replace('₹', currency)} />
-              {bill.postage > 0 && <ChargeRow label="Postage / freight" value={money(bill.postage).replace('₹', currency)} />}
-              {Number(bill.charges?.cgst_amount) > 0 && <ChargeRow label="CGST" value={money(bill.charges.cgst_amount).replace('₹', currency)} />}
-              {Number(bill.charges?.sgst_amount) > 0 && <ChargeRow label="SGST" value={money(bill.charges.sgst_amount).replace('₹', currency)} />}
+              <ChargeRow label="Goods" value={money(bill.total)} />
+              {bill.postage > 0 && <ChargeRow label="Postage / freight" value={money(bill.postage)} />}
+              {Number(bill.charges?.cgst_amount) > 0 && <ChargeRow label="CGST" value={money(bill.charges.cgst_amount)} />}
+              {Number(bill.charges?.sgst_amount) > 0 && <ChargeRow label="SGST" value={money(bill.charges.sgst_amount)} />}
               <div className="flex justify-between gap-3 border-t border-line pt-1 font-semibold">
                 <span>Bill total</span>
-                <span className="fig">{money(bill.grand).replace('₹', currency)}</span>
+                <span className="fig">{money(bill.grand)}</span>
               </div>
             </li>
           )}

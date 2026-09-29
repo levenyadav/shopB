@@ -102,23 +102,25 @@ export default function OrderDetail() {
 
         <dl className="mt-5 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
           <Row label="Buyer" value={
-            <>{order.buyer?.full_name || '—'}
+            <>{order.buyer?.id
+                ? <Link to={`/owner/parties/${order.buyer_type}/${order.buyer.id}`} className="font-medium text-peacock hover:underline">{order.buyer.full_name || 'Buyer'}</Link>
+                : '—'}
               <Badge tone={order.buyer_type === 'dealer' ? 'peacock' : 'muted'} className="ml-1.5">{order.buyer_type}</Badge>
             </>} />
           <Row label="Phone" value={<span className="fig">{order.buyer?.phone || '—'}</span>} />
           <Row label="Rack / Location" value={item?.location || '—'} />
           <Row label="Quantity" value={<span className="fig">{qty(order.quantity)} pcs</span>} />
-          <Row label={`${order.buyer_type === 'dealer' ? 'Dealer ' : ''}rate (each)`} value={<span className="fig">{money(order.rate_at_order).replace('₹', currency)}</span>} />
-          <Row label="Amount" value={<span className="fig font-semibold">{money(order.amount).replace('₹', currency)}</span>} />
+          <Row label={`${order.buyer_type === 'dealer' ? 'Dealer ' : ''}rate (each)`} value={<span className="fig">{money(order.rate_at_order)}</span>} />
+          <Row label="Amount" value={<span className="fig font-semibold">{money(order.amount)}</span>} />
           {order.notes && <Row label="Buyer note" value={order.notes} full />}
         </dl>
 
         {/* Owner-only economics. Cost comes from the item's purchase rate for both
             stock and made-to-order items (entered in Purchase Entry). */}
         <div className="mt-4 flex flex-wrap items-center gap-4 rounded-lg bg-paper-2 px-4 py-3 text-sm">
-          <span className="text-muted">Cost <span className="fig text-ink">{money(round2((item?.purchase_rate ?? 0) * order.quantity)).replace('₹', currency)}</span></span>
-          <span className="text-muted">Profit <span className="fig font-semibold text-profit">{money(profit).replace('₹', currency)}</span></span>
-          <span className="text-muted">Buyer udhaar now <span className="fig text-dues">{money(order.buyer?.balance_due).replace('₹', currency)}</span></span>
+          <span className="text-muted">Cost <span className="fig text-ink">{money(round2((item?.purchase_rate ?? 0) * order.quantity))}</span></span>
+          <span className="text-muted">Profit <span className="fig font-semibold text-profit">{money(profit)}</span></span>
+          <span className="text-muted">Buyer udhaar now <span className="fig text-dues">{money(order.buyer?.balance_due)}</span></span>
         </div>
       </div>
 
@@ -305,7 +307,7 @@ function ApprovePanel({ order, item, profit, ownerId, currency, madeToOrder, onA
     return () => { active = false }
   }, [order.id, order.order_group_id, dealerFee])
 
-  const cf = (n) => money(n).replace('₹', currency)
+  const cf = (n) => money(n)
   // Cost is the item's known purchase rate for both stock and made-to-order items
   // (set in Purchase Entry / Inventory). A made-to-order item with no cost set is
   // the only blocker — the RPC rejects it, so guard the button here too.
@@ -500,7 +502,7 @@ function CartSiblings({ order }) {
       <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
         <p className="text-sm font-semibold">
           This order has <span className="fig">{lines.length}</span> items
-          <span className="ml-2 font-normal text-muted">Total <span className="fig">{money(total).replace('₹', currency)}</span></span>
+          <span className="ml-2 font-normal text-muted">Total <span className="fig">{money(total)}</span></span>
         </p>
         {next && (
           <Link to={`/owner/orders/${next.id}`} className="shrink-0 text-sm font-semibold text-peacock hover:underline">

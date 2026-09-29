@@ -19,7 +19,7 @@ import QtyStepper from '../../components/QtyStepper'
 export default function Cart() {
   const navigate = useNavigate()
   const { role, profile } = useAuth()
-  const { shopId, currency } = useShop()
+  const { shopId } = useShop()
   const { lines, setQty, remove, sync, clear } = useCart()
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
@@ -40,7 +40,7 @@ export default function Cart() {
     return () => { active = false }
   }, [idsKey, sync])
 
-  const c = (n) => money(n).replace('₹', currency)
+  const c = (n) => money(n)
   const unavailable = lines.filter((l) => l.unavailable)
   const orderable = lines.filter((l) => !l.unavailable)
 

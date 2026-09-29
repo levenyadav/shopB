@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { IconSearch, IconInbox } from '@tabler/icons-react'
 import { supabase, fetchAll } from '../../lib/supabase'
-import { useShop } from '../../context/ShopContext'
 import { money, qty, dateTime } from '../../lib/format'
 import { OrderStatusBadge, InProcessBadge, IN_PROCESS_STATUSES, Badge, Spinner, PhotoThumb } from '../../components/ui'
 
@@ -20,7 +19,6 @@ const STATUS_TABS = [
 ]
 
 export default function OrderManagement() {
-  const { currency } = useShop()
   const [orders, setOrders] = useState(null)
   const [err, setErr] = useState('')
   // Tab + filters live in the URL, so Back from an order lands on the same tab —
@@ -45,7 +43,7 @@ export default function OrderManagement() {
     const { data, error } = await fetchAll(() => supabase
       .from('orders')
       .select(
-        'id, quantity, amount, status, buyer_type, source, created_at, ' +
+        'id, quantity, amount, status, buyer_type, source, created_at, order_group_id, ' +
           'item_no, item_name, ' +
           'item:items(name, photo_url, made_to_order), buyer:profiles!orders_buyer_id_fkey(full_name, phone)',
       )
@@ -206,7 +204,7 @@ export default function OrderManagement() {
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="fig font-semibold">{money(o.amount).replace('₹', currency)}</p>
+                  <p className="fig font-semibold">{money(o.amount)}</p>
                   <p className="text-xs text-muted"><span className="fig">{qty(o.quantity)}</span> pcs</p>
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1">

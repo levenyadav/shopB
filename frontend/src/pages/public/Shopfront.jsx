@@ -465,7 +465,7 @@ function priceBands(prices) {
 }
 
 function bandLabel(min, max, currency) {
-  const c = (n) => money(n).replace(/\.00$/, '').replace('₹', currency)
+  const c = (n) => money(n).replace(/\.00$/, '')
   if (min && max) return `${c(min)} – ${c(max)}`
   if (max) return `Under ${c(max)}`
   if (min) return `${c(min)} and above`

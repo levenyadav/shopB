@@ -46,6 +46,17 @@ export function stockStatus(quantity, threshold = 10) {
   return { key: 'normal', label: 'Normal', tone: 'muted' }
 }
 
+// THE reorder rule — Dashboard, Stock Inquiry, Inventory and Reports all count
+// with this, so their numbers always agree. Low or out of stock, except lines
+// nobody restocks: discontinued products and made-to-order items (which carry
+// no stock by design). Hidden-from-shopfront items still count — they are on
+// the shelf (see shopfront hide scope).
+export function needsReorder(item) {
+  if (item.discontinued || item.made_to_order) return false
+  const k = stockStatus(item.quantity, item.low_stock_threshold).key
+  return k === 'low' || k === 'out'
+}
+
 // Normalise a typed Indian mobile number to E.164 (+91XXXXXXXXXX) for Supabase
 // phone auth and wa.me links. Accepts "98765 43210", "098765-43210",
 // "+91 98765 43210", "919876543210". Returns null if it isn't a plausible

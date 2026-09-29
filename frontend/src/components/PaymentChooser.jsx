@@ -33,7 +33,7 @@ export default function PaymentChooser({
   payment, setPayment, paidNow, setPaidNow, paidMethod, setPaidMethod,
   total, balance = 0, buyerName, currency = '₹', question = 'Payment',
 }) {
-  const m = (n) => money(n).replace('₹', currency)
+  const m = (n) => money(n)
   const bal = Number(balance) || 0
   const advance = bal < 0 ? -bal : 0
   const { error, paid, onAccount } = paymentArgs({ payment, paidNow, paidMethod, total })

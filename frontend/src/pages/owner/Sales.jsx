@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { IconSearch, IconInbox, IconCoin, IconFileSpreadsheet, IconChevronDown } from '@tabler/icons-react'
 import { supabase, fetchAll } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
@@ -7,6 +7,7 @@ import { money, qty, dateTime } from '../../lib/format'
 import { toCsv, downloadText } from '../../lib/csv'
 import { toInputDate, startOfWeek, startOfMonth } from '../../lib/dates'
 import { Badge, Spinner, PhotoThumb, Button } from '../../components/ui'
+import useQueryState from '../../hooks/useQueryState'
 
 // SPEC §6.5 / §10.4 — Sales list (owner only). Every approved order becomes a
 // sale row (created by the approval insert in OrderDetail; stock/ledger handled
@@ -51,15 +52,18 @@ export const PAYMENT_META = {
 }
 
 export default function Sales() {
-  const { currency, categories } = useShop()
+  const { categories } = useShop()
   const [sales, setSales] = useState(null)
   const [err, setErr] = useState('')
   const [q, setQ] = useState('')
-  const [buyerType, setBuyerType] = useState('')
-  const [payment, setPayment] = useState('')
-  const [categoryId, setCategoryId] = useState('')
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
+  // Filters live in the URL: Back from a sale keeps them, and the Dashboard
+  // links straight to today's sales (?from=…&to=…).
+  const [, setParams] = useSearchParams()
+  const [buyerType, setBuyerType] = useQueryState('buyer')
+  const [payment, setPayment] = useQueryState('pay')
+  const [categoryId, setCategoryId] = useQueryState('cat')
+  const [from, setFrom] = useQueryState('from')
+  const [to, setTo] = useQueryState('to')
   const [invoiceNos, setInvoiceNos] = useState({ bySale: new Map(), byBill: new Map() })
   const [menu, setMenu] = useState(false)
 
@@ -67,10 +71,20 @@ export default function Sales() {
   // so the two never disagree and typing a custom range simply lands on "Custom".
   function applyRange(key) {
     const today = toInputDate(new Date())
-    if (key === 'all')   { setFrom(''); setTo(''); return }
-    if (key === 'today') { setFrom(today); setTo(today); return }
-    if (key === 'week')  { setFrom(toInputDate(startOfWeek())); setTo(today); return }
-    if (key === 'month') { setFrom(toInputDate(startOfMonth())); setTo(today); return }
+    const span = {
+      all: ['', ''],
+      today: [today, today],
+      week: [toInputDate(startOfWeek()), today],
+      month: [toInputDate(startOfMonth()), today],
+    }[key]
+    if (!span) return
+    // Both ends in one URL update — two separate setters would clobber each other.
+    setParams((p) => {
+      const n = new URLSearchParams(p)
+      span[0] ? n.set('from', span[0]) : n.delete('from')
+      span[1] ? n.set('to', span[1]) : n.delete('to')
+      return n
+    }, { replace: true })
   }
 
   // Which pill is lit — derived from From/To, never stored.
@@ -223,8 +237,8 @@ export default function Sales() {
       {/* Totals for the current filter (SPEC §3.2 — every number has a label) */}
       <div className="grid gap-3 sm:grid-cols-3">
         <Stat label="Sales shown" value={<span className="fig">{qty(filtered.length)}</span>} />
-        <Stat label="Total amount" value={<span className="fig">{money(totals.amount).replace('₹', currency)}</span>} />
-        <Stat label="Total profit" value={<span className="fig text-profit">{money(totals.profit).replace('₹', currency)}</span>} accent />
+        <Stat label="Total amount" value={<span className="fig">{money(totals.amount)}</span>} />
+        <Stat label="Total profit" value={<span className="fig text-profit">{money(totals.profit)}</span>} accent />
       </div>
 
       <div className="flex items-center justify-between gap-3">
@@ -348,8 +362,8 @@ export default function Sales() {
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="fig font-semibold">{money(s.amount).replace('₹', currency)}</p>
-                    <p className="text-xs text-profit">+<span className="fig">{money(s.profit).replace('₹', currency)}</span></p>
+                    <p className="fig font-semibold">{money(s.amount)}</p>
+                    <p className="text-xs text-profit">+<span className="fig">{money(s.profit)}</span></p>
                   </div>
                   <Badge tone={pay.tone}>{pay.label}</Badge>
                 </Link>

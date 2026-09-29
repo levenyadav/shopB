@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { applyBranding } from '../lib/pwa'
+import { setCurrencySymbol } from '../lib/format'
 import { useAuth } from './AuthContext'
 
 // Shop-wide reference data. The shop record and its categories are readable by
@@ -99,6 +100,9 @@ export function ShopProvider({ children }) {
   useEffect(() => {
     if (shop) applyBranding(shop)
   }, [shop?.icon_url, shop?.name, shop?.brand_text, shop?.theme_color])
+
+  // Set during render (not in an effect) so the first paint already uses it.
+  setCurrencySymbol(shop?.currency_symbol)
 
   const value = {
     shop,

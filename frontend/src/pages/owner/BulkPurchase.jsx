@@ -182,7 +182,7 @@ export default function BulkPurchase() {
       </div>
 
       <div>
-        <h1 className="font-[var(--font-display)] text-2xl font-bold">Bulk purchase — CSV import</h1>
+        <h2 className="text-lg font-semibold text-ink">Import from a CSV file</h2>
         <p className="mt-0.5 text-muted">
           Stock in many new items at once. Each becomes a Purchase Entry, so stock and
           supplier balances update the same way. New suppliers / categories are created automatically.

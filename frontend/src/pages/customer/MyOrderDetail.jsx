@@ -34,7 +34,7 @@ const STATUS_NOTE = {
 
 export default function MyOrderDetail() {
   const { id } = useParams()
-  const { shop, currency } = useShop()
+  const { shop } = useShop()
   const [order, setOrder] = useState(null)   // the representative (clicked) line
   const [lines, setLines] = useState([])     // all lines of the group
   const [invoices, setInvoices] = useState({}) // order_id -> customer_invoices row
@@ -154,7 +154,7 @@ export default function MyOrderDetail() {
     rate: itemGstRate(invoices[l.id]?.item_gst_rate ?? l.item?.gst_rate, shop?.gst_rate),
   })))
 
-  const c = (n) => money(n).replace('₹', currency)
+  const c = (n) => money(n)
   const isGroup = lines.length > 1
   // Group status = least-progressed line, so the timeline reflects what's left.
   const groupStatus = lines.reduce(
@@ -282,7 +282,7 @@ export default function MyOrderDetail() {
                     <p className="mt-0.5 text-xs text-dues">Rejected: {l.rejection_reason}</p>
                   )}
                 </div>
-                <span className="fig shrink-0 font-semibold">{money(l.amount).replace('₹', currency)}</span>
+                <span className="fig shrink-0 font-semibold">{money(l.amount)}</span>
               </li>
             )
           })}

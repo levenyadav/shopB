@@ -81,7 +81,7 @@ export default function ItemDetail() {
           )}
           <h1 className="mt-1 font-[var(--font-display)] text-2xl font-bold leading-tight text-ink sm:text-3xl">{item.name}</h1>
           <p className="mt-3 flex items-baseline gap-2">
-            <span className="fig text-2xl font-semibold text-peacock sm:text-3xl">{money(price).replace('₹', currency)}</span>
+            <span className="fig text-2xl font-semibold text-peacock sm:text-3xl">{money(price)}</span>
             <span className="text-sm text-muted">{role === 'dealer' ? 'dealer price · ' : ''}per piece</span>
           </p>
           <p className="mt-2 text-sm">
@@ -155,7 +155,7 @@ function PurchaseBar({ item, price, available, currency, mto, moq }) {
           >
             {added
               ? <><IconCheck size={19} aria-hidden /> Added</>
-              : <><IconShoppingBagPlus size={19} aria-hidden /> Add · <span className="fig">{money(amount).replace('₹', currency)}</span></>}
+              : <><IconShoppingBagPlus size={19} aria-hidden /> Add · <span className="fig">{money(amount)}</span></>}
           </button>
         </div>
       </div>

@@ -8,7 +8,6 @@ const PAYMENT_LABEL = { cash: 'Cash', upi: 'UPI', udhaar: 'Udhaar (credit)' }
 
 export default function SupplySlip({ job, shop }) {
   if (!job) return null
-  const currency = shop?.currency_symbol || '₹'
   const ref = job.order_id?.slice(0, 8).toUpperCase()
   const picks = job.picks ?? []
 
@@ -66,8 +65,8 @@ export default function SupplySlip({ job, shop }) {
         <Hr />
 
         <Line label="Quantity" value={<span className="fig">{qty(job.quantity)} pcs</span>} />
-        <Line label="Rate (each)" value={<span className="fig">{money(job.rate_at_order).replace('₹', currency)}</span>} />
-        <Line label="Total amount" value={<span className="fig font-bold">{money(job.amount).replace('₹', currency)}</span>} />
+        <Line label="Rate (each)" value={<span className="fig">{money(job.rate_at_order)}</span>} />
+        <Line label="Total amount" value={<span className="fig font-bold">{money(job.amount)}</span>} />
         <Line label="Payment" value={PAYMENT_LABEL[job.payment_type] || '—'} />
 
         {job.notes && (

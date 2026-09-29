@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { IconWallet, IconDeviceFloppy, IconLogout } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
-import { useShop } from '../../context/ShopContext'
 import { money } from '../../lib/format'
 import { Button, Field, Textarea, Spinner } from '../../components/ui'
 
@@ -12,7 +11,6 @@ import { Button, Field, Textarea, Spinner } from '../../components/ui'
 // "Bill To" block on customer invoices (profiles_self_update RLS).
 export default function MyAccount() {
   const { profile, role, refreshProfile, signOut } = useAuth()
-  const { currency } = useShop()
   const due = Number(profile?.balance_due || 0)
 
   return (
@@ -31,7 +29,7 @@ export default function MyAccount() {
           <p className="flex items-center gap-2 text-sm font-medium text-ink/80">
             <IconWallet size={18} aria-hidden /> Udhaar — amount due to the shop
           </p>
-          <p className="fig mt-1 text-3xl font-semibold text-dues">{money(due).replace('₹', currency)}</p>
+          <p className="fig mt-1 text-3xl font-semibold text-dues">{money(due)}</p>
           <p className="mt-1 text-sm text-ink/70">Pay at the counter — the shop records each payment and this updates.</p>
         </div>
       )}

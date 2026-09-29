@@ -78,6 +78,7 @@ const TITLES = {
   '/owner': 'Dashboard',
   '/owner/purchase': 'Purchase Entry',
   '/owner/purchases': 'Purchase History',
+  '/owner/bulk-purchase': 'Bulk Purchase',
   '/owner/inventory': 'Inventory',
   '/owner/stock': 'Stock Inquiry',
   '/owner/counter-sale': 'Counter Sale',

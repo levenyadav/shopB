@@ -158,9 +158,9 @@ export default function PartyDetail() {
         <p className="flex items-start gap-2 rounded-lg border border-dues/30 bg-dues/10 px-4 py-3 text-sm text-dues">
           <IconAlertTriangle size={18} className="mt-0.5 shrink-0" />
           <span>
-            This party's balance ({money(balance).replace('₹', currency)}) does not match the ledger
-            ({money(summary.computed_balance).replace('₹', currency)}) — a difference of{' '}
-            <b className="fig">{money(Math.abs(summary.balance_drift)).replace('₹', currency)}</b>.
+            This party's balance ({money(balance)}) does not match the ledger
+            ({money(summary.computed_balance)}) — a difference of{' '}
+            <b className="fig">{money(Math.abs(summary.balance_drift))}</b>.
             Nothing here is wrong to look at, but the books need checking before you rely on this figure.
           </span>
         </p>
@@ -230,7 +230,7 @@ function PartyHeader({ summary, type, currency, shop, balance }) {
 
   // A reminder the owner can read before sending — never sent silently.
   function remind() {
-    const owed = money(Math.abs(balance)).replace('₹', currency)
+    const owed = money(Math.abs(balance))
     const shopName = shop?.name || 'our shop'
     const text = isSupplier
       ? `Hello ${summary.name}, this is ${shopName}. Our records show ${owed} payable to you. Please share your account statement so we can settle it.`
@@ -295,15 +295,15 @@ function PartyHeader({ summary, type, currency, shop, balance }) {
 function StatsRow({ summary, currency, isSupplier, isOwner }) {
   const stats = [
     { label: isSupplier ? 'Total purchased from them' : 'Total business done',
-      value: money(summary.business_total).replace('₹', currency) },
+      value: money(summary.business_total) },
     { label: isSupplier ? 'Total we have paid' : 'Total received',
-      value: money(summary.settled_total).replace('₹', currency) },
+      value: money(summary.settled_total) },
     { label: isSupplier ? 'Bills entered' : 'Bills made',
       value: String(summary.bill_count) },
     { label: 'Average bill',
-      value: money(summary.avg_bill_value).replace('₹', currency) },
+      value: money(summary.avg_bill_value) },
     { label: 'Biggest bill',
-      value: money(summary.largest_bill).replace('₹', currency) },
+      value: money(summary.largest_bill) },
     { label: 'Last activity',
       value: summary.last_txn_at ? dateShort(summary.last_txn_at) : 'Never',
       hint: summary.days_since_last_txn != null
@@ -313,7 +313,7 @@ function StatsRow({ summary, currency, isSupplier, isOwner }) {
   if (isOwner && !isSupplier && summary.profit_total != null) {
     stats.push({
       label: 'Profit earned from them',
-      value: money(summary.profit_total).replace('₹', currency),
+      value: money(summary.profit_total),
       tone: 'profit',
     })
   }
@@ -365,7 +365,7 @@ function BalanceCard({ summary, isSupplier, currency, balance }) {
           <p className={`fig mt-1 text-3xl font-bold ${
             tone === 'profit' ? 'text-profit' : tone === 'peacock' ? 'text-peacock' : 'text-dues'
           }`}>
-            {money(Math.abs(balance)).replace('₹', currency)}
+            {money(Math.abs(balance))}
           </p>
           <p className="mt-1 text-xs text-muted">
             {settled ? 'Nothing outstanding either way.'
@@ -392,7 +392,7 @@ function BalanceCard({ summary, isSupplier, currency, balance }) {
         <div className="mt-4 flex flex-wrap gap-2 border-t border-line/60 pt-3">
           {buckets.map(([label2, v]) => (
             <span key={label2} className="rounded-full border border-line bg-card px-3 py-1 text-xs text-muted">
-              {label2} <b className="fig text-ink">{money(v).replace('₹', currency)}</b>
+              {label2} <b className="fig text-ink">{money(v)}</b>
             </span>
           ))}
         </div>
@@ -423,7 +423,7 @@ function StatementBar({ statement, period, setPeriod, summary, currency }) {
           <p className="mt-2 text-xs text-muted">
             {rows === 0
               ? 'No account transactions in this period — the statement will print as nil.'
-              : `${rows} entr${rows === 1 ? 'y' : 'ies'}, closing balance ${money(statement.closingBalance).replace('₹', currency)}.`}
+              : `${rows} entr${rows === 1 ? 'y' : 'ies'}, closing balance ${money(statement.closingBalance)}.`}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -438,7 +438,7 @@ function StatementBar({ statement, period, setPeriod, summary, currency }) {
       {Number(summary.outstanding_total) > 0 && (
         <p className="mt-3 border-t border-line pt-3 text-xs text-muted">
           Sending a reminder? The statement's closing balance is{' '}
-          <b className="fig text-ink">{money(summary.outstanding_total).replace('₹', currency)}</b> outstanding
+          <b className="fig text-ink">{money(summary.outstanding_total)}</b> outstanding
           across {summary.open_bill_count} bill{summary.open_bill_count === 1 ? '' : 's'}.
         </p>
       )}
@@ -492,15 +492,15 @@ function OutstandingBills({ bills, summary, currency, isSupplier }) {
               <p className="text-xs text-muted">
                 {dateShort(b.supplier_invoice_date || b.billed_at)} · {b.age_days} days old
                 {part && (
-                  <> · part paid <span className="fig">{money(b.paid_amount).replace('₹', currency)}</span> of{' '}
-                    <span className="fig">{money(b.credit_amount).replace('₹', currency)}</span></>
+                  <> · part paid <span className="fig">{money(b.paid_amount)}</span> of{' '}
+                    <span className="fig">{money(b.credit_amount)}</span></>
                 )}
               </p>
             </div>
             <Badge tone={old ? 'dues' : 'muted'}>{b.age_bucket === '90+' ? 'Over 90 days' : `${b.age_bucket} days`}</Badge>
             <div className="text-right">
               <p className={`fig font-semibold ${old ? 'text-dues' : 'text-ink'}`}>
-                {money(b.outstanding).replace('₹', currency)}
+                {money(b.outstanding)}
               </p>
               <p className="text-xs text-muted">still open</p>
             </div>
@@ -510,7 +510,7 @@ function OutstandingBills({ bills, summary, currency, isSupplier }) {
       <div className="flex items-center justify-between rounded-lg border border-line bg-paper-2 px-4 py-3">
         <span className="text-sm font-medium text-ink">Total outstanding</span>
         <span className="fig text-lg font-bold text-dues">
-          {money(summary.outstanding_total).replace('₹', currency)}
+          {money(summary.outstanding_total)}
         </span>
       </div>
     </div>
@@ -554,7 +554,7 @@ function BillList({ bills, currency, isSupplier }) {
                 : b.payment_type === 'cash' ? 'Paid in cash' : 'Settled'}
             </Badge>
             <div className="text-right">
-              <p className="fig font-semibold text-ink">{money(b.bill_total).replace('₹', currency)}</p>
+              <p className="fig font-semibold text-ink">{money(b.bill_total)}</p>
               <p className="text-xs text-muted">bill total</p>
             </div>
           </Link>

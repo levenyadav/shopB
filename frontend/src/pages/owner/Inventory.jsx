@@ -8,7 +8,8 @@ import {
 import { supabase, fetchAll } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { money, qty } from '../../lib/format'
-import { round2, stockValue, isDuplicateCompanyNo, splitGstRate, combineGstRate } from '../../lib/helpers'
+import { round2, stockValue, isDuplicateCompanyNo, splitGstRate, combineGstRate, needsReorder } from '../../lib/helpers'
+import useQueryState from '../../hooks/useQueryState'
 import { printBarcodeLabels, barcodeValue, DEFAULT_LABEL_OPTS } from '../../lib/barcodeLabel'
 import { Button, Field, Select, Textarea, StockBadge, Badge, Spinner, TagsInput, ImagesInput, Img, PhotoPlaceholder } from '../../components/ui'
 import { uploadPhoto } from '../../lib/images'
@@ -22,12 +23,17 @@ export default function Inventory() {
   const [items, setItems] = useState(null)
   const [err, setErr] = useState('')
   const [q, setQ] = useState('')
-  const [cat, setCat] = useState('')
-  const [sup, setSup] = useState('')
-  const [tag, setTag] = useState('')
-  const [wh, setWh] = useState('')
-  const [show, setShow] = useState('active') // active | inactive | all
-  const [lowOnly, setLowOnly] = useState(false)
+  // Pickers live in the URL, so Back from Purchase Entry / a restock keeps the
+  // view, and other screens can link to it (?low=1).
+  const [cat, setCat] = useQueryState('cat')
+  const [sup, setSup] = useQueryState('sup')
+  const [tag, setTag] = useQueryState('tag')
+  const [wh, setWh] = useQueryState('wh')
+  // live (default: everything not discontinued) | shop | hidden | discontinued | mto | all
+  const [show, setShow] = useQueryState('show', 'live')
+  const [low, setLow] = useQueryState('low')
+  const lowOnly = low === '1'
+  const setLowOnly = (fn) => setLow(fn(lowOnly) ? '1' : '')
   const [editing, setEditing] = useState(null)
   const [printing, setPrinting] = useState(null) // item whose barcode label we're printing
   const [retiring, setRetiring] = useState(null) // item pending discontinue / reactivate confirm
@@ -82,8 +88,11 @@ export default function Inventory() {
       // `show` blends the two independent flags into one plain-language filter:
       // live items (not discontinued) split by shopfront visibility, plus a
       // dedicated bucket for retired lines.
-      if (show === 'active' && (!i.is_active || i.discontinued)) return false
-      if (show === 'inactive' && (i.is_active || i.discontinued)) return false
+      // is_active is ONLY "shown on the shopfront" — a hidden item is still on
+      // the shelf, so the default view keeps it (shopfront hide scope).
+      if (show === 'live' && i.discontinued) return false
+      if (show === 'shop' && (!i.is_active || i.discontinued)) return false
+      if (show === 'hidden' && (i.is_active || i.discontinued)) return false
       if (show === 'discontinued' && !i.discontinued) return false
       if (show === 'mto' && !i.made_to_order) return false
       if (cat && i.category_id !== cat) return false
@@ -93,7 +102,7 @@ export default function Inventory() {
       // product's default landing warehouse — a restock override can put stock
       // somewhere else without ever touching items.warehouse_id.
       if (wh && !(Number(whStock[i.id]?.[wh]) > 0)) return false
-      if (lowOnly && !(Number(i.quantity) < Number(i.low_stock_threshold))) return false
+      if (lowOnly && !needsReorder(i)) return false
       if (needle) {
         const hay = `${i.item_no} ${i.name} ${i.company_no || ''} ${i.barcode || ''} ${i.supplier?.name || ''} ${i.category?.name || ''} ${(i.tags || []).join(' ')} ${i.description || ''} ${i.location || ''}`.toLowerCase()
         if (!hay.includes(needle)) return false
@@ -139,42 +148,43 @@ export default function Inventory() {
             className="w-full rounded-lg border border-line bg-card py-2.5 pl-9 pr-3 text-ink outline-none focus:border-peacock focus:ring-1 focus:ring-peacock"
           />
         </div>
-        <Select value={cat} onChange={(e) => setCat(e.target.value)}>
+        <Select aria-label="Category" value={cat} onChange={(e) => setCat(e.target.value)}>
           <option value="">All categories</option>
           {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </Select>
-        <Select value={sup} onChange={(e) => setSup(e.target.value)}>
+        <Select aria-label="Supplier" value={sup} onChange={(e) => setSup(e.target.value)}>
           <option value="">All suppliers</option>
           {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </Select>
         {allTags.length > 0 && (
-          <Select value={tag} onChange={(e) => setTag(e.target.value)}>
+          <Select aria-label="Tag" value={tag} onChange={(e) => setTag(e.target.value)}>
             <option value="">All tags</option>
             {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
           </Select>
         )}
         {warehouses.length > 0 && (
-          <Select value={wh} onChange={(e) => setWh(e.target.value)}>
+          <Select aria-label="Warehouse" value={wh} onChange={(e) => setWh(e.target.value)}>
             <option value="">All warehouses</option>
             {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
           </Select>
         )}
         <div className="flex items-center gap-2">
-          <Select value={show} onChange={(e) => setShow(e.target.value)} className="flex-1">
-            <option value="all">All</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
+          <Select aria-label="Which items" value={show} onChange={(e) => setShow(e.target.value)} className="flex-1">
+            <option value="live">All current items</option>
+            <option value="shop">Shown on shopfront</option>
+            <option value="hidden">Hidden from shopfront</option>
+            <option value="mto">Make to order</option>
             <option value="discontinued">Discontinued</option>
-            <option value="mto">Make to Order</option>
+            <option value="all">Everything (incl. discontinued)</option>
           </Select>
           <button
             type="button"
-            onClick={() => setLowOnly((v) => !v)}
+            onClick={() => setLowOnly((v) => !v)} aria-pressed={lowOnly}
             className={`whitespace-nowrap rounded-lg border px-3 py-2.5 text-sm font-medium transition ${
               lowOnly ? 'border-saffron bg-saffron/15 text-saffron' : 'border-line bg-card text-muted hover:text-ink'
             }`}
           >
-            Low only
+            Needs reorder
           </button>
         </div>
       </div>
@@ -223,7 +233,7 @@ export default function Inventory() {
                             {i.name}
                             {i.discontinued
                               ? <Badge className="ml-2" tone="dues">Discontinued</Badge>
-                              : !i.is_active && <Badge className="ml-2" tone="muted">Inactive</Badge>}
+                              : !i.is_active && <Badge className="ml-2" tone="muted">Hidden from shop</Badge>}
                           </p>
                           <p className="fig text-xs text-muted">
                             {i.item_no} · {i.supplier?.name || '—'}
@@ -1018,8 +1028,8 @@ function EditModal({ item, categories, suppliers, onClose, onSaved }) {
 
         <div className="flex items-center justify-between rounded-lg bg-paper-2 px-4 py-3">
           <div>
-            <p className="text-sm font-medium">Active on shopfront</p>
-            <p className="text-xs text-muted">Inactive items stay in records but are hidden from buyers.</p>
+            <p className="text-sm font-medium">Show on shopfront</p>
+            <p className="text-xs text-muted">Off hides it from online buyers only — it stays in stock and can still be sold at the counter.</p>
           </div>
           <button
             type="button"

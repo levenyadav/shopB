@@ -26,7 +26,7 @@ export default function PartyBalance({ partyType, balance, currency = '₹' }) {
     >
       <p className="text-sm text-muted">{label}</p>
       <p className={`fig mt-1 text-3xl font-bold ${settled ? 'text-profit' : 'text-dues'}`}>
-        {money(settled ? 0 : value).replace('₹', currency)}
+        {money(settled ? 0 : value)}
       </p>
       {!settled && (
         <p className="mt-1 text-xs text-muted">

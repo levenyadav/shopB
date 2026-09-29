@@ -16,10 +16,9 @@ const PAYMENT_LABEL = { cash: 'Cash', upi: 'UPI', udhaar: 'Udhaar / part paid' }
 
 export default function CounterReceipt({ bill, shop }) {
   if (!bill) return null
-  const currency = shop?.currency_symbol || '₹'
   // Real invoice number (016/019) when present; short bill_id is the fallback.
   const ref = bill.invoice_no || `#${bill.bill_id?.slice(0, 8).toUpperCase()}`
-  const m = (n) => money(n).replace('₹', currency)
+  const m = (n) => money(n)
 
   // Each line is taxed at its own product's slab (034), falling back to the shop
   // default; the tax is backed out of the inclusive line amounts and grouped by

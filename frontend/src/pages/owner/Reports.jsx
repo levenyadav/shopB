@@ -6,7 +6,7 @@ import {
 } from '@tabler/icons-react'
 import { supabase, fetchAll } from '../../lib/supabase'
 import { money, qty } from '../../lib/format'
-import { stockValue, stockStatus } from '../../lib/helpers'
+import { stockValue, needsReorder } from '../../lib/helpers'
 import {
   startOfToday, startOfWeek, startOfMonth, toInputDate, fromInputDate, endOfInputDate,
 } from '../../lib/dates'
@@ -28,10 +28,10 @@ export default function Reports() {
     async function load() {
       const [sRes, iRes] = await Promise.all([
         fetchAll(() => supabase.from('sales')
-          .select('amount, profit, quantity, buyer_type, created_at, item_name, item:items(name), category:categories(name)')
+          .select('id, bill_id, amount, profit, quantity, buyer_type, created_at, item_name, item:items(name), category:categories(name)')
           .order('created_at', { ascending: false }).order('id')),
         fetchAll(() => supabase.from('items')
-          .select('id, item_no, name, quantity, purchase_rate, low_stock_threshold, is_active')
+          .select('id, item_no, name, quantity, purchase_rate, low_stock_threshold, discontinued, made_to_order')
           .order('id')),
       ])
       if (!active) return
@@ -73,16 +73,14 @@ export default function Reports() {
 
   const stock = useMemo(() => {
     if (!items) return null
-    const zero = items.filter((i) => Number(i.quantity) <= 0)
-    const low = items.filter((i) => {
-      const k = stockStatus(i.quantity, i.low_stock_threshold).key
-      return k === 'low'
-    })
+    // Shared rule (needsReorder): discontinued and made-to-order lines are
+    // never "reorder soon".
+    const reorder = items.filter(needsReorder)
     return {
       value: items.reduce((s, i) => s + stockValue(i), 0),
-      count: items.length,
-      low: low.length,
-      zero,
+      count: items.filter((i) => !i.discontinued).length,
+      reorder: reorder.length,
+      zero: reorder.filter((i) => Number(i.quantity) <= 0),
     }
   }, [items])
 
@@ -117,7 +115,7 @@ export default function Reports() {
           <Stat icon={IconReceipt2} tone="peacock" label="Sales (revenue)" value={money(pnl.revenue)} />
           <Stat icon={IconBuildingWarehouse} tone="saffron" label="Cost of goods" value={money(pnl.cost)} />
           <Stat icon={IconTrendingUp} tone="profit" label="Profit" value={money(pnl.profit)} />
-          <Stat icon={IconCoin} tone="muted" label="Orders sold" value={qty(pnl.orders)} />
+          <Stat icon={IconCoin} tone="muted" label="Bills" value={qty(pnl.orders)} />
         </div>
 
         {/* Profit by buyer type (SPEC §6.10 P&L) */}
@@ -178,15 +176,15 @@ export default function Reports() {
         <SectionTitle>Stock valuation</SectionTitle>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Stat icon={IconBuildingWarehouse} tone="peacock" label="Stock value (at cost)" value={money(stock.value)} />
-          <Stat icon={IconReceipt2} tone="muted" label="Active items" value={qty(stock.count)} />
-          <Stat icon={IconAlertTriangle} tone="saffron" label="Low on stock" value={qty(stock.low)} to="/owner/stock" />
-          <Stat icon={IconCircleOff} tone="dues" label="Zero stock" value={qty(stock.zero.length)} />
+          <Stat icon={IconReceipt2} tone="muted" label="Items (not discontinued)" value={qty(stock.count)} to="/owner/inventory" />
+          <Stat icon={IconAlertTriangle} tone="saffron" label="To reorder (low or out)" value={qty(stock.reorder)} to="/owner/stock?low=1" />
+          <Stat icon={IconCircleOff} tone="dues" label="Out of stock" value={qty(stock.zero.length)} />
         </div>
 
         {stock.zero.length > 0 && (
           <div className="overflow-hidden rounded-lg border border-line bg-card">
             <div className="border-b border-line bg-paper-2 px-4 py-2.5 text-sm font-semibold text-ink">
-              Items with zero stock — reorder soon
+              Out of stock — reorder soon
             </div>
             <ul className="divide-y divide-line">
               {stock.zero.map((i) => (
@@ -217,7 +215,8 @@ function sumSales(rows) {
   return {
     revenue: rows.reduce((s, r) => s + Number(r.amount || 0), 0),
     profit: rows.reduce((s, r) => s + Number(r.profit || 0), 0),
-    orders: rows.length,
+    // A counter bill is several rows sharing bill_id — count bills, not rows.
+    orders: new Set(rows.map((r) => r.bill_id || r.id)).size,
   }
 }
 
@@ -275,7 +274,7 @@ function Stat({ icon: Icon, tone, label, value, to }) {
   )
   const cls = 'block rounded-lg border border-line bg-card p-5'
   return to
-    ? <Link to={to} className={`${cls} transition hover:border-peacock/40 hover:border-ink/20`}>{inner}</Link>
+    ? <Link to={to} className={`${cls} transition hover:border-ink/25`}>{inner}</Link>
     : <div className={cls}>{inner}</div>
 }
 
@@ -287,7 +286,7 @@ function PeriodCard({ label, data }) {
       <p className="fig text-2xl font-bold text-peacock">{money(data.revenue)}</p>
       <p className="mt-2 text-xs text-muted">Profit</p>
       <p className="fig text-xl font-bold text-profit">{money(data.profit)}</p>
-      <p className="mt-2 text-xs text-muted">{qty(data.orders)} orders</p>
+      <p className="mt-2 text-xs text-muted">{qty(data.orders)} {data.orders === 1 ? 'bill' : 'bills'}</p>
     </div>
   )
 }

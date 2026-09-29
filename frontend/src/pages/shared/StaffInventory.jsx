@@ -65,7 +65,6 @@ export default function StaffInventory() {
   return (
     <div className="space-y-5">
       <div className="no-print">
-        <h1 className="font-[var(--font-display)] text-2xl font-bold">Inventory</h1>
         <p className="text-sm text-muted">See stock and keep rack locations tidy. Quantities change only through purchases and sales.</p>
       </div>
 

@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   IconSearch, IconUsers, IconChevronRight, IconUserPlus,
   IconBrandWhatsapp, IconX,
 } from '@tabler/icons-react'
-import { supabase } from '../../lib/supabase'
+import { supabase, fetchAll } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
 import { useAuth } from '../../context/AuthContext'
 import { money } from '../../lib/format'
@@ -37,13 +37,24 @@ const TABS = [
 ]
 
 export default function Parties() {
-  const { currency, shop, suppliers, refreshSuppliers } = useShop()
+  const { shop, suppliers, refreshSuppliers } = useShop()
   const { profile } = useAuth()
   const [buyers, setBuyers] = useState(null)
   const [err, setErr] = useState('')
-  const [tab, setTab] = useState('all')
+  // Tab + balance filter live in the URL: Back from a party keeps them, and the
+  // Dashboard links straight to "who owes us" (?tab=buyers&dues=1) and "who we
+  // owe" (?tab=supplier&dues=1). 'buyers' = customers + dealers together.
+  const [params, setParams] = useSearchParams()
+  const tab = params.get('tab') || 'all'
+  const duesOnly = params.get('dues') === '1'
+  const setFilter = (next) => setParams((p) => {
+    const n = new URLSearchParams(p)
+    for (const [k, v] of Object.entries(next)) (v ? n.set(k, v) : n.delete(k))
+    return n
+  }, { replace: true })
+  const setTab = (t) => setFilter({ tab: t === 'all' ? '' : t })
+  const setDuesOnly = (on) => setFilter({ dues: on ? '1' : '' })
   const [q, setQ] = useState('')
-  const [duesOnly, setDuesOnly] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
 
   // Supplier dues come from ShopContext (loaded at app start) — re-read so the
@@ -52,11 +63,12 @@ export default function Parties() {
 
   useEffect(() => {
     let active = true
-    supabase
+    // Paged: self-registered buyers can pass PostgREST's silent 1000-row cap.
+    fetchAll(() => supabase
       .from('profiles')
       .select('id, full_name, phone, role, balance_due')
       .in('role', ['customer', 'dealer'])
-      .order('full_name')
+      .order('full_name').order('id'))
       .then(({ data, error }) => {
         if (!active) return
         if (error) setErr(error.message)
@@ -91,7 +103,7 @@ export default function Parties() {
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase()
     return parties
-      .filter((p) => (tab === 'all' ? true : p.type === tab))
+      .filter((p) => (tab === 'all' ? true : tab === 'buyers' ? p.type !== 'supplier' : p.type === tab))
       .filter((p) => (duesOnly ? p.balance > 0 : true))
       .filter((p) => !needle || `${p.name} ${p.phone || ''}`.toLowerCase().includes(needle))
       .sort((a, b) => b.balance - a.balance || a.name.localeCompare(b.name))
@@ -113,10 +125,7 @@ export default function Parties() {
     <div className="space-y-5">
       {/* Header + create action (SPEC §6.7.2 — owner adds customers/dealers) */}
       <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-ink">Parties</h1>
-          <p className="text-sm text-muted">Customers, dealers &amp; suppliers</p>
-        </div>
+        <p className="text-sm text-muted">Customers, dealers &amp; suppliers — who owes what</p>
         <button
           type="button"
           onClick={() => setShowAdd(true)}
@@ -137,13 +146,18 @@ export default function Parties() {
 
       {/* Money owed both ways — labelled figures (SPEC §3.3) */}
       <div className="grid gap-3 sm:grid-cols-2">
+        {/* Each total is also its filter: tap to list exactly who makes it up. */}
         <SummaryCard
-          label="Udhaar owed to shop" value={totals.udhaar} currency={currency}
-          hint="From customers & dealers"
+          label="Udhaar owed to shop" value={totals.udhaar}
+          hint="From customers & dealers — tap to see who"
+          active={tab === 'buyers' && duesOnly}
+          onClick={() => setFilter(tab === 'buyers' && duesOnly ? { tab: '', dues: '' } : { tab: 'buyers', dues: '1' })}
         />
         <SummaryCard
-          label="Dues we owe suppliers" value={totals.dues} currency={currency}
-          hint="To clear via Payment Out"
+          label="Dues we owe suppliers" value={totals.dues}
+          hint="Clear with Payment Out — tap to see who"
+          active={tab === 'supplier' && duesOnly}
+          onClick={() => setFilter(tab === 'supplier' && duesOnly ? { tab: '', dues: '' } : { tab: 'supplier', dues: '1' })}
         />
       </div>
 
@@ -188,7 +202,7 @@ export default function Parties() {
       ) : filtered.length === 0 ? (
         <div className="grid place-items-center gap-3 rounded-lg border border-dashed border-line py-16 text-center text-muted">
           <IconUsers size={38} stroke={1.3} />
-          <p>{duesOnly ? 'Nobody has an outstanding balance here.' : 'No parties to show.'}</p>
+          <p>{q ? 'No party matches that name or phone.' : duesOnly ? 'Nobody has an outstanding balance here.' : 'No parties yet. Add a customer or dealer with New account; suppliers are added from Purchase Entry.'}</p>
         </div>
       ) : (
         <ul className="space-y-2.5">
@@ -209,8 +223,14 @@ export default function Parties() {
                 <div className="text-right">
                   {p.balance > 0 ? (
                     <>
-                      <p className="fig font-semibold text-dues">{money(p.balance).replace('₹', currency)}</p>
+                      <p className="fig font-semibold text-dues">{money(p.balance)}</p>
                       <p className="text-xs text-muted">{p.type === 'supplier' ? 'we owe' : 'udhaar'}</p>
+                    </>
+                  ) : p.balance < 0 ? (
+                    // Paid ahead — money held for them (buyer) or with them (supplier).
+                    <>
+                      <p className="fig font-semibold text-peacock">{money(-p.balance)}</p>
+                      <p className="text-xs text-muted">advance</p>
                     </>
                   ) : (
                     <p className="text-xs text-profit">Settled</p>
@@ -240,15 +260,20 @@ export default function Parties() {
   )
 }
 
-function SummaryCard({ label, value, hint, currency }) {
+function SummaryCard({ label, value, hint, active, onClick }) {
   return (
-    <div className="rounded-lg border border-line bg-card px-5 py-4">
+    <button
+      type="button" onClick={onClick} aria-pressed={active}
+      className={`rounded-lg border px-5 py-4 text-left transition-colors ${
+        active ? 'border-peacock bg-peacock/5' : 'border-line bg-card hover:border-ink/25'
+      }`}
+    >
       <p className="text-xs text-muted">{label}</p>
       <p className={`fig mt-0.5 text-2xl font-bold ${value > 0 ? 'text-dues' : 'text-profit'}`}>
-        {money(value).replace('₹', currency)}
+        {money(value)}
       </p>
       <p className="mt-0.5 text-xs text-muted">{hint}</p>
-    </div>
+    </button>
   )
 }
 

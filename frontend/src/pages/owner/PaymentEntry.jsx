@@ -4,10 +4,10 @@ import {
   IconCashBanknote, IconArrowDownLeft, IconArrowUpRight,
   IconCircleCheck, IconUsers,
 } from '@tabler/icons-react'
-import { supabase } from '../../lib/supabase'
+import { supabase, fetchAll } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
-import { money } from '../../lib/format'
+import { money, dateTime } from '../../lib/format'
 import { round2 } from '../../lib/helpers'
 import { Button, Field, Select, Textarea, Spinner, Badge } from '../../components/ui'
 
@@ -41,6 +41,19 @@ export default function PaymentEntry() {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [done, setDone] = useState(null) // { name, paid, balanceAfter }
+  const [recent, setRecent] = useState(null)
+
+  // The last payments recorded, so the owner can see an entry landed (and spot
+  // a double entry) without opening each party.
+  async function loadRecent() {
+    const { data } = await supabase
+      .from('payments')
+      .select('id, direction, party_id, party_type, amount, method, reference_no, at_billing, created_at')
+      .order('created_at', { ascending: false }).order('id')
+      .limit(15)
+    setRecent(data ?? [])
+  }
+  useEffect(() => { loadRecent() }, [])
 
   // Supplier balances live in ShopContext, loaded once when the app opens —
   // every purchase bill since then raised a balance this list doesn't show.
@@ -49,11 +62,12 @@ export default function PaymentEntry() {
 
   useEffect(() => {
     let active = true
-    supabase
+    // Paged: self-registered buyers can pass PostgREST's silent 1000-row cap.
+    fetchAll(() => supabase
       .from('profiles')
       .select('id, full_name, phone, role, balance_due')
       .in('role', ['customer', 'dealer'])
-      .order('full_name')
+      .order('full_name').order('id'))
       .then(({ data, error }) => {
         if (!active) return
         if (error) setLoadErr(error.message)
@@ -107,9 +121,18 @@ export default function PaymentEntry() {
     setPartyId(''); setAmount(''); setReference(''); setNotes('')
     if (direction === 'out') refreshSuppliers()
     else setBuyers((b) => b && b.map((x) => (x.id === party.id ? { ...x, balance_due: balanceAfter } : x)))
+    loadRecent()
   }
 
-  if (done) return <Success done={done} currency={currency} onAnother={() => setDone(null)} />
+  // Names for the recent list, from the two party lists already loaded.
+  const nameOf = useMemo(() => {
+    const m = new Map()
+    for (const b of buyers ?? []) m.set(b.id, b.full_name || 'Buyer')
+    for (const x of suppliers ?? []) m.set(x.id, x.name || 'Supplier')
+    return m
+  }, [buyers, suppliers])
+
+  if (done) return <Success done={done} onAnother={() => setDone(null)} />
 
   return (
     <div className="mx-auto max-w-xl space-y-5">
@@ -143,7 +166,7 @@ export default function PaymentEntry() {
             {parties.map((p) => (
               <option key={p.id} value={p.id}>
                 {partyName(p, direction)}
-                {Number(p.balance_due) > 0 ? ` — ${money(p.balance_due).replace('₹', currency)} due` : ''}
+                {Number(p.balance_due) > 0 ? ` — ${money(p.balance_due)} due` : ''}
               </option>
             ))}
           </Select>
@@ -153,10 +176,10 @@ export default function PaymentEntry() {
         {party && (
           <div className="flex items-center justify-between rounded-lg bg-paper-2 px-4 py-3 text-sm">
             <span className="text-muted">
-              {direction === 'in' ? 'Udhaar outstanding' : 'We currently owe'}
+              {currentBal < 0 ? 'Advance already held' : direction === 'in' ? 'Udhaar outstanding' : 'We currently owe'}
             </span>
-            <span className={`fig font-semibold ${currentBal > 0 ? 'text-dues' : 'text-profit'}`}>
-              {money(currentBal).replace('₹', currency)}
+            <span className={`fig font-semibold ${currentBal > 0 ? 'text-dues' : currentBal < 0 ? 'text-peacock' : 'text-profit'}`}>
+              {money(Math.abs(currentBal))}
             </span>
           </div>
         )}
@@ -199,8 +222,8 @@ export default function PaymentEntry() {
           <div className="flex items-center justify-between border-t border-line pt-3 text-sm">
             <span className="text-muted">Balance after this payment</span>
             <span className={`fig font-semibold ${balanceAfter > 0 ? 'text-dues' : 'text-profit'}`}>
-              {money(Math.max(0, balanceAfter)).replace('₹', currency)}
-              {overpay && <Badge tone="saffron" className="ml-2">advance</Badge>}
+              {money(Math.abs(balanceAfter))}
+              {balanceAfter < 0 && <Badge tone="saffron" className="ml-2">advance</Badge>}
             </span>
           </div>
         )}
@@ -219,7 +242,51 @@ export default function PaymentEntry() {
       </div>
 
       {loadErr && <p className="rounded-lg bg-dues/10 px-4 py-3 text-sm text-dues">{loadErr}</p>}
+
+      <RecentPayments rows={recent} nameOf={nameOf} />
     </div>
+  )
+}
+
+const METHOD_LABEL = Object.fromEntries(METHODS)
+
+function RecentPayments({ rows, nameOf }) {
+  if (!rows || rows.length === 0) return null
+  return (
+    <section aria-labelledby="recent-pay-h">
+      <h2 id="recent-pay-h" className="eyebrow mb-2">Recent payments</h2>
+      <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-card">
+        {rows.map((r) => {
+          const inbound = r.direction === 'in'
+          return (
+            <li key={r.id}>
+              <Link
+                to={`/owner/parties/${r.party_type}/${r.party_id}`}
+                className="flex min-h-14 items-center gap-3 px-4 py-2.5 transition-colors hover:bg-paper-2"
+              >
+                <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full ${inbound ? 'bg-profit/10 text-profit' : 'bg-dues/10 text-dues'}`}>
+                  {inbound ? <IconArrowDownLeft size={16} aria-hidden /> : <IconArrowUpRight size={16} aria-hidden />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-ink">
+                    {nameOf.get(r.party_id) || (r.party_type === 'supplier' ? 'Supplier' : 'Buyer')}
+                  </span>
+                  <span className="block truncate text-xs text-muted">
+                    {inbound ? 'Received' : 'Paid'} · {METHOD_LABEL[r.method] || r.method}
+                    {r.at_billing && ' · at billing'}
+                    {r.reference_no && <> · <span className="fig">{r.reference_no}</span></>}
+                    {' · '}{dateTime(r.created_at)}
+                  </span>
+                </span>
+                <span className={`fig shrink-0 font-semibold ${inbound ? 'text-profit' : 'text-dues'}`}>
+                  {inbound ? '+' : '−'}{money(r.amount)}
+                </span>
+              </Link>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
   )
 }
 
@@ -252,13 +319,13 @@ function NoParties({ direction }) {
     <div className="grid place-items-center gap-2 rounded-lg border border-dashed border-line py-8 text-center text-sm text-muted">
       <IconUsers size={28} stroke={1.3} />
       {direction === 'in'
-        ? <p>No customers or dealers yet. They appear here once they register on the shopfront.</p>
+        ? <p>No customers or dealers yet. Add one from <Link to="/owner/parties" className="font-medium text-peacock hover:underline">Parties → New account</Link>, or they appear when they register on the shop.</p>
         : <p>No suppliers yet. Add one from a <Link to="/owner/purchase" className="font-medium text-peacock hover:underline">Purchase Entry</Link>.</p>}
     </div>
   )
 }
 
-function Success({ done, currency, onAnother }) {
+function Success({ done, onAnother }) {
   return (
     <div className="mx-auto max-w-md space-y-5 rounded-lg border border-profit/30 bg-profit/10 p-8 text-center">
       <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-profit/15 text-profit">
@@ -267,12 +334,16 @@ function Success({ done, currency, onAnother }) {
       <div>
         <h2 className="text-xl font-bold">Payment recorded</h2>
         <p className="mt-1 text-muted">
-          <span className="fig font-semibold text-ink">{money(done.paid).replace('₹', currency)}</span>
+          <span className="fig font-semibold text-ink">{money(done.paid)}</span>
           {' '}{done.partyType === 'supplier' ? 'paid to' : 'received from'} {done.name}.
         </p>
         <p className="mt-1 text-sm text-muted">
-          {done.partyType === 'supplier' ? 'We now owe' : 'Balance now'}{' '}
-          <span className="fig font-semibold text-dues">{money(Math.max(0, done.balanceAfter)).replace('₹', currency)}</span>.
+          {done.balanceAfter < 0 ? (
+            <>Advance now held: <span className="fig font-semibold text-peacock">{money(-done.balanceAfter)}</span>.</>
+          ) : (
+            <>{done.partyType === 'supplier' ? 'We now owe' : 'Balance now'}{' '}
+              <span className={`fig font-semibold ${done.balanceAfter > 0 ? 'text-dues' : 'text-profit'}`}>{money(done.balanceAfter)}</span>.</>
+          )}
         </p>
       </div>
       <div className="flex justify-center gap-3">
