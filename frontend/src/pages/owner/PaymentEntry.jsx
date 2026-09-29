@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   IconCashBanknote, IconArrowDownLeft, IconArrowUpRight,
   IconCircleCheck, IconUsers,
@@ -9,7 +9,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { money, dateTime } from '../../lib/format'
 import { round2 } from '../../lib/helpers'
-import { Button, Field, Select, Textarea, Spinner, Badge } from '../../components/ui'
+import { Button, Field, Textarea, Spinner, Badge } from '../../components/ui'
 
 // SPEC §6.8 — Payment Entry. Separate from Sale and Purchase (Golden Rule #8).
 //   Payment In  → money received from a customer/dealer  → clears their udhaar
@@ -22,7 +22,6 @@ const METHODS = [
 ]
 
 export default function PaymentEntry() {
-  const navigate = useNavigate()
   const { profile } = useAuth()
   const { currency, suppliers, refreshSuppliers } = useShop()
   const [params] = useSearchParams()
@@ -157,19 +156,12 @@ export default function PaymentEntry() {
         ) : parties.length === 0 ? (
           <NoParties direction={direction} />
         ) : (
-          <Select
+          <PartyPicker
             label={direction === 'in' ? 'Received from' : 'Paid to'}
-            value={partyId}
-            onChange={(e) => { setPartyId(e.target.value); setErr('') }}
-          >
-            <option value="">Choose {direction === 'in' ? 'customer / dealer' : 'supplier'}…</option>
-            {parties.map((p) => (
-              <option key={p.id} value={p.id}>
-                {partyName(p, direction)}
-                {Number(p.balance_due) > 0 ? ` — ${money(p.balance_due)} due` : ''}
-              </option>
-            ))}
-          </Select>
+            placeholder={direction === 'in' ? 'Search customer / dealer by name or phone…' : 'Search supplier by name or phone…'}
+            parties={parties} direction={direction} party={party}
+            onPick={(id) => { setPartyId(id); setErr('') }}
+          />
         )}
 
         {/* Selected party's standing */}
@@ -287,6 +279,79 @@ function RecentPayments({ rows, nameOf }) {
         })}
       </ul>
     </section>
+  )
+}
+
+// Search-as-you-type party chooser. A plain <select> of hundreds of buyers is
+// unusable on a phone; this narrows by name or phone, puts people who owe money
+// first, and shows each one's balance so the right account is obvious.
+function PartyPicker({ label, placeholder, parties, direction, party, onPick }) {
+  const [q, setQ] = useState('')
+  const matches = useMemo(() => {
+    const needle = q.trim().toLowerCase()
+    const digits = needle.replace(/\D/g, '')
+    return parties
+      .filter((p) => {
+        if (!needle) return true
+        const name = partyName(p, direction).toLowerCase()
+        const phone = String(p.phone || '').replace(/\D/g, '')
+        return name.includes(needle) || (digits.length >= 3 && phone.includes(digits))
+      })
+      .sort((a, b) => Number(b.balance_due || 0) - Number(a.balance_due || 0))
+      .slice(0, 8)
+  }, [parties, q, direction])
+
+  if (party) {
+    return (
+      <div>
+        <span className="mb-1.5 block text-sm font-medium text-ink">{label}</span>
+        <div className="flex items-center justify-between gap-3 rounded-md border border-peacock bg-peacock/5 px-3 py-2.5">
+          <span className="min-w-0">
+            <span className="block truncate font-medium text-ink">{partyName(party, direction)}</span>
+            {party.phone && <span className="fig block text-xs text-muted">{party.phone}</span>}
+          </span>
+          <button type="button" onClick={() => { onPick(''); setQ('') }}
+                  className="shrink-0 text-sm font-medium text-peacock hover:underline">
+            Change
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <label htmlFor="party-search" className="mb-1.5 block text-sm font-medium text-ink">{label}</label>
+      <input
+        id="party-search" type="search" value={q} onChange={(e) => setQ(e.target.value)}
+        placeholder={placeholder} autoComplete="off"
+        className="ring-focus w-full rounded-md border border-line bg-card px-3 py-2.5 text-ink"
+      />
+      <ul className="mt-2 divide-y divide-line overflow-hidden rounded-md border border-line" aria-label="Matching parties">
+        {matches.length === 0 ? (
+          <li className="px-3 py-3 text-sm text-muted">No one matches “{q}”. Check the spelling or search by phone.</li>
+        ) : matches.map((p) => {
+          const bal = Number(p.balance_due || 0)
+          return (
+            <li key={p.id}>
+              <button type="button" onClick={() => onPick(p.id)}
+                      className="flex min-h-11 w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-paper-2">
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium text-ink">{partyName(p, direction)}</span>
+                  {p.phone && <span className="fig block text-xs text-muted">{p.phone}</span>}
+                </span>
+                <span className={`fig shrink-0 text-sm ${bal > 0 ? 'font-semibold text-dues' : 'text-muted'}`}>
+                  {bal > 0 ? `${money(bal)} due` : bal < 0 ? `${money(-bal)} advance` : 'Settled'}
+                </span>
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+      {!q && parties.length > 8 && (
+        <p className="mt-1 text-xs text-muted">Showing the 8 with the biggest balance — type to find anyone else.</p>
+      )}
+    </div>
   )
 }
 

@@ -431,6 +431,13 @@ shopfront order needed. (Routes `/owner/counter-sale`, `/staff/counter-sale`.)
 - Sort by quantity (lowest first) — helps owner see what to reorder
 - One tap from any low stock item → opens new Purchase Entry pre-filled with that item
 - Threshold is per-item (set in Inventory module)
+- **Owner console (2026-09):** folded into Inventory — a "To reorder (low or out)"
+  card toggles the filter, and a sort picker gives "lowest stock first".
+  `/owner/stock` redirects to `/owner/inventory?low=1&sort=low`. "Needs reorder"
+  is one shared rule (`needsReorder`): low or out of stock, excluding discontinued
+  and made-to-order items. The staff console keeps its own Stock screen.
+- **Item history (2026-09):** `/owner/inventory/:id` shows one product's rates,
+  stock per warehouse, and every purchase line (in) and sale (out).
 
 ---
 
@@ -1013,7 +1020,8 @@ All tables have RLS enabled in Supabase. These policies control who can see and 
 /owner/payments       → Payment Entry
 /owner/parties        → Customers, Dealers, Suppliers list
 /owner/parties/:id    → Party detail + ledger
-/owner/stock          → Stock Inquiry
+/owner/stock          → redirects to Inventory (reorder view)
+/owner/inventory/:id  → Item history (rates, stock by warehouse, movements)
 /owner/reports        → Reports & Accounting
 /owner/settings       → Settings
 ```

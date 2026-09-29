@@ -5,7 +5,7 @@ import {
   IconPalette, IconPhoto, IconUpload, IconX,
   IconSlideshow, IconArrowUp, IconArrowDown, IconTrash,
   IconShare, IconBrandWhatsapp, IconBrandInstagram, IconBrandFacebook,
-  IconBrandYoutube, IconMapPin, IconFileText, IconTruck, IconBuildingWarehouse,
+  IconBrandYoutube, IconMapPin, IconFileText, IconBuildingWarehouse,
 } from '@tabler/icons-react'
 import { supabase } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
@@ -16,11 +16,27 @@ import { uploadPhoto } from '../../lib/images'
 // SPEC §6.11 — Settings (owner only): shop info, categories, staff. Kept to the
 // three named blocks; each writes the table the owner already controls under RLS
 // (shops_update, categories_owner_all, profiles_owner_update).
+// Settings is one long page of cards; this row jumps straight to one. Ids match
+// each Card's `id` below.
+const SECTIONS = [
+  ['shop', 'Shop info'], ['branding', 'Branding'], ['banners', 'Banners'],
+  ['social', 'Social links'], ['pages', 'Footer pages'], ['categories', 'Categories'],
+  ['warehouses', 'Warehouses'], ['staff', 'Staff'],
+]
+
 export default function Settings() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
+      <nav aria-label="Settings sections" className="no-scrollbar -mx-4 flex gap-1.5 overflow-x-auto px-4 sm:mx-0 sm:flex-wrap sm:px-0">
+        {SECTIONS.map(([id, label]) => (
+          <a key={id} href={`#${id}`}
+             onClick={(e) => { e.preventDefault(); document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }}
+             className="shrink-0 rounded-full border border-line bg-card px-3 py-1.5 text-sm font-medium text-muted hover:text-ink">
+            {label}
+          </a>
+        ))}
+      </nav>
       <ShopInfo />
-      <ChargeRules />
       <Branding />
       <Banners />
       <SocialLinks />
@@ -39,9 +55,9 @@ const CAT_TYPES = [
 ]
 const CAT_TYPE_LABEL = Object.fromEntries(CAT_TYPES.map((t) => [t.value, t.label]))
 
-function Card({ icon: Icon, title, hint, children }) {
+function Card({ id, icon: Icon, title, hint, children }) {
   return (
-    <section className="rounded-lg border border-line bg-card p-5">
+    <section id={id} className="scroll-mt-20 rounded-lg border border-line bg-card p-5">
       <div className="mb-4 flex items-center gap-3">
         <div className="grid h-9 w-9 place-items-center rounded-lg bg-peacock/10 text-peacock">
           <Icon size={18} />
@@ -131,7 +147,7 @@ function ShopInfo() {
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
 
   return (
-    <Card icon={IconBuildingStore} title="Shop info" hint="Shows on slips, the shopfront and your dashboard.">
+    <Card id="shop" icon={IconBuildingStore} title="Shop info" hint="Shows on slips, the shopfront and your dashboard.">
       {!form ? (
         <div className="grid place-items-center py-8 text-muted"><Spinner /></div>
       ) : (
@@ -191,190 +207,6 @@ function ShopInfo() {
           </Button>
         </form>
       )}
-    </Card>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Charge rules — auto-suggest shipping / packing fees at order approval by buyer
-// type and order value / quantity (migration 023, charge_rules). Owner-only. The
-// approval screen reads these and pre-fills the fee (highest applicable wins);
-// the owner can always override before recording the sale.
-// ---------------------------------------------------------------------------
-const CR_TYPES = [{ value: 'shipping', label: 'Shipping' }, { value: 'packing', label: 'Packing' }]
-const CR_WHO = [
-  { value: 'all', label: 'All buyers' },
-  { value: 'customer', label: 'Customers only' },
-  { value: 'dealer', label: 'Dealers only' },
-]
-const CR_BASIS = [
-  { value: 'order_value', label: 'Order value' },
-  { value: 'quantity', label: 'Quantity' },
-]
-const CR_OPS = [
-  { value: 'lt', label: 'is below', sym: '<' },
-  { value: 'lte', label: 'is at most', sym: '≤' },
-  { value: 'gte', label: 'is at least', sym: '≥' },
-  { value: 'gt', label: 'is above', sym: '>' },
-  { value: 'between', label: 'is between', sym: '↔' },
-]
-const CR_EMPTY = {
-  charge_type: 'shipping', applies_to: 'all', basis: 'order_value',
-  operator: 'gte', threshold: '', threshold_hi: '', fee: '', is_percent: false, label: '',
-}
-
-// Human sentence for a saved rule, e.g. "Shipping ₹50 for Customers when order value is below ₹500".
-function ruleSentence(r, cur) {
-  const who = CR_WHO.find((w) => w.value === r.applies_to)?.label || r.applies_to
-  const basis = r.basis === 'quantity' ? 'quantity' : 'order value'
-  const op = CR_OPS.find((o) => o.value === r.operator)
-  const unit = (n) => (r.basis === 'quantity' ? `${n} pcs` : `${cur}${n}`)
-  const cond = r.operator === 'between'
-    ? `${basis} is between ${unit(r.threshold)} and ${unit(r.threshold_hi)}`
-    : `${basis} ${op?.label || r.operator} ${unit(r.threshold)}`
-  const fee = r.is_percent ? `${r.fee}% of order` : (Number(r.fee) === 0 ? 'FREE' : `${cur}${r.fee}`)
-  const type = r.charge_type === 'packing' ? 'Packing' : 'Shipping'
-  return `${type} ${fee} · ${who} · when ${cond}`
-}
-
-function ChargeRules() {
-  const { shopId, shop } = useShop()
-  const cur = shop?.currency_symbol || '₹'
-  const [rules, setRules] = useState(null)
-  const [form, setForm] = useState(CR_EMPTY)
-  const [adding, setAdding] = useState(false)
-  const [err, setErr] = useState('')
-
-  async function load() {
-    const { data, error } = await supabase
-      .from('charge_rules')
-      .select('*')
-      .order('charge_type').order('created_at')
-    if (error) setErr(error.message)
-    else setRules(data ?? [])
-  }
-  useEffect(() => { load() }, [])
-
-  const set = (k) => (e) =>
-    setForm((f) => ({ ...f, [k]: e.target?.type === 'checkbox' ? e.target.checked : e.target.value }))
-
-  async function add(e) {
-    e.preventDefault()
-    setAdding(true); setErr('')
-    const isBetween = form.operator === 'between'
-    const row = {
-      shop_id: shopId,
-      charge_type: form.charge_type,
-      applies_to: form.applies_to,
-      basis: form.basis,
-      operator: form.operator,
-      threshold: round2(form.threshold || 0),
-      threshold_hi: isBetween ? round2(form.threshold_hi || 0) : null,
-      fee: round2(form.fee || 0),
-      is_percent: form.is_percent,
-      label: form.label.trim() || null,
-    }
-    const { error } = await supabase.from('charge_rules').insert(row)
-    setAdding(false)
-    if (error) { setErr(error.message); return }
-    setForm(CR_EMPTY)
-    load()
-  }
-
-  async function toggle(r) {
-    setErr('')
-    const { error } = await supabase.from('charge_rules')
-      .update({ is_active: !r.is_active }).eq('id', r.id)
-    if (error) { setErr(error.message); return }
-    load()
-  }
-
-  async function remove(id) {
-    setErr('')
-    const { error } = await supabase.from('charge_rules').delete().eq('id', id)
-    if (error) { setErr(error.message); return }
-    load()
-  }
-
-  return (
-    <Card icon={IconTruck} title="Shipping & packing rules"
-          hint="Auto-suggest a shipping or packing fee at approval, based on buyer type and order value or quantity. You can always override it on the order.">
-      <form onSubmit={add} className="mb-5 space-y-3 rounded-lg border border-line bg-paper-2/40 p-4">
-        <p className="text-xs font-medium text-ink">Add a rule</p>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Select label="Charge" value={form.charge_type} onChange={set('charge_type')}>
-            {CR_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-          </Select>
-          <Select label="Applies to" value={form.applies_to} onChange={set('applies_to')}>
-            {CR_WHO.map((w) => <option key={w.value} value={w.value}>{w.label}</option>)}
-          </Select>
-          <Select label="When" value={form.basis} onChange={set('basis')}>
-            {CR_BASIS.map((b) => <option key={b.value} value={b.value}>{b.label}</option>)}
-          </Select>
-          <Select label="Condition" value={form.operator} onChange={set('operator')}>
-            {CR_OPS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </Select>
-          <Field label={form.operator === 'between' ? 'From' : 'Value'} type="number" min="0" step="0.01"
-                 inputMode="decimal" value={form.threshold} onChange={set('threshold')}
-                 suffix={form.basis === 'quantity' ? 'pcs' : cur} />
-          {form.operator === 'between' && (
-            <Field label="To" type="number" min="0" step="0.01" inputMode="decimal"
-                   value={form.threshold_hi} onChange={set('threshold_hi')}
-                   suffix={form.basis === 'quantity' ? 'pcs' : cur} />
-          )}
-          <Field label={form.is_percent ? 'Fee (% of order)' : 'Fee amount'} type="number" min="0" step="0.01"
-                 inputMode="decimal" value={form.fee} onChange={set('fee')}
-                 suffix={form.is_percent ? '%' : cur}
-                 hint="Set 0 for a free-shipping rule." />
-          <label className="flex items-center gap-2 self-end pb-2 text-sm text-ink">
-            <input type="checkbox" checked={form.is_percent} onChange={set('is_percent')}
-                   className="h-4 w-4 rounded border-line text-peacock focus:ring-peacock" />
-            Fee is a % of order value
-          </label>
-        </div>
-        {err && <ErrLine>{err}</ErrLine>}
-        <Button type="submit" disabled={adding}>
-          {adding ? <Spinner /> : <IconPlus size={18} />} Add rule
-        </Button>
-      </form>
-
-      {rules === null ? (
-        <div className="grid place-items-center py-8 text-muted"><Spinner /></div>
-      ) : rules.length === 0 ? (
-        <p className="py-6 text-center text-sm text-muted">
-          No rules yet. Add one above, or just type the fee by hand on each order.
-        </p>
-      ) : (
-        <ul className="divide-y divide-line">
-          {rules.map((r) => (
-            <li key={r.id} className="flex items-center gap-3 py-2.5">
-              <IconTruck size={16} className={r.charge_type === 'packing' ? 'text-saffron' : 'text-peacock'} />
-              <span className="min-w-0 flex-1">
-                <span className={`text-sm ${r.is_active ? 'text-ink' : 'text-muted line-through'}`}>
-                  {ruleSentence(r, cur)}
-                </span>
-                {r.label && <span className="ml-2 text-xs text-muted">({r.label})</span>}
-              </span>
-              {!r.is_active && <Badge tone="muted">Off</Badge>}
-              <button onClick={() => toggle(r)}
-                      className={`rounded-lg px-2.5 py-1 text-xs font-medium ${r.is_active ? 'text-dues hover:bg-dues/10' : 'text-profit hover:bg-profit/10'}`}>
-                {r.is_active ? 'Disable' : 'Enable'}
-              </button>
-              <button onClick={() => remove(r.id)} className="rounded-lg p-1.5 text-dues hover:bg-dues/10" title="Delete rule">
-                <IconTrash size={16} />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <div className="mt-4 flex items-start gap-2">
-        <IconInfoCircle size={16} className="mt-0.5 shrink-0 text-muted" />
-        <p className="text-xs text-muted">
-          When several rules match an order, the highest fee for each charge type is suggested. These are
-          suggestions only — the fee is still editable on every order before you record the sale.
-        </p>
-      </div>
     </Card>
   )
 }
@@ -476,7 +308,7 @@ function Branding() {
   }
 
   return (
-    <Card icon={IconPalette} title="Branding" hint="Logo and name shown in the menu, the shopfront and the browser tab.">
+    <Card id="branding" icon={IconPalette} title="Branding" hint="Logo and name shown in the menu, the shopfront and the browser tab.">
       {!shop ? (
         <div className="grid place-items-center py-8 text-muted"><Spinner /></div>
       ) : (
@@ -612,7 +444,7 @@ function Banners() {
   }
 
   return (
-    <Card icon={IconSlideshow} title="Shopfront banners"
+    <Card id="banners" icon={IconSlideshow} title="Shopfront banners"
           hint="Sliding banner shown at the top of your shopfront. Drag-free reorder with the arrows.">
       {!list ? (
         <div className="grid place-items-center py-8 text-muted"><Spinner /></div>
@@ -709,7 +541,7 @@ function SocialLinks() {
   }
 
   return (
-    <Card icon={IconShare} title="Social links"
+    <Card id="social" icon={IconShare} title="Social links"
           hint="Shown as icons in the shopfront footer. Leave a field blank to hide its icon.">
       {!form ? (
         <div className="grid place-items-center py-8 text-muted"><Spinner /></div>
@@ -764,7 +596,7 @@ function Pages() {
   }
 
   return (
-    <Card icon={IconFileText} title="Footer pages"
+    <Card id="pages" icon={IconFileText} title="Footer pages"
           hint="About, Contact, Privacy and Terms. Leave one blank to hide its footer link. Blank lines start new paragraphs; **bold** and lists work.">
       {!form ? (
         <div className="grid place-items-center py-8 text-muted"><Spinner /></div>
@@ -841,7 +673,7 @@ function Categories() {
   }
 
   return (
-    <Card icon={IconCategory} title="Categories" hint="Used to group items across the shop.">
+    <Card id="categories" icon={IconCategory} title="Categories" hint="Used to group items across the shop.">
       <form onSubmit={add} className="mb-4 flex flex-wrap items-end gap-2">
         <div className="min-w-[10rem] flex-1">
           <Field label="New category" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Greeting Cards" />
@@ -976,7 +808,7 @@ function Warehouses() {
   }
 
   return (
-    <Card icon={IconBuildingWarehouse} title="Warehouses"
+    <Card id="warehouses" icon={IconBuildingWarehouse} title="Warehouses"
           hint="Physical stock locations. Split an item's stock across them in Inventory, and pick one when stocking in (Purchase Entry) or approving a sale.">
       <form onSubmit={add} className="mb-4 flex flex-wrap items-end gap-2">
         <div className="min-w-[10rem] flex-1">
@@ -1098,7 +930,7 @@ function Staff() {
   }
 
   return (
-    <Card icon={IconUsers} title="Staff" hint="Who can enter purchases and pack orders.">
+    <Card id="staff" icon={IconUsers} title="Staff" hint="Staff pack orders, ring up counter sales and look up stock. They never see cost, profit or the ledger.">
       <form onSubmit={add} className="mb-5 space-y-3 rounded-lg border border-line bg-paper-2/40 p-4">
         <p className="text-xs font-medium text-ink">Add a staff member</p>
         <div className="grid gap-3 sm:grid-cols-2">

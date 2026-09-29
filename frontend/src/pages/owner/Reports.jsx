@@ -18,6 +18,9 @@ import { Spinner } from '../../components/ui'
 export default function Reports() {
   const [sales, setSales] = useState(null)
   const [items, setItems] = useState(null)
+  const [buys, setBuys] = useState(null)
+  const [pays, setPays] = useState(null)
+  const [cashErr, setCashErr] = useState('')
   const [err, setErr] = useState('')
 
   const [from, setFrom] = useState(() => toInputDate(startOfMonth()))
@@ -34,7 +37,21 @@ export default function Reports() {
           .select('id, item_no, name, quantity, purchase_rate, low_stock_threshold, discontinued, made_to_order')
           .order('id')),
       ])
+      // Purchases + payments feed the "Money in & out" section. A failure there
+      // costs that section only, never the sales figures above it.
+      const pCols = 'total_cost, created_at'
+      let [bRes, payRes] = await Promise.all([
+        fetchAll(() => supabase.from('purchases').select(pCols).is('deleted_at', null).order('id')),
+        fetchAll(() => supabase.from('payments').select('direction, amount, method, created_at').order('id')),
+      ])
+      // Lines taken off a bill are soft-deleted (039); older databases lack it.
+      if (bRes.error && /deleted_at/.test(bRes.error.message || '')) {
+        bRes = await fetchAll(() => supabase.from('purchases').select(pCols).order('id'))
+      }
       if (!active) return
+      if (bRes.error || payRes.error) setCashErr((bRes.error || payRes.error).message)
+      setBuys(bRes.data ?? [])
+      setPays(payRes.data ?? [])
       if (sRes.error) { setErr(sRes.error.message); return }
       if (iRes.error) { setErr(iRes.error.message); return }
       setSales(sRes.data ?? [])
@@ -67,6 +84,25 @@ export default function Reports() {
   }, [sales, from, to])
 
   const pnl = useMemo(() => summarisePnl(ranged), [ranged])
+
+  // Money in & out for the same range. Money received counts every Payment In,
+  // including cash/UPI taken at billing (056) — that is what reached the drawer.
+  const cash = useMemo(() => {
+    if (!buys || !pays) return null
+    const lo = fromInputDate(from)
+    const hi = endOfInputDate(to)
+    const inRange = (r) => { const t = new Date(r.created_at); return t >= lo && t <= hi }
+    const c = { bought: 0, received: 0, paidOut: 0, byMethod: { cash: 0, upi: 0, bank: 0 } }
+    for (const b of buys) if (inRange(b)) c.bought += Number(b.total_cost || 0)
+    for (const p of pays) {
+      if (!inRange(p)) continue
+      if (p.direction === 'in') {
+        c.received += Number(p.amount || 0)
+        c.byMethod[p.method] = (c.byMethod[p.method] || 0) + Number(p.amount || 0)
+      } else c.paidOut += Number(p.amount || 0)
+    }
+    return c
+  }, [buys, pays, from, to])
   const byCategory = useMemo(() => groupBy(ranged, (s) => s.category?.name || 'Uncategorised'), [ranged])
   const topByRevenue = useMemo(() => topItems(ranged, 'amount'), [ranged])
   const topByQty = useMemo(() => topItems(ranged, 'quantity'), [ranged])
@@ -136,6 +172,25 @@ export default function Reports() {
         </div>
       </section>
 
+      {/* ---- Money in & out for the same range ---- */}
+      <section className="space-y-3">
+        <SectionTitle>Money in &amp; out (same dates)</SectionTitle>
+        {cashErr && <p className="rounded-lg bg-dues/10 px-4 py-3 text-sm text-dues">Couldn’t load purchases or payments: {cashErr}</p>}
+        {cash && (
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="rounded-lg border border-line bg-card p-5">
+              <p className="text-sm text-muted">Money received</p>
+              <p className="fig mt-0.5 text-2xl font-bold text-profit">{money(cash.received)}</p>
+              <p className="fig mt-1 text-xs text-muted">
+                Cash {money(cash.byMethod.cash)} · UPI {money(cash.byMethod.upi)} · Bank {money(cash.byMethod.bank)}
+              </p>
+            </div>
+            <Stat icon={IconCoin} tone="dues" label="Paid to suppliers" value={money(cash.paidOut)} />
+            <Stat icon={IconShoppingCartPlus} tone="saffron" label="Goods bought (at cost, before GST/postage)" value={money(cash.bought)} to="/owner/purchases" />
+          </div>
+        )}
+      </section>
+
       {/* ---- Sales by category ---- */}
       <section className="space-y-3">
         <SectionTitle>Sales by category</SectionTitle>
@@ -177,7 +232,7 @@ export default function Reports() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Stat icon={IconBuildingWarehouse} tone="peacock" label="Stock value (at cost)" value={money(stock.value)} />
           <Stat icon={IconReceipt2} tone="muted" label="Items (not discontinued)" value={qty(stock.count)} to="/owner/inventory" />
-          <Stat icon={IconAlertTriangle} tone="saffron" label="To reorder (low or out)" value={qty(stock.reorder)} to="/owner/stock?low=1" />
+          <Stat icon={IconAlertTriangle} tone="saffron" label="To reorder (low or out)" value={qty(stock.reorder)} to="/owner/inventory?low=1&sort=low" />
           <Stat icon={IconCircleOff} tone="dues" label="Out of stock" value={qty(stock.zero.length)} />
         </div>
 

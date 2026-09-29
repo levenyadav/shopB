@@ -391,7 +391,11 @@ function ItemPicker({ shopId, isOwner, onAdd, currency }) {
         {loading && rows.length === 0 ? (
           <p className="col-span-full py-8 text-center text-sm text-muted"><Spinner /> Loading…</p>
         ) : rows.length === 0 ? (
-          <p className="col-span-full py-8 text-center text-sm text-muted">No items match.</p>
+          <p className="col-span-full py-8 text-center text-sm text-muted">
+            {q.trim()
+              ? `No item in stock matches “${q.trim()}”. Out-of-stock items can’t be billed until they are restocked.`
+              : 'No items in stock to sell.'}
+          </p>
         ) : rows.map((it) => (
           <button
             key={it.id} onClick={() => onAdd(it)}
@@ -496,7 +500,7 @@ function BuyerPanel({ buyer, setBuyer, shopId }) {
         <p className="mb-1.5 text-sm font-medium">Buyer</p>
         <div className="flex items-center justify-between gap-3 rounded-lg border border-peacock/30 bg-peacock/5 px-3 py-2">
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold">{buyer.full_name} <Badge tone={buyer.role === 'dealer' ? 'saffron' : 'muted'}>{buyer.role}</Badge></p>
+            <p className="truncate text-sm font-semibold">{buyer.full_name} <Badge tone={buyer.role === 'dealer' ? 'peacock' : 'muted'}>{buyer.role}</Badge></p>
             <p className="fig text-xs text-muted">{buyer.phone || 'No phone'}
               {Number(buyer.balance_due) > 0 ? ` · Udhaar ₹${Number(buyer.balance_due).toLocaleString('en-IN')}` : ''}
               {Number(buyer.balance_due) < 0 ? ` · Advance ₹${(-Number(buyer.balance_due)).toLocaleString('en-IN')}` : ''}</p>

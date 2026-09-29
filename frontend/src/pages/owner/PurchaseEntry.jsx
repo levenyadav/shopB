@@ -617,8 +617,8 @@ function RestockEntry({ itemId }) {
     return (
       <div className="mx-auto max-w-md rounded-lg border border-line bg-card p-8 text-center">
         <p className="text-dues">{loadErr}</p>
-        <Link to="/owner/stock" className="mt-4 inline-block font-medium text-peacock hover:underline">
-          ← Back to Stock Inquiry
+        <Link to="/owner/inventory?low=1&sort=low" className="mt-4 inline-block font-medium text-peacock hover:underline">
+          ← Back to reorder list
         </Link>
       </div>
     )
@@ -640,13 +640,13 @@ function RestockEntry({ itemId }) {
           <Box label="Added to supplier due" value={money(done.total_cost)} tone="dues" />
         </div>
         <div className="mt-6 flex justify-center gap-3">
-          <Link to="/owner/stock"
+          <Link to="/owner/inventory?low=1&sort=low"
                 className="inline-flex items-center rounded-lg bg-peacock px-4 py-2.5 text-sm font-semibold text-white hover:bg-peacock-700">
-            Back to Stock Inquiry
+            Back to reorder list
           </Link>
-          <Link to="/owner/inventory"
+          <Link to={`/owner/inventory/${item.id}`}
                 className="inline-flex items-center rounded-lg border border-line bg-card px-4 py-2.5 text-sm font-semibold hover:bg-paper-2">
-            View Inventory
+            Item history
           </Link>
         </div>
       </div>
@@ -660,8 +660,8 @@ function RestockEntry({ itemId }) {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <Link to="/owner/stock" className="mb-4 inline-block text-sm font-medium text-muted hover:text-ink">
-        ← Stock Inquiry
+      <Link to="/owner/inventory?low=1&sort=low" className="mb-4 inline-block text-sm font-medium text-muted hover:text-ink">
+        ← Reorder list
       </Link>
       <form onSubmit={onSubmit} className="space-y-6">
         <DraftBar
@@ -732,7 +732,7 @@ function RestockEntry({ itemId }) {
           <Button type="submit" disabled={busy} className="px-6">
             {busy ? <><Spinner /> Saving…</> : 'Save & Stock In'}
           </Button>
-          <Link to="/owner/stock" className="text-sm font-medium text-muted hover:text-ink">Cancel</Link>
+          <Link to="/owner/inventory?low=1&sort=low" className="text-sm font-medium text-muted hover:text-ink">Cancel</Link>
         </div>
       </form>
     </div>

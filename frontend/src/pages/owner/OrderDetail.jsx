@@ -51,9 +51,15 @@ export default function OrderDetail() {
       )
       .eq('id', id)
       .maybeSingle()
-    if (error) setErr(error.message)
-    else if (!data) setMissing(true)
-    else setOrder(data)
+    if (error) { setErr(error.message); return }
+    if (!data) { setMissing(true); return }
+    // The sale booked by approval, so the owner can go straight to its invoice.
+    let saleId = null
+    if (data.status !== 'pending' && data.status !== 'rejected') {
+      const { data: sale } = await supabase.from('sales').select('id').eq('order_id', data.id).limit(1).maybeSingle()
+      saleId = sale?.id ?? null
+    }
+    setOrder({ ...data, saleId })
   }
   useEffect(() => { load() }, [id])
 
@@ -143,8 +149,8 @@ export default function OrderDetail() {
               Short by <span className="fig">{shortBy}</span>. Record a Purchase Entry first, then approve.
             </p>
             <div className="mt-3 flex gap-3">
-              <Link to="/owner/purchase" className="rounded-lg bg-peacock px-4 py-2.5 text-sm font-semibold text-white hover:bg-peacock-700">
-                New Purchase
+              <Link to={item?.id ? `/owner/purchase?item=${item.id}` : '/owner/purchase'} className="rounded-lg bg-peacock px-4 py-2.5 text-sm font-semibold text-white hover:bg-peacock-700">
+                Restock this item
               </Link>
               <RejectButtonInline order={order} onDone={load} />
             </div>
@@ -191,6 +197,11 @@ function ApprovedTracker({ order }) {
           {IN_PROCESS_STATUSES.includes(order.status) && <InProcessBadge />}
         </div>
         <p className="mt-1 text-sm text-ink/80">Stock has been adjusted and a fulfilment job opened. Track its progress live below.</p>
+        {order.saleId && (
+          <Link to={`/owner/sales/${order.saleId}`} className="mt-3 inline-flex min-h-10 items-center rounded-lg border border-line bg-card px-4 text-sm font-semibold text-ink hover:bg-paper-2">
+            View sale &amp; invoice
+          </Link>
+        )}
       </div>
 
       <div className="rounded-lg border border-line bg-card p-5">

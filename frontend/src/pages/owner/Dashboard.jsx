@@ -76,7 +76,7 @@ export default function Dashboard() {
   const todo = stats ? [
     { n: stats.pending, to: '/owner/orders?status=pending', icon: IconReceipt2, label: (n) => (n === 1 ? 'order to approve' : 'orders to approve') },
     { n: stats.toPack, to: '/owner/fulfilment', icon: IconPackage, label: (n) => (n === 1 ? 'order to pack' : 'orders to pack') },
-    { n: stats.low, to: '/owner/stock?low=1', icon: IconAlertTriangle, label: (n) => (n === 1 ? 'item to reorder (low or out of stock)' : 'items to reorder (low or out of stock)') },
+    { n: stats.low, to: '/owner/inventory?low=1&sort=low', icon: IconAlertTriangle, label: (n) => (n === 1 ? 'item to reorder (low or out of stock)' : 'items to reorder (low or out of stock)') },
   ].filter((t) => t.n > 0) : []
 
   return (

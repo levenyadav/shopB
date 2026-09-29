@@ -211,6 +211,13 @@ export default function FulfilmentDetail({ listPath }) {
         )}
       </div>
 
+      {/* Owner only: the order + sale behind this job (staff can't read orders). */}
+      {profile?.role === 'owner' && job.order_id && (
+        <Link to={`/owner/orders/${job.order_id}`} className="no-print inline-flex min-h-10 items-center text-sm font-medium text-peacock hover:underline">
+          View order &amp; bill →
+        </Link>
+      )}
+
       {/* Hidden on screen; the only thing inked when printing (SPEC §13). */}
       <SupplySlip job={job} shop={shop} />
     </div>

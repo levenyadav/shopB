@@ -22,6 +22,7 @@ const PARENTS = [
   [/^\/owner\/sales\/[^/]+$/,             '/owner/sales',     'All sales'],
   [/^\/owner\/purchases\/[^/]+$/,         '/owner/purchases', 'Purchase history'],
   [/^\/owner\/bulk-purchase$/,          '/owner/purchase',  'Purchase entry'],
+  [/^\/owner\/inventory\/[^/]+$/,        '/owner/inventory', 'Inventory'],
   [/^\/owner\/fulfilment\/[^/]+$/,        '/owner/fulfilment','All fulfilment'],
   [/^\/owner\/parties\/[^/]+\/[^/]+$/,    '/owner/parties',   'All parties'],
   [/^\/owner\/.+$/,                       '/owner',           'Dashboard'],

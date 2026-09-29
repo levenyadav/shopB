@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   IconSearch, IconPlus, IconPencil, IconPhoto, IconX, IconCircleCheck, IconCamera,
   IconDotsVertical, IconBarcode, IconPrinter, IconArchive, IconArchiveOff, IconAlertTriangle,
-  IconTrash,
+  IconTrash, IconHistory, IconShoppingCartPlus,
 } from '@tabler/icons-react'
 import { supabase, fetchAll } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
@@ -34,6 +34,11 @@ export default function Inventory() {
   const [low, setLow] = useQueryState('low')
   const lowOnly = low === '1'
   const setLowOnly = (fn) => setLow(fn(lowOnly) ? '1' : '')
+  // item_no (default) | low (lowest stock first — the old Stock Inquiry) | high
+  const [sort, setSort] = useQueryState('sort', 'item_no')
+  // ?edit=<id> opens that item's editor — Item History's Edit button lands here.
+  const [params, setParams] = useSearchParams()
+  const editId = params.get('edit')
   const [editing, setEditing] = useState(null)
   const [printing, setPrinting] = useState(null) // item whose barcode label we're printing
   const [retiring, setRetiring] = useState(null) // item pending discontinue / reactivate confirm
@@ -73,6 +78,13 @@ export default function Inventory() {
   }
   useEffect(() => { load() }, [])
 
+  useEffect(() => {
+    if (!editId || !items) return
+    const hit = items.find((i) => i.id === editId)
+    if (hit) setEditing(hit)
+    setParams((p) => { const n = new URLSearchParams(p); n.delete('edit'); return n }, { replace: true })
+  }, [editId, items]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // All distinct tags across items, for the tag filter dropdown.
   const allTags = useMemo(() => {
     if (!items) return []
@@ -84,7 +96,7 @@ export default function Inventory() {
   const filtered = useMemo(() => {
     if (!items) return []
     const needle = q.trim().toLowerCase()
-    return items.filter((i) => {
+    const rows = items.filter((i) => {
       // `show` blends the two independent flags into one plain-language filter:
       // live items (not discontinued) split by shopfront visibility, plus a
       // dedicated bucket for retired lines.
@@ -109,7 +121,12 @@ export default function Inventory() {
       }
       return true
     })
-  }, [items, q, cat, sup, tag, wh, show, lowOnly, whStock])
+    if (sort === 'low') rows.sort((a, b) => Number(a.quantity) - Number(b.quantity))
+    else if (sort === 'high') rows.sort((a, b) => Number(b.quantity) - Number(a.quantity))
+    return rows
+  }, [items, q, cat, sup, tag, wh, show, lowOnly, whStock, sort])
+
+  const reorderCount = useMemo(() => (items ? items.filter(needsReorder).length : 0), [items])
 
   const warehouseName = useMemo(
     () => Object.fromEntries(warehouses.map((w) => [w.id, w.name])),
@@ -123,11 +140,27 @@ export default function Inventory() {
 
   return (
     <div className="space-y-5">
-      {/* Top bar: total value + new item */}
+      {/* Top bar: stock value, what needs reordering (tap to filter), new item */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="rounded-lg border border-line bg-card px-5 py-3">
-          <p className="text-xs text-muted">Total stock value (at cost)</p>
-          <p className="fig text-2xl font-bold text-profit">{money(totalValue)}</p>
+        <div className="flex flex-wrap gap-3">
+          <div className="rounded-lg border border-line bg-card px-5 py-3">
+            <p className="text-xs text-muted">Total stock value (at cost)</p>
+            <p className="fig text-2xl font-bold text-profit">{money(totalValue)}</p>
+          </div>
+          <button
+            type="button" aria-pressed={lowOnly}
+            onClick={() => setLowOnly((v) => !v)}
+            className={`flex items-center gap-3 rounded-lg border px-5 py-3 text-left transition-colors ${
+              lowOnly ? 'border-saffron bg-saffron/10' : 'border-line bg-card hover:border-ink/25'
+            }`}
+          >
+            <IconAlertTriangle size={22} className="text-saffron" aria-hidden />
+            <span>
+              <span className="block text-xs text-muted">To reorder (low or out)</span>
+              <span className="fig block text-2xl font-bold">{items === null ? '—' : qty(reorderCount)}</span>
+            </span>
+            <span className="text-sm font-medium text-peacock">{lowOnly ? 'Show all' : 'Show these'}</span>
+          </button>
         </div>
         <Link
           to="/owner/purchase"
@@ -168,6 +201,13 @@ export default function Inventory() {
             {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
           </Select>
         )}
+        <div className="flex items-center gap-2">
+          <Select aria-label="Sort" value={sort} onChange={(e) => setSort(e.target.value)} className="flex-1">
+            <option value="item_no">Sort: Item No</option>
+            <option value="low">Sort: lowest stock first</option>
+            <option value="high">Sort: highest stock first</option>
+          </Select>
+        </div>
         <div className="flex items-center gap-2">
           <Select aria-label="Which items" value={show} onChange={(e) => setShow(e.target.value)} className="flex-1">
             <option value="live">All current items</option>
@@ -230,7 +270,7 @@ export default function Inventory() {
                         <Thumb url={i.photo_url} onZoom={() => setZoom(i.photo_url)} />
                         <div className="min-w-0">
                           <p className="truncate font-medium text-ink">
-                            {i.name}
+                            <Link to={`/owner/inventory/${i.id}`} className="hover:text-peacock hover:underline">{i.name}</Link>
                             {i.discontinued
                               ? <Badge className="ml-2" tone="dues">Discontinued</Badge>
                               : !i.is_active && <Badge className="ml-2" tone="muted">Hidden from shop</Badge>}
@@ -259,6 +299,7 @@ export default function Inventory() {
                     <td className="px-4 py-3 text-right fig text-muted">{money(stockValue(i))}</td>
                     <td className="px-4 py-3 text-right">
                       <RowActions
+                        itemId={i.id}
                         discontinued={i.discontinued}
                         onEdit={() => setEditing(i)}
                         onPrint={() => setPrinting(i)}
@@ -331,16 +372,20 @@ export default function Inventory() {
 // Per-row "action dot" menu: a three-dot button that opens Edit + Print barcode.
 // Delete is offered ONLY for already-discontinued lines — a retired product is
 // the only place a permanent removal makes sense.
-function RowActions({ discontinued, onEdit, onPrint, onDiscontinue, onDelete }) {
+function RowActions({ itemId, discontinued, onEdit, onPrint, onDiscontinue, onDelete }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
   useEffect(() => {
     if (!open) return
     function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    function onKey(e) { if (e.key === 'Escape') setOpen(false) }
     document.addEventListener('mousedown', onDoc)
-    document.addEventListener('keydown', (e) => e.key === 'Escape' && setOpen(false))
-    return () => document.removeEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
   }, [open])
 
   return (
@@ -350,8 +395,8 @@ function RowActions({ discontinued, onEdit, onPrint, onDiscontinue, onDelete }) 
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        title="Actions"
-        className="inline-flex items-center justify-center rounded-lg border border-line p-1.5 text-muted hover:text-ink"
+        title="Actions" aria-label="Item actions"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-line text-muted hover:text-ink"
       >
         <IconDotsVertical size={16} />
       </button>
@@ -368,6 +413,20 @@ function RowActions({ discontinued, onEdit, onPrint, onDiscontinue, onDelete }) 
           >
             <IconPencil size={15} className="text-muted" /> Edit
           </button>
+          <Link
+            to={`/owner/inventory/${itemId}`} role="menuitem"
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-ink hover:bg-paper-2"
+          >
+            <IconHistory size={15} className="text-muted" /> Stock history
+          </Link>
+          {!discontinued && (
+            <Link
+              to={`/owner/purchase?item=${itemId}`} role="menuitem"
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-ink hover:bg-paper-2"
+            >
+              <IconShoppingCartPlus size={15} className="text-muted" /> Restock
+            </Link>
+          )}
           <button
             type="button"
             role="menuitem"

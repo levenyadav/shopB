@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  IconLayoutDashboard, IconShoppingCartPlus, IconBoxSeam, IconClipboardList,
+  IconLayoutDashboard, IconShoppingCartPlus, IconBoxSeam,
   IconReceipt2, IconCoin, IconCash, IconUsers, IconChartBar, IconSettings,
   IconPackage, IconCashRegister, IconHistory,
 } from '@tabler/icons-react'
@@ -46,7 +46,6 @@ const NAV = [
       { to: '/owner/purchase', label: 'Purchase Entry', icon: IconShoppingCartPlus },
       { to: '/owner/purchases', label: 'Purchase History', icon: IconHistory },
       { to: '/owner/inventory', label: 'Inventory', icon: IconBoxSeam },
-      { to: '/owner/stock', label: 'Stock Inquiry', icon: IconClipboardList },
     ],
   },
   {
@@ -80,7 +79,6 @@ const TITLES = {
   '/owner/purchases': 'Purchase History',
   '/owner/bulk-purchase': 'Bulk Purchase',
   '/owner/inventory': 'Inventory',
-  '/owner/stock': 'Stock Inquiry',
   '/owner/counter-sale': 'Counter Sale',
   '/owner/orders': 'Orders',
   '/owner/fulfilment': 'Fulfilment',

@@ -303,9 +303,12 @@ export default function SaleDetail() {
         <div className="mt-4 flex flex-wrap items-center gap-4 rounded-lg bg-paper-2 px-4 py-3 text-sm">
           <span className="text-muted">Cost <span className="fig text-ink">{money(cost)}</span></span>
           <span className="text-muted">Profit <span className="fig font-semibold text-profit">{money(billProfit)}</span></span>
-          {sale.payment_type === 'udhaar' && (
-            <span className="text-muted">Buyer udhaar now <span className="fig text-dues">{money(sale.buyer?.balance_due)}</span></span>
-          )}
+          {/* Every sale goes on account since 056, so the buyer's running
+              balance matters whatever the payment type. */}
+          <span className="text-muted">
+            {Number(sale.buyer?.balance_due) < 0 ? 'Buyer advance now ' : 'Buyer owes now '}
+            <span className={`fig ${Number(sale.buyer?.balance_due) > 0 ? 'text-dues' : 'text-ink'}`}>{money(Math.abs(Number(sale.buyer?.balance_due || 0)))}</span>
+          </span>
         </div>
       </div>
 
@@ -338,7 +341,7 @@ export default function SaleDetail() {
         <div className="no-print rounded-lg border border-line bg-card p-5">
           <div className="mb-3 flex items-center justify-between">
             <p className="font-semibold">Edit invoice billing</p>
-            <button onClick={() => setEditing(false)} className="text-muted hover:text-ink"><IconX size={18} /></button>
+            <button type="button" onClick={() => setEditing(false)} aria-label="Close" className="grid h-9 w-9 place-items-center rounded-lg text-muted hover:bg-paper-2 hover:text-ink"><IconX size={18} /></button>
           </div>
           <p className="mb-4 text-xs text-muted">
             Only the bill's address details and notes change. The amount, quantity and
@@ -361,11 +364,13 @@ export default function SaleDetail() {
         </div>
       )}
 
-      <div className="no-print flex flex-wrap items-center gap-3">
-        <Link to={`/owner/orders/${sale.order_id}`} className="inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-ink">
-          <IconReceipt2 size={17} /> View original order
-        </Link>
-      </div>
+      {sale.order_id && (
+        <div className="no-print flex flex-wrap items-center gap-3">
+          <Link to={`/owner/orders/${sale.order_id}`} className="inline-flex min-h-10 items-center gap-1.5 text-sm font-medium text-muted hover:text-ink">
+            <IconReceipt2 size={17} /> View original order
+          </Link>
+        </div>
+      )}
 
       {err && sale && <p className="no-print rounded-lg bg-dues/10 px-4 py-3 text-sm text-dues">{err}</p>}
 

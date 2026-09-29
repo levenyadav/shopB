@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { IconSearch, IconInbox, IconCoin, IconFileSpreadsheet, IconChevronDown, IconChevronRight, IconTag, IconFileInvoice } from '@tabler/icons-react'
 import { supabase, fetchAll } from '../../lib/supabase'
 import { useShop } from '../../context/ShopContext'
@@ -7,6 +7,7 @@ import { money, qty, dateTime, dateShort } from '../../lib/format'
 import { toCsv, downloadText } from '../../lib/csv'
 import { toInputDate, startOfWeek, startOfMonth } from '../../lib/dates'
 import { Badge, Spinner, PhotoThumb, Button } from '../../components/ui'
+import useQueryState from '../../hooks/useQueryState'
 
 // SPEC §6.1 / §6.7.1 — Purchase history (owner only). Every purchase bill is
 // one or more `purchases` rows (migration 033 ties a multi-line supplier bill
@@ -47,9 +48,11 @@ export default function PurchaseHistory() {
   const [purchases, setPurchases] = useState(null)
   const [err, setErr] = useState('')
   const [q, setQ] = useState('')
-  const [supplierId, setSupplierId] = useState('')
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
+  // Filters live in the URL so Back from a bill keeps them.
+  const [, setParams] = useSearchParams()
+  const [supplierId, setSupplierId] = useQueryState('sup')
+  const [from, setFrom] = useQueryState('from')
+  const [to, setTo] = useQueryState('to')
   const [menu, setMenu] = useState(false)
   const [open, setOpen] = useState(new Set())
 
@@ -57,10 +60,20 @@ export default function PurchaseHistory() {
   // so the two never disagree and typing a custom range simply lands on "Custom".
   function applyRange(key) {
     const today = toInputDate(new Date())
-    if (key === 'all')   { setFrom(''); setTo(''); return }
-    if (key === 'today') { setFrom(today); setTo(today); return }
-    if (key === 'week')  { setFrom(toInputDate(startOfWeek())); setTo(today); return }
-    if (key === 'month') { setFrom(toInputDate(startOfMonth())); setTo(today); return }
+    const span = {
+      all: ['', ''],
+      today: [today, today],
+      week: [toInputDate(startOfWeek()), today],
+      month: [toInputDate(startOfMonth()), today],
+    }[key]
+    if (!span) return
+    // Both ends in one URL update — two separate setters would clobber each other.
+    setParams((p) => {
+      const n = new URLSearchParams(p)
+      span[0] ? n.set('from', span[0]) : n.delete('from')
+      span[1] ? n.set('to', span[1]) : n.delete('to')
+      return n
+    }, { replace: true })
   }
 
   // Which pill is lit — derived from From/To, never stored.

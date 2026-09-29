@@ -22,7 +22,7 @@ const PurchaseHistory = lazy(() => import('./pages/owner/PurchaseHistory'))
 const PurchaseBillDetail = lazy(() => import('./pages/owner/PurchaseBillDetail'))
 const BulkPurchase = lazy(() => import('./pages/owner/BulkPurchase'))
 const Inventory = lazy(() => import('./pages/owner/Inventory'))
-const StockInquiry = lazy(() => import('./pages/owner/StockInquiry'))
+const ItemHistory = lazy(() => import('./pages/owner/ItemHistory'))
 const OrderManagement = lazy(() => import('./pages/owner/OrderManagement'))
 const OrderDetail = lazy(() => import('./pages/owner/OrderDetail'))
 const PaymentEntry = lazy(() => import('./pages/owner/PaymentEntry'))
@@ -131,7 +131,10 @@ export default function App() {
         <Route path="purchases/:id" element={<PurchaseBillDetail />} />
         <Route path="bulk-purchase" element={<BulkPurchase />} />
         <Route path="inventory" element={<Inventory />} />
-        <Route path="stock" element={<StockInquiry />} />
+        <Route path="inventory/:id" element={<ItemHistory />} />
+        {/* Stock Inquiry was folded into Inventory ("To reorder" + sort). Old
+            links and bookmarks land on the same view there. */}
+        <Route path="stock" element={<Navigate to="/owner/inventory?low=1&sort=low" replace />} />
         <Route path="counter-sale" element={<CounterSale />} />
         <Route path="orders" element={<OrderManagement />} />
         <Route path="orders/:id" element={<OrderDetail />} />
